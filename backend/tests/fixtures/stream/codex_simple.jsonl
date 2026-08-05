@@ -1,0 +1,16 @@
+# OBSERVED TAXONOMY (captured 2026-05-12, codex exec --json --dangerously-bypass-approvals-and-sandbox --ephemeral)
+# Line 1: non-JSON stderr: "Reading additional input from stdin..."
+# Line 2: {"type":"thread.started","thread_id":"..."}
+# Line 3: {"type":"turn.started"}
+# Line 4: {"type":"item.completed","item":{"id":"...","type":"agent_message","text":"..."}}
+#          NOTE: no streaming delta events — item.completed carries the full agent text at once
+# Line 5: {"type":"turn.completed","usage":{"input_tokens":...,"cached_input_tokens":...,"output_tokens":...,"reasoning_output_tokens":...}}
+# DEVIATIONS FROM PLAN: Plan assumed "task_started"/"agent_message_delta"/"task_complete" shape.
+#   Actual shape uses thread.started / turn.started / item.completed / turn.completed.
+#   The item.completed event has item.type="agent_message" (not "agent_message_delta").
+#   usage includes reasoning_output_tokens and cached_input_tokens.
+Reading additional input from stdin...
+{"type":"thread.started","thread_id":"019e1ce2-3ad1-7000-b67d-4e58ffa4743d"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"请告诉我你所在的城市，我才能查今天的天气。"}}
+{"type":"turn.completed","usage":{"input_tokens":24225,"cached_input_tokens":6528,"output_tokens":140,"reasoning_output_tokens":120}}

@@ -1,0 +1,4 @@
+# Sanitized minimal fixture. It intentionally contains no captured CLI session,
+# local filesystem path, account metadata, prompt, or conversation content.
+{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":6,"cache_creation_input_tokens":14207,"cache_read_input_tokens":17843,"output_tokens":31}}}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":100,"num_turns":1,"result":"fixture response","stop_reason":"end_turn","total_cost_usd":0.09852024999999999,"usage":{"input_tokens":6,"cache_creation_input_tokens":14207,"cache_read_input_tokens":17843,"output_tokens":31},"modelUsage":{"fixture-model":{"inputTokens":6,"outputTokens":31,"cacheReadInputTokens":17843,"cacheCreationInputTokens":14207,"costUSD":0.09852024999999999}}}

@@ -1,0 +1,664 @@
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Set
+from uuid import uuid4
+
+from backend.app.domain.models import (
+    Message,
+    MessageRole,
+    is_provider_verification_mission,
+)
+from backend.app.orchestration.events import (
+    record_a2a_invoke,
+    record_a2a_request,
+    record_a2a_skipped,
+    record_tool_call,
+    record_tool_error,
+    record_tool_result,
+)
+from backend.app.orchestration.speaker import WorkflowStep
+from backend.app.storage.repository import Repository
+
+
+class MCPToolError(ValueError):
+    pass
+
+
+class MCPTools:
+    def __init__(
+        self,
+        repository: Repository,
+        artifact_root: Path,
+        *,
+        a2a_enqueue: Optional[Callable[[WorkflowStep], "int | None"]] = None,
+        valid_agent_ids: Optional[Set[str]] = None,
+        max_a2a_invocations: int = 0,
+        a2a_budget_used: Optional[Callable[[], int]] = None,
+        peek_resume_chain: Optional[Callable[[str], List[str]]] = None,
+        is_target_scheduled: Optional[Callable[[str], bool]] = None,
+        receipt_id: Optional[str] = None,
+    ):
+        self.repository = repository
+        self.artifact_root = artifact_root
+        self.a2a_enqueue = a2a_enqueue
+        self.valid_agent_ids = set(valid_agent_ids or [])
+        self.max_a2a_invocations = max_a2a_invocations
+        self.a2a_budget_used = a2a_budget_used or (lambda: 0)
+        self._peek_resume_chain = peek_resume_chain
+        self._is_target_scheduled = is_target_scheduled
+        self.receipt_id = receipt_id
+
+    def read_context(
+        self,
+        mission_id: str,
+        limit: int = 20,
+        *,
+        agent_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> Dict[str, object]:
+        if agent_id and turn_id:
+            record_tool_call(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "read_context",
+                {"limit": limit},
+                provider_id,
+            )
+        mission = self.repository.get_mission(mission_id)
+        if mission is None:
+            raise MCPToolError(f"Unknown mission: {mission_id}")
+        # Scope to the whole conversation so cross-mission memory works
+        # (matches build_conversation_context). Fall back to mission scope
+        # for legacy missions created without a conversation_id.
+        if mission.conversation_id and not is_provider_verification_mission(mission):
+            raw = self.repository.list_messages_for_conversation(
+                mission.conversation_id
+            )
+        else:
+            raw = self.repository.list_messages(mission_id)
+        messages = sorted(raw, key=lambda message: message.created_at)[-limit:]
+        result = {
+            "mission": mission.model_dump(mode="json"),
+            "messages": [message.model_dump(mode="json") for message in messages],
+        }
+        if agent_id and turn_id:
+            record_tool_result(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "read_context",
+                summary="Returned {n} messages".format(n=len(messages)),
+                provider_id=provider_id,
+            )
+        return result
+
+    def publish_message(
+        self,
+        mission_id: str,
+        agent_id: str,
+        turn_id: str,
+        content: str,
+        provider_id: str,
+        *,
+        trace: bool = True,
+    ) -> Message:
+        mission = self._require_mission(mission_id)
+        if trace:
+            record_tool_call(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "publish_message",
+                {"content_length": len(content)},
+                provider_id,
+            )
+        message = Message(
+            id=f"msg_{uuid4().hex}",
+            mission_id=mission_id,
+            conversation_id=mission.conversation_id,
+            role=MessageRole.AGENT,
+            agent_id=agent_id,
+            turn_id=turn_id,
+            provider_id=provider_id,
+            content=content,
+        )
+        self.repository.add_message(message)
+        if self.receipt_id:
+            self.repository.add_event(
+                mission_id,
+                "mcp.receipt",
+                {
+                    "receipt_id": self.receipt_id,
+                    "message_id": message.id,
+                    "turn_id": turn_id,
+                    "agent_id": agent_id,
+                    "provider_id": provider_id,
+                    "tool": "publish_message",
+                },
+            )
+        if trace:
+            record_tool_result(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "publish_message",
+                summary="Published message {id}".format(id=message.id),
+                provider_id=provider_id,
+            )
+        return message
+
+    def write_artifact(
+        self,
+        mission_id: str,
+        agent_id: str,
+        turn_id: str,
+        relative_path: str,
+        content: str,
+        *,
+        provider_id: Optional[str] = None,
+    ) -> Path:
+        self._require_mission(mission_id)
+        record_tool_call(
+            self.repository,
+            mission_id,
+            turn_id,
+            agent_id,
+            "write_artifact",
+            {"relative_path": relative_path},
+            provider_id,
+        )
+        mission_dir = (self.artifact_root / mission_id).resolve()
+        target = (mission_dir / relative_path).resolve()
+        try:
+            normalized_relative_path = target.relative_to(mission_dir).as_posix()
+        except ValueError:
+            record_tool_error(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "write_artifact",
+                "Artifact path is outside artifact directory",
+                provider_id,
+            )
+            raise MCPToolError("Artifact path is outside artifact directory")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        artifact_id = "{mission_id}:{path}".format(
+            mission_id=mission_id,
+            path=normalized_relative_path,
+        )
+        self.repository.add_event(
+            mission_id,
+            "artifact",
+            {
+                "mission_id": mission_id,
+                "agent_id": agent_id,
+                "turn_id": turn_id,
+                "title": target.name,
+                "path": normalized_relative_path,
+            },
+        )
+        record_tool_result(
+            self.repository,
+            mission_id,
+            turn_id,
+            agent_id,
+            "write_artifact",
+            summary="Wrote {path}".format(path=normalized_relative_path),
+            artifact_id=artifact_id,
+            provider_id=provider_id,
+        )
+        return target
+
+    READ_ARTIFACT_MAX_CHARS = 20000
+
+    def read_artifact(
+        self,
+        mission_id: str,
+        agent_id: str,
+        turn_id: str,
+        relative_path: str,
+        *,
+        provider_id: Optional[str] = None,
+        with_line_numbers: bool = True,
+    ) -> Dict[str, object]:
+        self._require_mission(mission_id)
+        record_tool_call(
+            self.repository,
+            mission_id,
+            turn_id,
+            agent_id,
+            "read_artifact",
+            {"relative_path": relative_path, "with_line_numbers": with_line_numbers},
+            provider_id,
+        )
+        mission_dir = (self.artifact_root / mission_id).resolve()
+        try:
+            target = (mission_dir / relative_path).resolve()
+            normalized = target.relative_to(mission_dir).as_posix()
+        except ValueError:
+            record_tool_error(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "read_artifact",
+                "Artifact path is outside artifact directory",
+                provider_id,
+            )
+            raise MCPToolError("Artifact path is outside artifact directory")
+        if not target.exists() or not target.is_file():
+            record_tool_error(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "read_artifact",
+                "Artifact not found: {p}".format(p=normalized),
+                provider_id,
+            )
+            raise MCPToolError("Artifact not found: {p}".format(p=normalized))
+        raw = target.read_text(encoding="utf-8", errors="replace")
+        total_chars = len(raw)
+        truncated = total_chars > self.READ_ARTIFACT_MAX_CHARS
+        body = raw[: self.READ_ARTIFACT_MAX_CHARS] if truncated else raw
+        if with_line_numbers:
+            lines = body.splitlines()
+            rendered = "\n".join(
+                "{n:>5}\t{line}".format(n=i + 1, line=line)
+                for i, line in enumerate(lines)
+            )
+        else:
+            rendered = body
+        result: Dict[str, object] = {
+            "path": normalized,
+            "content": rendered,
+            "total_chars": total_chars,
+            "returned_chars": len(body),
+            "truncated": truncated,
+        }
+        record_tool_result(
+            self.repository,
+            mission_id,
+            turn_id,
+            agent_id,
+            "read_artifact",
+            summary="Read {p} ({n}/{t} chars{trunc})".format(
+                p=normalized,
+                n=len(body),
+                t=total_chars,
+                trunc=", truncated" if truncated else "",
+            ),
+            provider_id=provider_id,
+        )
+        return result
+
+    def log_thought(
+        self,
+        mission_id: str,
+        agent_id: str,
+        turn_id: Optional[str],
+        content: str,
+        provider_id: Optional[str] = None,
+        *,
+        kind: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        trace: bool = True,
+    ) -> Dict[str, object]:
+        self._require_mission(mission_id)
+        normalized_turn_id = (
+            turn_id.strip()
+            if isinstance(turn_id, str) and turn_id.strip()
+            else "unknown"
+        )
+        normalized_kind = kind or "reasoning"
+        valid_kinds = {"reasoning", "plan", "doubt", "decision"}
+        if normalized_kind not in valid_kinds:
+            valid_kind_list = ", ".join(sorted(valid_kinds))
+            if trace:
+                record_tool_error(
+                    self.repository,
+                    mission_id,
+                    normalized_turn_id,
+                    agent_id,
+                    "log_thought",
+                    "kind must be one of: {kinds}".format(kinds=valid_kind_list),
+                    provider_id,
+                )
+            raise MCPToolError(
+                "log_thought 'kind' must be one of: {kinds}".format(
+                    kinds=valid_kind_list
+                )
+            )
+        if not isinstance(content, str) or not content.strip():
+            if trace:
+                record_tool_error(
+                    self.repository,
+                    mission_id,
+                    normalized_turn_id,
+                    agent_id,
+                    "log_thought",
+                    "content is required",
+                    provider_id,
+                )
+            raise MCPToolError("log_thought requires non-empty 'content'")
+        normalized_tags: List[str] = []
+        if tags is not None:
+            if not isinstance(tags, list) or any(
+                not isinstance(item, str) or not item.strip() for item in tags
+            ):
+                if trace:
+                    record_tool_error(
+                        self.repository,
+                        mission_id,
+                        normalized_turn_id,
+                        agent_id,
+                        "log_thought",
+                        "tags must be a list of non-empty strings",
+                        provider_id,
+                    )
+                raise MCPToolError(
+                    "log_thought 'tags' must be a list of non-empty strings"
+                )
+            normalized_tags = [tag.strip() for tag in tags]
+        if trace:
+            record_tool_call(
+                self.repository,
+                mission_id,
+                normalized_turn_id,
+                agent_id,
+                "log_thought",
+                {
+                    "content_length": len(content),
+                    "kind": normalized_kind,
+                    "tags": normalized_tags,
+                },
+                provider_id,
+            )
+        event_id = self.repository.add_event(
+            mission_id,
+            "agent.thought",
+            {
+                "mission_id": mission_id,
+                "agent_id": agent_id,
+                "turn_id": normalized_turn_id,
+                "provider_id": provider_id,
+                "kind": normalized_kind,
+                "content": content,
+                "tags": normalized_tags,
+            },
+        )
+        if trace:
+            record_tool_result(
+                self.repository,
+                mission_id,
+                normalized_turn_id,
+                agent_id,
+                "log_thought",
+                summary="Logged thought ({n} chars{tag_note})".format(
+                    n=len(content),
+                    tag_note=", tags=" + ",".join(normalized_tags) if normalized_tags else "",
+                ),
+                provider_id=provider_id,
+            )
+        return {"ok": True, "event_id": event_id}
+
+    def update_status(
+        self,
+        mission_id: str,
+        status: str,
+        summary: Optional[str] = None,
+        *,
+        agent_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> None:
+        mission = self._require_mission(mission_id)
+        if agent_id and turn_id:
+            record_tool_call(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "update_status",
+                {"status": status},
+                provider_id,
+            )
+        payload = {"mission_id": mission.id, "status": status, "summary": summary}
+        self.repository.add_event(mission_id, "status", payload)
+        if agent_id and turn_id:
+            record_tool_result(
+                self.repository,
+                mission_id,
+                turn_id,
+                agent_id,
+                "update_status",
+                summary="Status updated to {status}".format(status=status),
+                provider_id=provider_id,
+            )
+
+    def invoke_agent(
+        self,
+        mission_id: str,
+        sender_agent_id: str,
+        sender_turn_id: str,
+        target_agent_id: str,
+        purpose: str,
+        provider_id: str,
+        *,
+        mode: str = "fire_and_forget",
+    ) -> Dict[str, int]:
+        self._require_mission(mission_id)
+        record_tool_call(
+            self.repository,
+            mission_id,
+            sender_turn_id,
+            sender_agent_id,
+            "invoke_agent",
+            {
+                "target_agent_id": target_agent_id,
+                "purpose": purpose,
+                "mode": mode,
+            },
+            provider_id,
+        )
+        try:
+            if mode not in ("fire_and_forget", "wait_reply"):
+                raise MCPToolError("mode {mode} not supported".format(mode=mode))
+            if not isinstance(target_agent_id, str) or not target_agent_id.strip():
+                raise MCPToolError("target_agent_id is required")
+            if self.valid_agent_ids and target_agent_id not in self.valid_agent_ids:
+                raise MCPToolError("unknown agent: {id}".format(id=target_agent_id))
+            if target_agent_id == sender_agent_id:
+                raise MCPToolError("agent cannot invoke itself")
+            if mode == "wait_reply" and self._peek_resume_chain is not None:
+                chain = self._peek_resume_chain(sender_agent_id)
+                if target_agent_id in chain:
+                    raise MCPToolError(
+                        "a2a wait cycle: {path}→{target}".format(
+                            path="→".join(chain + [sender_agent_id]),
+                            target=target_agent_id,
+                        )
+                    )
+            if not isinstance(purpose, str) or not purpose.strip():
+                raise MCPToolError("purpose is required")
+
+            if self.a2a_enqueue is None:
+                # Subprocess path: enforce budget by counting existing a2a events in the DB.
+                if self.max_a2a_invocations > 0:
+                    existing = sum(
+                        1
+                        for e in self.repository.list_events_after(mission_id, 0)
+                        if e.event_type in ("a2a.invoke", "a2a.request")
+                    )
+                    if existing >= self.max_a2a_invocations:
+                        raise MCPToolError(
+                            "a2a 深度耗尽 ({used}/{limit})".format(
+                                used=existing,
+                                limit=self.max_a2a_invocations,
+                            )
+                        )
+                # Persist the request to the DB so the runner can pick it up
+                # after this turn ends.
+                record_a2a_request(
+                    self.repository,
+                    mission_id,
+                    sender_agent_id,
+                    sender_turn_id,
+                    target_agent_id,
+                    purpose.strip(),
+                    mode,
+                )
+                queued_position = sum(
+                    1
+                    for e in self.repository.list_events_after(mission_id, 0)
+                    if e.event_type == "a2a.request"
+                    and e.payload.get("sender_turn_id") == sender_turn_id
+                )
+                record_tool_result(
+                    self.repository,
+                    mission_id,
+                    sender_turn_id,
+                    sender_agent_id,
+                    "invoke_agent",
+                    summary="Persisted a2a.request for {target} at position {pos}".format(
+                        target=target_agent_id,
+                        pos=queued_position,
+                    ),
+                    provider_id=provider_id,
+                )
+                # Count all mission-level a2a events (invoke + request) to compute
+                # remaining budget accurately, including events from prior turns.
+                total_used = sum(
+                    1
+                    for e in self.repository.list_events_after(mission_id, 0)
+                    if e.event_type in ("a2a.invoke", "a2a.request")
+                )
+                remaining = (
+                    max(0, self.max_a2a_invocations - total_used)
+                    if self.max_a2a_invocations > 0
+                    else -1
+                )
+                result = {"queued_position": queued_position, "estimated_remaining_a2a_budget": remaining}
+                if mode == "wait_reply":
+                    result["reply_pending"] = True
+                    result["resume_position"] = queued_position + 1
+                return result
+
+            # In-process path: absorb a redundant fire-and-forget invoke when the
+            # target already has a scheduled turn in the remaining workflow. Queuing
+            # an extra a2a turn for someone about to speak makes them speak twice on
+            # the same topic ("漂移/重复发言"). wait_reply is never skipped — the
+            # sender is blocked on a real reply.
+            if (
+                mode == "fire_and_forget"
+                and self._is_target_scheduled is not None
+                and self._is_target_scheduled(target_agent_id)
+            ):
+                record_a2a_skipped(
+                    self.repository,
+                    mission_id,
+                    sender_agent_id,
+                    sender_turn_id,
+                    target_agent_id,
+                    purpose.strip(),
+                    reason="target already scheduled in workflow",
+                )
+                record_tool_result(
+                    self.repository,
+                    mission_id,
+                    sender_turn_id,
+                    sender_agent_id,
+                    "invoke_agent",
+                    summary="Skipped {target}: already scheduled to speak".format(
+                        target=target_agent_id,
+                    ),
+                    provider_id=provider_id,
+                )
+                return {"queued_position": 0, "skipped": True}
+
+            # In-process path: validate budget and enqueue immediately.
+            used = self.a2a_budget_used()
+            if used >= self.max_a2a_invocations:
+                raise MCPToolError(
+                    "a2a 深度耗尽 ({used}/{limit})".format(
+                        used=used,
+                        limit=self.max_a2a_invocations,
+                    )
+                )
+
+            step = WorkflowStep(
+                agent_id=target_agent_id,
+                purpose=purpose.strip(),
+                origin="a2a",
+                sender_agent_id=sender_agent_id,
+                sender_turn_id=sender_turn_id,
+            )
+            position = self.a2a_enqueue(step)
+            queued_position = int(position) if position is not None else 1
+            if mode == "wait_reply":
+                resume_step = WorkflowStep(
+                    agent_id=sender_agent_id,
+                    purpose="承接 {target} 对『{purpose}』的回复".format(
+                        target=target_agent_id, purpose=purpose.strip(),
+                    ),
+                    origin="a2a_resume",
+                    sender_agent_id=sender_agent_id,
+                    sender_turn_id=sender_turn_id,
+                    parent_step_id=step.step_id,
+                )
+                self.a2a_enqueue(resume_step)
+            record_a2a_invoke(
+                self.repository,
+                mission_id,
+                sender_agent_id,
+                sender_turn_id,
+                target_agent_id,
+                purpose.strip(),
+                mode,
+                queued_position,
+            )
+            remaining = max(0, self.max_a2a_invocations - used - 1)
+            record_tool_result(
+                self.repository,
+                mission_id,
+                sender_turn_id,
+                sender_agent_id,
+                "invoke_agent",
+                summary="Queued {target} at position {position}".format(
+                    target=target_agent_id,
+                    position=queued_position,
+                ),
+                provider_id=provider_id,
+            )
+            result = {
+                "queued_position": queued_position,
+                "estimated_remaining_a2a_budget": remaining,
+            }
+            if mode == "wait_reply":
+                result["reply_pending"] = True
+                result["resume_position"] = queued_position + 1
+            return result
+        except MCPToolError as exc:
+            record_tool_error(
+                self.repository,
+                mission_id,
+                sender_turn_id,
+                sender_agent_id,
+                "invoke_agent",
+                str(exc),
+                provider_id,
+            )
+            raise
+
+    def _require_mission(self, mission_id: str):
+        mission = self.repository.get_mission(mission_id)
+        if mission is None:
+            raise MCPToolError(f"Unknown mission: {mission_id}")
+        return mission

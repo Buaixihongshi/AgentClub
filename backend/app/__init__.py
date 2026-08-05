@@ -1,0 +1,1 @@
+"""YiRen Hub backend package."""

@@ -1,0 +1,17 @@
+# OBSERVED TAXONOMY (captured 2026-05-12, gemini CLI --approval-mode yolo -o stream-json)
+# Lines 1-3: non-JSON stderr/stdout noise ("YOLO mode is enabled.", "Ripgrep is not available...")
+# Line 4: {"type":"init","timestamp":...,"session_id":...,"model":"auto-gemini-3"}
+# Line 5: {"type":"message","timestamp":...,"role":"user","content":"..."}
+# Line 6: {"type":"message","timestamp":...,"role":"assistant","content":"...","delta":true}
+#          NOTE: no streaming deltas — one complete assistant message with delta:true flag
+# Line 7: {"type":"result","timestamp":...,"status":"success","stats":{total_tokens,input_tokens,output_tokens,...,"models":{...}}}
+# DEVIATIONS FROM PLAN: No separate streaming delta lines observed. A single message event with
+#   delta:true carries the full assistant text. Stats include per-model breakdown (gemini-2.5-flash-lite +
+#   gemini-3-flash-preview). Model reported: "auto-gemini-3".
+YOLO mode is enabled. All tool calls will be automatically approved.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Ripgrep is not available. Falling back to GrepTool.
+{"type":"init","timestamp":"2026-05-12T15:50:36.738Z","session_id":"3e544ee0-c6e6-434f-b991-91b6be7b77b0","model":"auto-gemini-3"}
+{"type":"message","timestamp":"2026-05-12T15:50:36.738Z","role":"user","content":"用一句话回答：今天天气"}
+{"type":"message","timestamp":"2026-05-12T15:50:46.477Z","role":"assistant","content":"我无法直接获取您所在位置的实时天气信息，请告知具体城市以便我为您查询。","delta":true}
+{"type":"result","timestamp":"2026-05-12T15:50:46.591Z","status":"success","stats":{"total_tokens":15232,"input_tokens":14226,"output_tokens":86,"cached":0,"input":14226,"duration_ms":9854,"tool_calls":0,"models":{"gemini-2.5-flash-lite":{"total_tokens":3344,"input_tokens":2909,"output_tokens":65,"cached":0,"input":2909},"gemini-3-flash-preview":{"total_tokens":11888,"input_tokens":11317,"output_tokens":21,"cached":0,"input":11317}}}}

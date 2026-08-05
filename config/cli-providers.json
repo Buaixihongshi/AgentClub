@@ -1,0 +1,33 @@
+[
+  {
+    "id": "fake",
+    "label": "演示模式",
+    "command": "fake",
+    "args": [],
+    "enabled": true
+  },
+  {
+    "id": "claude",
+    "label": "Claude Code",
+    "command": "claude",
+    "args": ["--dangerously-skip-permissions", "--no-session-persistence", "--output-format", "stream-json", "--include-partial-messages", "--verbose", "-p"],
+    "enabled": false,
+    "mcp_enabled": true
+  },
+  {
+    "id": "codex",
+    "label": "Codex CLI",
+    "command": "codex",
+    "args": ["exec", "--json", "--dangerously-bypass-approvals-and-sandbox", "--ephemeral"],
+    "enabled": false,
+    "mcp_enabled": true
+  },
+  {
+    "id": "antigravity",
+    "label": "Antigravity CLI",
+    "command": "agy",
+    "args": ["--dangerously-skip-permissions", "-p"],
+    "enabled": false,
+    "mcp_enabled": true
+  }
+]
