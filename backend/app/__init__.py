@@ -1,1 +1,1 @@
-"""YiRen Hub backend package."""
+"""AgentClub backend package."""

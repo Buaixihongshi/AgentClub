@@ -62,7 +62,7 @@ def test_first_chat_is_idempotent_and_uses_fake_chulan(temp_settings):
     assert len(agent_messages) == 1
     assert agent_messages[0]["agent_id"] == "chulan"
     assert agent_messages[0]["provider_id"] == "fake"
-    assert "YiRen Hub 这边已经跑通了" in agent_messages[0]["content"]
+    assert "AgentClub 这边已经跑通了" in agent_messages[0]["content"]
     assert "聊天室模式" not in agent_messages[0]["content"]
     assert state["first_reply_completed_at"]
 
@@ -121,7 +121,7 @@ def test_recommended_provider_is_verified_before_atomic_activation(temp_settings
         create_app(
             temp_settings,
             onboarding_verification_adapter=FakeCLIAdapter(
-                response="哥，Codex 已通过 MCP 接入 YiRen Hub。"
+                response="哥，Codex 已通过 MCP 接入 AgentClub。"
             ),
         )
     )
@@ -250,7 +250,7 @@ def test_completed_codex_onboarding_can_verify_an_extension_provider(temp_settin
         create_app(
             temp_settings,
             onboarding_verification_adapter=FakeCLIAdapter(
-                response="已经通过 MCP 接入 YiRen Hub。"
+                response="已经通过 MCP 接入 AgentClub。"
             ),
         )
     )

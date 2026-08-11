@@ -1,4 +1,4 @@
-"""Stdio MCP server exposing YiRen Hub tools to a CLI provider.
+"""Stdio MCP server exposing AgentClub tools to a CLI provider.
 
 Spawned by an MCP-aware CLI (e.g. Codex). Reads runtime context from env vars
 set by `MCPSubprocessAdapter`, then handles JSON-RPC 2.0 over stdin/stdout.
@@ -108,7 +108,7 @@ _TOOL_DESCRIPTORS = [
     {
         "name": "publish_message",
         "description": (
-            "把当前 agent 在本回合要说的话发布到 YiRen Hub 聊天室。"
+            "把当前 agent 在本回合要说的话发布到 AgentClub 聊天室。"
             "调用一次即可发出一条消息，参数 content 为要发送的中文文本。"
         ),
         "inputSchema": {
@@ -215,7 +215,7 @@ _TOOL_DESCRIPTORS = [
     {
         "name": "invoke_agent",
         "description": (
-            "请求另一个 YiRen Hub agent 接力处理子任务。"
+            "请求另一个 AgentClub agent 接力处理子任务。"
             "G3 仅支持 fire_and_forget；被叫 agent 会在当前 turn 结束后顺序发言。"
         ),
         "inputSchema": {

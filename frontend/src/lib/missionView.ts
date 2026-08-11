@@ -56,7 +56,7 @@ export function buildMissionRuntimeSummary(
     (turn) => !turn.isStatusEvent && turn.role === "agent",
   ).length;
   return {
-    title: "YiRen Hub 任务室",
+    title: "AgentClub 任务室",
     statusLabel: formatMissionStatus(mission?.status),
     complexityLabel: mission?.complexity ?? "unknown",
     agentTurnCount,

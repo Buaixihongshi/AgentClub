@@ -755,7 +755,7 @@ def _build_prompt(
     max_a2a_invocations: Optional[int] = None,
 ) -> str:
     parts = [
-        "聊天室模式：你正在 YiRen Hub 的多 Agent 房间中发言。\n"
+        "聊天室模式：你正在 AgentClub 的多 Agent 房间中发言。\n"
         "你的角色是{display_name}，职责是{role}，表达风格是{persona}\n"
         "只回复当前角色这一轮该说的话，不要代替其他角色发言，不要输出 Markdown 标题。\n"
         "如需读写文件或执行命令，使用你 CLI 自带的工具；完成的最终产物用 write_artifact 登记，UI 才会展示。\n"

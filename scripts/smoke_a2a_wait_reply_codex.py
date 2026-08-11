@@ -17,7 +17,7 @@ from smoke_a2a_codex import run_wait_reply  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="YiRen Hub A2A wait_reply smoke")
+    parser = argparse.ArgumentParser(description="AgentClub A2A wait_reply smoke")
     parser.add_argument("--fake", action="store_true", help="Run fake-mode wait_reply smoke")
     parser.add_argument("--real", action="store_true", help="Reserved for future real CLI smoke")
     parser.add_argument("--timeout-seconds", type=int, default=120)

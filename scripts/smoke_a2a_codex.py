@@ -131,7 +131,7 @@ def _build_test_app(settings: Settings, adapter: CLIAdapter):
     settings.artifact_root.mkdir(parents=True, exist_ok=True)
 
     missions_router = _build_missions_router(settings, repository, adapter_override=adapter)
-    app = FastAPI(title="YiRen Hub A2A Smoke")
+    app = FastAPI(title="AgentClub A2A Smoke")
     app.include_router(_build_conv_router(settings, repository))
     app.include_router(missions_router)
     app.include_router(_build_prov_router(settings))

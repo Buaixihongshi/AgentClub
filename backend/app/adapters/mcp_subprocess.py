@@ -1,4 +1,4 @@
-"""Adapter that runs a CLI provider as an MCP client of the YiRen Hub MCP server.
+"""Adapter that runs a CLI provider as an MCP client of the AgentClub MCP server.
 
 Per-provider config rendering:
 - codex: materialises a TOML at ``<CODEX_HOME>/config.toml`` and sets
@@ -151,7 +151,7 @@ class MCPSubprocessAdapter(CLIAdapter):
             launch_env.update(self.extra_env)
             # Runtime routing data belongs to the MCP server process only. It
             # must not leak into the provider CLI where it could be used to
-            # bypass stdio MCP and write directly to YiRen Hub persistence.
+            # bypass stdio MCP and write directly to AgentClub persistence.
             for key in list(launch_env):
                 if key.startswith("YIREN_MCP_"):
                     launch_env.pop(key, None)

@@ -1,5 +1,5 @@
 """Fake CLI used by test_mcp_subprocess_adapter to simulate a real MCP-aware
-provider (e.g. Codex). Spawns the YiRen Hub MCP server, performs the JSON-RPC
+provider (e.g. Codex). Spawns the AgentClub MCP server, performs the JSON-RPC
 handshake, and calls one or more tools.
 
 Reads its own behaviour from env vars set by MCPSubprocessAdapter:

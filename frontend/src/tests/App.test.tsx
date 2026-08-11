@@ -86,7 +86,7 @@ function stubFetch(extraHandlers?: (url: string, init?: RequestInit) => Response
   });
 }
 
-describe("YiRen Hub app", () => {
+describe("AgentClub app", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     vi.stubGlobal("fetch", stubFetch());
@@ -130,7 +130,7 @@ describe("YiRen Hub app", () => {
           conversation: makeConvDetail({
             conversation: {
               id: "c_welcome",
-              title: "欢迎使用 YiRen Hub",
+              title: "欢迎使用 AgentClub",
               status: "active",
               created_at: "2026-05-05T00:00:00Z",
               updated_at: "2026-05-05T00:00:00Z",
@@ -154,7 +154,7 @@ describe("YiRen Hub app", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("YiRen Hub 已启动")).toBeInTheDocument();
+    expect(await screen.findByText("AgentClub 已启动")).toBeInTheDocument();
     expect(screen.getByText("演示 Provider 可用")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "和张楚岚打个招呼" }));
 

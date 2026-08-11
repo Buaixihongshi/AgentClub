@@ -18,7 +18,7 @@ export function MissionHeader(props: {
   return (
     <header className="mission-header">
       <div>
-        <div className="eyebrow">YiRen Hub / Mission Room</div>
+        <div className="eyebrow">AgentClub / Mission Room</div>
         <h1>{props.runtimeSummary.title}</h1>
       </div>
       <div className="header-status">

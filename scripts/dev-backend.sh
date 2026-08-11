@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch the YiRen Hub backend in development mode with auto-reload.
+# Launch the AgentClub backend in development mode with auto-reload.
 # Why: bare `uvicorn ...` invocations (without --reload) leave stale processes
 # serving old code; this wrapper enforces reload + a port pre-flight so code
 # edits land immediately and conflicts surface loudly.

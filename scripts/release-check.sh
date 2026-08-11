@@ -64,4 +64,4 @@ if [ "$RUN_REAL_CLI" = true ]; then
 fi
 
 echo
-echo "PASS: YiRen Hub release checks completed."
+echo "PASS: AgentClub release checks completed."

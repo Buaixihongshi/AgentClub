@@ -24,7 +24,7 @@ def create_app(
     repository.initialize()
     app_settings.artifact_root.mkdir(parents=True, exist_ok=True)
 
-    app = FastAPI(title="YiRen Hub")
+    app = FastAPI(title="AgentClub")
     app.include_router(build_health_router(app_settings, repository))
     app.include_router(build_agents_router(app_settings))
     app.include_router(build_conversations_router(app_settings, repository))

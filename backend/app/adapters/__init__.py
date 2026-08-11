@@ -1,1 +1,1 @@
-"""CLI adapter implementations for YiRen Hub mission turns."""
+"""CLI adapter implementations for AgentClub mission turns."""

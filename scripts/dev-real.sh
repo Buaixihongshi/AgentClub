@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launch the YiRen Hub full stack with REAL CLI providers for manual verification.
+# Launch the AgentClub full stack with REAL CLI providers for manual verification.
 #
 # Why: the real-provider path must NOT use the committed config/cli-providers.json
 # (its real providers stay enabled:false on purpose — see CLAUDE.md "MCP transport
@@ -78,7 +78,7 @@ BACKEND_PID=""
 FRONTEND_PID=""
 cleanup() {
   echo
-  echo "Shutting down YiRen Hub dev stack…"
+  echo "Shutting down AgentClub dev stack…"
   [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
   rm -rf "$CONFIG_TMP"

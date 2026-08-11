@@ -1,1 +1,1 @@
-"""Domain models for YiRen Hub."""
+"""Domain models for AgentClub."""

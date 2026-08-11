@@ -244,7 +244,7 @@ describe("buildMissionRuntimeSummary", () => {
       artifacts: [],
     }, []);
 
-    expect(summary.title).toBe("YiRen Hub 任务室");
+    expect(summary.title).toBe("AgentClub 任务室");
   });
 });
 
@@ -351,7 +351,7 @@ it("builds a runtime summary from detail and turns", () => {
   ];
 
   expect(buildMissionRuntimeSummary(detail, turns)).toEqual({
-    title: "YiRen Hub 任务室",
+    title: "AgentClub 任务室",
     statusLabel: "运行中",
     complexityLabel: "complex",
     agentTurnCount: 1,

@@ -32,7 +32,7 @@ RUNTIME_DIR="$ROOT/.yiren"
 
 for command_name in python3 node npm; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
-    echo "ERROR: $command_name is required to start YiRen Hub." >&2
+    echo "ERROR: $command_name is required to start AgentClub." >&2
     echo "Install it, then run ./scripts/start.sh again." >&2
     exit 1
   fi
@@ -128,13 +128,13 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "Starting YiRen Hub backend…"
+echo "Starting AgentClub backend…"
 PYTHONPATH="$ROOT" "$PY" -m uvicorn backend.app.main:app \
   --host "$BOOT_HOST" --port "$BACKEND_PORT" \
   >"$RUNTIME_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 
-echo "Starting YiRen Hub frontend…"
+echo "Starting AgentClub frontend…"
 (
   cd "$ROOT/frontend"
   YIREN_BACKEND_ORIGIN="$BACKEND_ORIGIN" npm run dev -- \
@@ -161,7 +161,7 @@ while time.monotonic() < deadline:
 raise SystemExit(1)
 PY
 then
-  echo "ERROR: YiRen Hub did not become healthy within 30 seconds." >&2
+  echo "ERROR: AgentClub did not become healthy within 30 seconds." >&2
   echo "Backend log:" >&2
   tail -n 30 "$RUNTIME_DIR/backend.log" >&2 || true
   echo "Frontend log:" >&2
@@ -181,7 +181,7 @@ PY
 fi
 
 echo
-echo "YiRen Hub is ready: $APP_URL"
+echo "AgentClub is ready: $APP_URL"
 echo "Logs: $RUNTIME_DIR/backend.log and $RUNTIME_DIR/frontend.log"
 echo "Press Ctrl-C to stop both services."
 
@@ -197,6 +197,6 @@ while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null;
   sleep 1
 done
 
-echo "ERROR: one of the YiRen Hub services stopped unexpectedly." >&2
+echo "ERROR: one of the AgentClub services stopped unexpectedly." >&2
 echo "Check $RUNTIME_DIR/backend.log and $RUNTIME_DIR/frontend.log." >&2
 exit 1

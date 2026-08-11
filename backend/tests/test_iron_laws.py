@@ -1,4 +1,4 @@
-"""Executable checks for YiRen Hub architecture iron laws (L1–L4).
+"""Executable checks for AgentClub architecture iron laws (L1–L4).
 
 See docs/architecture/iron-laws.md.
 """

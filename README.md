@@ -1,11 +1,11 @@
-# YiRen Hub
+# AgentClub
 
 > 一个本地优先的多 Agent 聊天室：先用演示模式跑通第一轮对话，再按需接入 Codex CLI、Claude Code 和 Antigravity CLI。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-2f6f64.svg)](CHANGELOG.md)
 
-YiRen Hub 把多个本地 AI CLI 组织在同一个任务房间中。用户只需要描述目标，系统就会根据任务复杂度安排张楚岚、冯宝宝和王也分轮协作，并在页面中展示角色回复、执行状态、工具调用和产物。
+AgentClub 把多个本地 AI CLI 组织在同一个任务房间中。用户只需要描述目标，系统就会根据任务复杂度安排张楚岚、冯宝宝和王也分轮协作，并在页面中展示角色回复、执行状态、工具调用和产物。
 
 项目默认启用不调用模型的“演示模式”，没有任何 CLI 或模型账号也可以完成首次体验。需要真实模型时，可先验证 Codex CLI 并让三位角色共用该连接，再逐步扩展 Claude Code 和 Antigravity CLI。
 
@@ -20,6 +20,22 @@ YiRen Hub 把多个本地 AI CLI 组织在同一个任务房间中。用户只�
 - **连续会话与归档**：同一会话保留上下文；归档和恢复不会删除历史记录。
 - **本地产物管理**：任务产物按 mission 隔离保存在 `artifacts/<mission_id>/`。
 - **常驻团队配置**：首次引导结束后，仍可从设置页调整 CLI 和角色路由。
+
+## 项目演示
+
+### 零账号启动与 Codex-first 引导
+
+先用演示模式完成第一轮角色对话，再由页面引导用户验证 Codex CLI；验证失败不会影响已经可用的演示模式。
+
+![AgentClub 新用户引导](docs/images/agentclub-onboarding.jpg)
+
+### CLI 接入与团队配置
+
+在设置页集中查看 CLI 安装、认证和验证状态，并为三位角色配置主 Provider 与 fallback。
+
+![AgentClub CLI 接入设置](docs/images/agentclub-cli-settings.jpg)
+
+![AgentClub 团队配置](docs/images/agentclub-team-settings.jpg)
 
 ## 快速开始
 
@@ -87,7 +103,7 @@ PORT=8001 FRONTEND_PORT=5174 ./scripts/start.sh --no-open
 | Claude Code | `claude` | 可选的角色 Provider | 禁用，验证后启用 |
 | Antigravity CLI | `agy` | 可选的角色 Provider | 禁用，验证后启用 |
 
-YiRen Hub 不会在启动时启用真实 Provider。安装方式和登录命令会在引导页及设置页中显示；验证失败也不会覆盖已保存的角色路由，演示模式仍可继续使用。
+AgentClub 不会在启动时启用真实 Provider。安装方式和登录命令会在引导页及设置页中显示；验证失败也不会覆盖已保存的角色路由，演示模式仍可继续使用。
 
 ## 工作方式
 
@@ -104,12 +120,12 @@ SQLite 事件与会话记录  +  artifacts/<mission_id>/
 
 - FastAPI 创建 mission，并由后台 runner 按工作流执行各角色轮次。
 - Provider Router 根据团队配置选择真实 CLI 或演示模式，并在失败时尝试 fallback。
-- MCP 是 Agent 与 YiRen Hub 之间的通信协议，负责发言、上下文、产物和 Agent 间调用。
+- MCP 是 Agent 与 AgentClub 之间的通信协议，负责发言、上下文、产物和 Agent 间调用。
 - 前端通过 SSE 获取最新任务快照，并呈现完整轮次和诊断信息。
 
 ## 本地数据与隐私
 
-YiRen Hub 是 local-first 项目，不提供远程账号系统或托管数据服务。默认运行数据保存在：
+AgentClub 是 local-first 项目，不提供远程账号系统或托管数据服务。默认运行数据保存在：
 
 | 路径 | 内容 |
 | --- | --- |
@@ -117,7 +133,7 @@ YiRen Hub 是 local-first 项目，不提供远程账号系统或托管数据服
 | `artifacts/` | Agent 生成的任务产物 |
 | `.yiren/` | 本地启动日志和依赖状态标记 |
 
-这些目录均不会进入发布仓。Codex 和 Claude 的 MCP 配置使用临时隔离目录，不会把 YiRen Hub 的 MCP 配置永久写入用户的全局配置；Antigravity 使用带锁、恢复和异常恢复语义的受控生命周期。
+这些目录均不会进入发布仓。Codex 和 Claude 的 MCP 配置使用临时隔离目录，不会把 AgentClub 的 MCP 配置永久写入用户的全局配置；Antigravity 使用带锁、恢复和异常恢复语义的受控生命周期。
 
 在公开仓库或提交 issue 前，请不要上传上述目录。项目提供发布隐私检查：
 
@@ -177,7 +193,7 @@ cd frontend && npm run build
 ## 项目结构
 
 ```text
-yiren-hub/
+AgentClub/
 ├── backend/              # FastAPI、任务编排、Provider adapter、MCP、SQLite
 ├── config/               # Provider 与三位角色的提交配置
 ├── frontend/             # React、TypeScript、Vite 页面
@@ -230,4 +246,4 @@ python3 scripts/privacy-check.py
 
 ## License
 
-YiRen Hub 基于 [MIT License](LICENSE) 开源。
+AgentClub 基于 [MIT License](LICENSE) 开源。

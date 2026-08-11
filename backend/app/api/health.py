@@ -17,13 +17,13 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
         except Exception as exc:
             raise HTTPException(
                 status_code=503,
-                detail="YiRen Hub is not ready: {error}".format(error=exc),
+                detail="AgentClub is not ready: {error}".format(error=exc),
             ) from exc
 
         if not any(provider.id == "fake" for provider in providers):
             raise HTTPException(
                 status_code=503,
-                detail="YiRen Hub is not ready: fake provider is missing",
+                detail="AgentClub is not ready: fake provider is missing",
             )
 
         return {
