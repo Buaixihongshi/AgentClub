@@ -5,6 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-2f6f64.svg)](CHANGELOG.md)
 
+**简体中文** | [English](README_EN.md)
+
 ## AgentClub 是什么？
 
 当用户同时拥有多个 AI CLI 时，真正困难的往往不再是“如何调用模型”，而是如何分配任务、保持上下文、处理失败，并看清每个 Agent 到底完成了什么。

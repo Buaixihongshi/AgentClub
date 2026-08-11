@@ -21,7 +21,7 @@ fi
 
 mkdir -p "$TARGET/docs/architecture" "$TARGET/artifacts"
 
-for file in .gitignore LICENSE README.md CHANGELOG.md requirements.txt; do
+for file in .gitignore LICENSE README.md README_EN.md CHANGELOG.md requirements.txt; do
   cp "$ROOT/$file" "$TARGET/$file"
 done
 
