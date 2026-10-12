@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Dict, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProviderOverride(BaseModel):
@@ -22,11 +22,18 @@ class Settings(BaseModel):
     max_turns: int = 6
     max_a2a_invocations: int = 8
     cli_timeout: int = 120
+    a2a_idle_timeout: int = Field(default=90, ge=0)
     provider_overrides: Dict[str, ProviderOverride] = {}
     agent_overrides: Dict[str, AgentOverride] = {}
 
 
-_RUNTIME_FIELDS = {"use_fake_cli", "max_turns", "max_a2a_invocations", "cli_timeout"}
+_RUNTIME_FIELDS = {
+    "use_fake_cli",
+    "max_turns",
+    "max_a2a_invocations",
+    "cli_timeout",
+    "a2a_idle_timeout",
+}
 
 
 def get_settings() -> Settings:
@@ -40,6 +47,7 @@ def get_settings() -> Settings:
         max_turns=_env_int("YIREN_MAX_TURNS", default=6),
         max_a2a_invocations=_env_int("YIREN_MAX_A2A_INVOCATIONS", default=8),
         cli_timeout=_env_int("YIREN_CLI_TIMEOUT", default=120),
+        a2a_idle_timeout=_env_int("YIREN_A2A_IDLE_TIMEOUT", default=90),
     )
 
     from backend.app.storage.hub_settings import default_path, load, retire_provider
@@ -100,6 +108,7 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
         "max_turns": app_settings.max_turns,
         "max_a2a_invocations": app_settings.max_a2a_invocations,
         "cli_timeout": app_settings.cli_timeout,
+        "a2a_idle_timeout": app_settings.a2a_idle_timeout,
     }
 
     runtime = file_data.get("runtime") or {}

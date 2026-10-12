@@ -9,6 +9,7 @@ const mockView: HubSettingsView = {
     max_turns: { value: 6, source: "default" },
     max_a2a_invocations: { value: 8, source: "default" },
     cli_timeout: { value: 120, source: "default" },
+    a2a_idle_timeout: { value: 90, source: "default" },
   },
   providers: [
     { id: "fake", label: "Fake", enabled: { value: true, source: "committed" } },

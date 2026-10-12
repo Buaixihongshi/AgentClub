@@ -8,7 +8,7 @@ import {
   formatMissionStatus,
   formatTurnIdentity,
 } from "../lib/missionView";
-import type { A2AInvocationRecord, MissionDetail, ThreadEvent, TurnView } from "../types";
+import type { A2AInvocationRecord, MissionDetail, ThreadEvent, TurnRecord, TurnView } from "../types";
 
 describe("formatTurnIdentity", () => {
   it("shows persona name prominently with role hint and provider", () => {
@@ -512,4 +512,64 @@ it("keeps unmatched A2A delivery tasks visible as standalone timeline entries", 
   expect(turns[1].id).toBe("a2a:99");
   expect(turns[1].a2aInvocation?.purpose).toBe("摸清现状数据层");
   expect(turns[1].content).toBe("等待王也接力");
+});
+
+it("renders a terminal A2A target as blocked instead of waiting", () => {
+  const invocation: A2AInvocationRecord = {
+    event_id: 100,
+    sender_agent_id: "chulan",
+    sender_turn_id: "turn_1",
+    target_agent_id: "baobao",
+    target_turn_id: "turn_2",
+    purpose: "继续修复",
+    mode: "fire_and_forget",
+    created_at: "2026-05-11T00:00:01Z",
+  };
+  const turn: TurnRecord = {
+    turn_id: "turn_2",
+    agent_id: "baobao",
+    provider_id: "claude",
+    status: "blocked",
+    attempts: [{
+      attempt: 1,
+      provider_id: "claude",
+      status: "blocked",
+      summary: "idle timeout after 90s",
+    }],
+    message_ids: [],
+  };
+  const views = buildTurnViews([], [invocation], { turns: [turn] });
+
+  expect(views).toHaveLength(1);
+  expect(views[0].eventType).toBe("a2a.blocked");
+  expect(views[0].content).toContain("冯宝宝接力已阻塞");
+  expect(views[0].content).toContain("idle timeout after 90s");
+});
+
+it("attaches an active A2A invocation to the live bubble without duplication", () => {
+  const invocation: A2AInvocationRecord = {
+    event_id: 101,
+    sender_agent_id: "chulan",
+    sender_turn_id: "turn_1",
+    target_agent_id: "baobao",
+    target_turn_id: "turn_2",
+    purpose: "继续修复",
+    mode: "fire_and_forget",
+    created_at: "2026-05-11T00:00:01Z",
+  };
+  const views = buildTurnViews([], [invocation], {
+    livePartial: { turn_2: "" },
+    turns: [{
+      turn_id: "turn_2",
+      agent_id: "baobao",
+      provider_id: "claude",
+      status: "started",
+      attempts: [{ attempt: 1, provider_id: "claude", status: "started" }],
+      message_ids: [],
+    }],
+  });
+
+  expect(views).toHaveLength(1);
+  expect(views[0].id).toBe("live:turn_2");
+  expect(views[0].a2aInvocation?.event_id).toBe(101);
 });

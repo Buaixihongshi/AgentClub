@@ -44,12 +44,18 @@ class ClaudeStreamParser:
         inner_type = inner.get("type")
         if inner_type == "content_block_start":
             block = inner.get("content_block")
-            if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == PUBLISH_MESSAGE_TOOL:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                return None
+            tool_name = block.get("name")
+            if tool_name == PUBLISH_MESSAGE_TOOL:
                 index = inner.get("index")
                 self._publish_block_index = index if isinstance(index, int) else None
                 self._publish_args = ""
                 self._published_content = ""
-            return None
+            return StreamEvent(
+                type=StreamEventType.TOOL_ATTEMPT,
+                tool_name=tool_name if isinstance(tool_name, str) else None,
+            )
         if inner_type == "content_block_stop":
             if inner.get("index") == self._publish_block_index:
                 self._publish_block_index = None

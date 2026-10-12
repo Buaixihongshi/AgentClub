@@ -1286,6 +1286,52 @@ def test_provider_router_passes_cli_timeout(
     mock_proc.communicate.assert_called_once_with(timeout=300)
 
 
+def test_provider_router_scopes_idle_timeout_to_a2a_turns(
+    repository,
+    temp_settings,
+    tmp_path,
+):
+    config_dir = tmp_path / "config"
+    _write_provider_config(
+        config_dir,
+        [{
+            "id": "codex",
+            "label": "Codex",
+            "command": "codex",
+            "args": ["exec", "--json"],
+            "enabled": True,
+            "mcp_enabled": True,
+        }],
+    )
+    repository.create_mission(Mission(id="m_1", title="Plan", goal="report"))
+
+    with patch("backend.app.adapters.provider_router.MCPSubprocessAdapter") as adapter_cls:
+        adapter_cls.return_value.run_turn.return_value = TurnOutcome(status=TurnStatus.COMPLETED)
+        adapter = ProviderRouterAdapter(
+            config_dir,
+            cli_timeout=240,
+            a2a_idle_timeout=90,
+            database_path=temp_settings.database_path,
+            artifact_root=temp_settings.artifact_root,
+        )
+        regular_tools = MCPTools(repository, temp_settings.artifact_root)
+        adapter.run_turn("m_1", "chulan", "t_regular", "codex", "prompt", regular_tools)
+        regular_kwargs = adapter_cls.call_args.kwargs
+
+        a2a_tools = MCPTools(
+            repository,
+            temp_settings.artifact_root,
+            current_step_origin="a2a",
+        )
+        adapter.run_turn("m_1", "baobao", "t_a2a", "codex", "prompt", a2a_tools)
+        a2a_kwargs = adapter_cls.call_args.kwargs
+
+    assert regular_kwargs["timeout"] == 240
+    assert regular_kwargs["idle_timeout"] == 0
+    assert a2a_kwargs["timeout"] == 240
+    assert a2a_kwargs["idle_timeout"] == 90
+
+
 # ---------------------------------------------------------------------------
 # build_failure_summary unit tests
 # ---------------------------------------------------------------------------

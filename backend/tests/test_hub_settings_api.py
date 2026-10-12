@@ -46,6 +46,7 @@ def test_get_returns_resolved_view_with_sources(tmp_path):
     assert rt["max_turns"]["value"] == 6
     assert rt["max_turns"]["source"] == "default"
     assert rt["use_fake_cli"]["value"] is True
+    assert rt["a2a_idle_timeout"] == {"value": 90, "source": "default"}
     providers = {p["id"]: p for p in data["providers"]}
     assert providers["claude"]["enabled"]["value"] is False
     assert providers["claude"]["enabled"]["source"] == "committed"
@@ -106,6 +107,28 @@ def test_put_validates_runtime_types(tmp_path):
     client, _ = _make_client(tmp_path)
     resp = client.put("/api/hub/settings", json={
         "runtime": {"max_turns": "abc"},
+    })
+    assert resp.status_code == 422
+
+
+def test_put_persists_a2a_idle_timeout_and_allows_disabling(tmp_path):
+    client, settings = _make_client(tmp_path)
+    resp = client.put("/api/hub/settings", json={
+        "runtime": {"a2a_idle_timeout": 0},
+    })
+    assert resp.status_code == 200
+    assert resp.json()["runtime"]["a2a_idle_timeout"] == {
+        "value": 0,
+        "source": "user",
+    }
+    from backend.app.storage.hub_settings import default_path, load
+    assert load(default_path(settings))["runtime"]["a2a_idle_timeout"] == 0
+
+
+def test_put_rejects_negative_a2a_idle_timeout(tmp_path):
+    client, _ = _make_client(tmp_path)
+    resp = client.put("/api/hub/settings", json={
+        "runtime": {"a2a_idle_timeout": -1},
     })
     assert resp.status_code == 422
 

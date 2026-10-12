@@ -465,4 +465,46 @@ describe("MissionSideRail", () => {
     expect(within(routePanel).getByText("第三条接力")).toBeInTheDocument();
     expect(within(routePanel).getByText("第四条接力")).toBeInTheDocument();
   });
+
+  it("shows a blocked target turn instead of a pending A2A handoff", () => {
+    render(
+      <MissionSideRail
+        detail={{
+          ...detail,
+          turns: [
+            ...(detail.turns ?? []),
+            {
+              turn_id: "turn_3_blocked",
+              agent_id: "baobao",
+              provider_id: "claude",
+              status: "blocked",
+              attempts: [{
+                attempt: 1,
+                provider_id: "claude",
+                status: "blocked",
+                summary: "idle timeout after 90s",
+              }],
+              message_ids: [],
+            },
+          ],
+          a2a_invocations: [{
+            event_id: 5,
+            sender_agent_id: "chulan",
+            sender_turn_id: "turn_1",
+            target_agent_id: "baobao",
+            target_turn_id: "turn_3_blocked",
+            purpose: "继续修复",
+            mode: "wait_reply",
+            created_at: "2026-04-30T01:01:04Z",
+          }],
+        }}
+        providerStatus={{ providers: [], loading: false, error: null, refresh: vi.fn() }}
+      />,
+    );
+
+    const routePanel = screen.getByRole("region", { name: "A2A 路由" });
+    expect(within(routePanel).queryByText("等待 1 条 wait_reply 回复")).not.toBeInTheDocument();
+    fireEvent.click(within(routePanel).getByText("A2A 路由"));
+    expect(within(routePanel).getByText("接力已阻塞")).toBeInTheDocument();
+  });
 });

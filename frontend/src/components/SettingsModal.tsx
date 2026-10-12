@@ -19,6 +19,7 @@ const RUNTIME_LABELS: Record<string, string> = {
   max_turns: "最大 Turn 数",
   max_a2a_invocations: "最大 A2A 调用数",
   cli_timeout: "CLI 超时（秒）",
+  a2a_idle_timeout: "A2A 无进展超时（秒，0=关闭）",
 };
 
 interface AgentDraft {
@@ -549,7 +550,8 @@ export function SettingsModal({
                   ) : (
                     <input
                       id={"rt-" + key}
-                      type="number"
+                          type="number"
+                          min={key === "a2a_idle_timeout" ? 0 : undefined}
                       data-testid={"input-" + key}
                       value={currentValue}
                       onChange={(e) =>

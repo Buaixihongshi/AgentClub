@@ -53,7 +53,7 @@ export function MissionSideRail({
       {interrupts !== undefined ? <InterruptQueuePanel interrupts={interrupts} /> : null}
 
       {a2aInvocations !== undefined ? (
-        <A2ABudgetPanel invocations={a2aInvocations} maxInvocations={8} />
+        <A2ABudgetPanel invocations={a2aInvocations} turns={turns ?? []} maxInvocations={8} />
       ) : null}
 
       <ArtifactPanel missionId={mission?.id} artifacts={artifacts} />
@@ -239,14 +239,22 @@ function InterruptQueuePanel({ interrupts }: { interrupts: InterruptRecord[] }) 
 
 function A2ABudgetPanel({
   invocations,
+  turns,
   maxInvocations,
 }: {
   invocations: A2AInvocationRecord[];
+  turns: TurnRecord[];
   maxInvocations: number;
 }) {
   const used = invocations.length;
   const hot = used / maxInvocations >= 0.7;
-  const pendingWaitCount = invocations.filter((i) => i.mode === "wait_reply" && !i.reply_text).length;
+  const pendingWaitCount = invocations.filter((invocation) => {
+    if (invocation.mode !== "wait_reply" || invocation.reply_text || invocation.reply_failed) {
+      return false;
+    }
+    const targetTurn = findA2ATargetTurn(invocation, turns);
+    return targetTurn?.status !== "blocked" && targetTurn?.status !== "failed";
+  }).length;
   if (invocations.length === 0) {
     return (
       <section className={`side-panel ${hot ? "side-panel-warning" : ""}`} aria-label="A2A 路由">
@@ -272,10 +280,17 @@ function A2ABudgetPanel({
         <ul className="runtime-list">
           {invocations.map((item) => {
             const arrow = item.mode === "wait_reply" ? "⇌" : "→";
+            const targetTurn = findA2ATargetTurn(item, turns);
+            const targetFailed = Boolean(
+              item.reply_failed
+              || targetTurn?.status === "blocked"
+              || targetTurn?.status === "failed",
+            );
             return (
-              <li key={String(item.event_id)} className={item.reply_failed ? "a2a-reply-failed" : ""}>
+              <li key={String(item.event_id)} className={targetFailed ? "a2a-reply-failed" : ""}>
                 <strong>{item.sender_agent_id} {arrow} {item.target_agent_id}</strong>
                 <span>{item.purpose}</span>
+                <span>{formatA2ATargetStatus(item, targetTurn)}</span>
                 {item.mode === "wait_reply" && item.reply_text && (
                   <div className="a2a-reply-preview" title={item.reply_text}>
                     ↩ {item.reply_text.slice(0, 80)}{item.reply_text.length > 80 ? "…" : ""}
@@ -288,6 +303,28 @@ function A2ABudgetPanel({
       </details>
     </section>
   );
+}
+
+function findA2ATargetTurn(
+  invocation: A2AInvocationRecord,
+  turns: TurnRecord[],
+): TurnRecord | undefined {
+  return invocation.target_turn_id
+    ? turns.find((turn) => turn.turn_id === invocation.target_turn_id)
+    : undefined;
+}
+
+function formatA2ATargetStatus(
+  invocation: A2AInvocationRecord,
+  turn?: TurnRecord,
+): string {
+  if (invocation.reply_failed) return "回复失败";
+  if (turn?.status === "blocked") return "接力已阻塞";
+  if (turn?.status === "failed") return "接力失败";
+  if (invocation.reply_text) return "已回复";
+  if (turn?.status === "completed") return "已接力";
+  if (turn?.status === "started") return "进行中";
+  return "等待接力";
 }
 
 function formatTurnStatus(status: TurnRecord["status"]): string {

@@ -84,6 +84,14 @@ def test_codex_item_completed_non_agent_message_returns_none():
     assert parse_stream_line("codex", line) is None
 
 
+def test_codex_tool_item_emits_tool_attempt():
+    line = '{"type":"item.started","item":{"id":"i_2","type":"mcp_tool_call","name":"read_context"}}'
+    ev = parse_stream_line("codex", line)
+    assert ev is not None
+    assert ev.type is StreamEventType.TOOL_ATTEMPT
+    assert ev.tool_name == "read_context"
+
+
 def test_codex_turn_completed_emits_finished():
     line = '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":2}}'
     ev = parse_stream_line("codex", line)
@@ -148,7 +156,11 @@ def test_claude_ignores_input_json_delta_for_non_publish_message_tools():
         '{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"content\\": \\"不要显示\\"}"}}}',
     ]
 
-    assert [parser.parse(line) for line in lines] == [None, None]
+    events = [parser.parse(line) for line in lines]
+    assert events[0] is not None
+    assert events[0].type is StreamEventType.TOOL_ATTEMPT
+    assert events[0].tool_name == "ToolSearch"
+    assert events[1] is None
 
 
 def test_claude_message_start_returns_none():
