@@ -68,3 +68,13 @@ def test_max_a2a_invocations_reads_env(monkeypatch):
     settings = get_settings()
 
     assert settings.max_a2a_invocations == 3
+
+
+def test_a2a_idle_timeout_defaults_to_90(monkeypatch):
+    monkeypatch.delenv("YIREN_A2A_IDLE_TIMEOUT", raising=False)
+    assert get_settings().a2a_idle_timeout == 90
+
+
+def test_a2a_idle_timeout_reads_env(monkeypatch):
+    monkeypatch.setenv("YIREN_A2A_IDLE_TIMEOUT", "45")
+    assert get_settings().a2a_idle_timeout == 45

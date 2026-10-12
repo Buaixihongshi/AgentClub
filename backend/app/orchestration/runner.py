@@ -214,6 +214,7 @@ class MissionRunner:
                 a2a_budget_used=lambda: a2a_used + len(a2a_queue),
                 peek_resume_chain=peek_resume_chain,
                 is_target_scheduled=lambda t: t in remaining_workflow_agents_for_turn,
+                current_step_origin=step.origin,
             )
 
             provider_candidates = providers[effective_agent_id]

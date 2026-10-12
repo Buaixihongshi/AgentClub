@@ -32,6 +32,7 @@ import sys
 import tempfile
 import threading
 import time
+from enum import Enum
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional
 from uuid import uuid4
@@ -60,6 +61,42 @@ from backend.app.storage.repository import Repository
 
 MCP_SERVER_NAME = "yiren_hub"
 
+_MEANINGFUL_TURN_EVENT_TYPES = {
+    "agent.thought",
+    "message",
+    "mcp.receipt",
+    "tool.call",
+    "tool.error",
+    "tool.result",
+}
+_MEANINGFUL_STREAM_EVENT_TYPES = {
+    StreamEventType.SESSION_STARTED,
+    StreamEventType.PARTIAL_TEXT,
+    StreamEventType.TOOL_ATTEMPT,
+}
+
+
+class ProcessWaitReason(str, Enum):
+    EXITED = "exited"
+    HARD_TIMEOUT = "hard_timeout"
+    IDLE_TIMEOUT = "idle_timeout"
+
+
+class TurnActivityLease:
+    """Thread-safe wall-clock timestamp for meaningful provider activity."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_activity_at = time.time()
+
+    def touch(self) -> None:
+        with self._lock:
+            self._last_activity_at = time.time()
+
+    def last_activity_at(self) -> float:
+        with self._lock:
+            return self._last_activity_at
+
 
 class MCPSubprocessAdapter(CLIAdapter):
     def __init__(
@@ -72,6 +109,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         mcp_python: Optional[str] = None,
         mcp_module: str = "backend.app.mcp.server",
         timeout: int = 120,
+        idle_timeout: int = 0,
         extra_env: Optional[dict] = None,
         on_config_written: Optional[Callable[[Path], None]] = None,
         live_progress: Optional[LiveProgressRegistry] = None,
@@ -85,6 +123,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         self.mcp_python = mcp_python or sys.executable
         self.mcp_module = mcp_module
         self.timeout = timeout
+        self.idle_timeout = max(0, idle_timeout)
         self.extra_env = dict(extra_env or {})
         self.on_config_written = on_config_written
         self.live_progress = live_progress or get_live_progress_registry()
@@ -132,6 +171,18 @@ class MCPSubprocessAdapter(CLIAdapter):
     ) -> TurnOutcome:
         repository = tools.repository
         cursor = _max_event_id(repository, mission_id)
+        activity_cursor = [cursor]
+        activity = TurnActivityLease()
+
+        def _refresh_mcp_activity() -> None:
+            events = repository.list_events_after(mission_id, activity_cursor[0])
+            for event in events:
+                activity_cursor[0] = max(activity_cursor[0], int(event.id))
+                if (
+                    event.event_type in _MEANINGFUL_TURN_EVENT_TYPES
+                    and event.payload.get("turn_id") == turn_id
+                ):
+                    activity.touch()
 
         with tempfile.TemporaryDirectory(prefix="yiren-mcp-") as tmpdir, \
                 contextlib.ExitStack() as guard_stack:
@@ -259,6 +310,8 @@ class MCPSubprocessAdapter(CLIAdapter):
                         ev = stream_parser.parse(line)
                         if ev is None:
                             continue
+                        if ev.type in _MEANINGFUL_STREAM_EVENT_TYPES:
+                            activity.touch()
                         if ev.type is StreamEventType.PARTIAL_TEXT and ev.text:
                             self.live_progress.append_text(mission_id, turn_id, ev.text)
                         if ev.type is StreamEventType.SESSION_STARTED and ev.session_id:
@@ -290,8 +343,16 @@ class MCPSubprocessAdapter(CLIAdapter):
 
             try:
                 try:
-                    proc.wait(timeout=self.timeout)
+                    wait_reason = _wait_for_process_with_activity(
+                        proc,
+                        hard_timeout=self.timeout,
+                        idle_timeout=self.idle_timeout,
+                        last_activity_at=activity.last_activity_at,
+                        refresh_activity=_refresh_mcp_activity,
+                    )
                 except subprocess.TimeoutExpired:
+                    wait_reason = ProcessWaitReason.HARD_TIMEOUT
+                if wait_reason is not ProcessWaitReason.EXITED:
                     kill_process_tree(proc)
                     try:
                         proc.wait(timeout=5)
@@ -306,14 +367,27 @@ class MCPSubprocessAdapter(CLIAdapter):
                     # was likely not persisted — do not surface that sid upstream.
                     if stream_ended_with_error[0]:
                         captured_session_id[0] = None
-                    return TurnOutcome(
-                        status=TurnStatus.BLOCKED,
-                        summary=_augment_agy_summary(build_failure_summary(
+                    if wait_reason is ProcessWaitReason.IDLE_TIMEOUT:
+                        noise = stderr.strip() or stdout.strip()
+                        detail = "A2A idle deadline exceeded without meaningful activity"
+                        if noise:
+                            detail = f"{detail}\n{noise}"
+                        if len(detail) > 200:
+                            detail = detail[:200] + "…"
+                        summary = (
+                            f"[{provider_id}] idle timeout after "
+                            f"{self.idle_timeout}s {detail}"
+                        )
+                    else:
+                        summary = build_failure_summary(
                             provider_id,
                             timeout=self.timeout,
                             stderr_snippet=stderr.strip(),
                             stdout_snippet=stdout.strip(),
-                        )),
+                        )
+                    return TurnOutcome(
+                        status=TurnStatus.BLOCKED,
+                        summary=_augment_agy_summary(summary),
                         session_id=captured_session_id[0],
                     )
 
@@ -772,6 +846,39 @@ def _seed_gemini_auth(gemini_home: Path) -> None:
 def _toml_string(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return '"{v}"'.format(v=escaped)
+
+
+def _wait_for_process_with_activity(
+    proc: subprocess.Popen,
+    *,
+    hard_timeout: int,
+    idle_timeout: int,
+    last_activity_at: Callable[[], float],
+    refresh_activity: Callable[[], None],
+) -> ProcessWaitReason:
+    """Wait until exit, hard deadline, or an optional inactivity deadline."""
+    hard_deadline = time.time() + max(0, hard_timeout)
+    while True:
+        if idle_timeout > 0:
+            refresh_activity()
+        now = time.time()
+        if now >= hard_deadline:
+            return ProcessWaitReason.HARD_TIMEOUT
+
+        idle_deadline: Optional[float] = None
+        if idle_timeout > 0:
+            idle_deadline = last_activity_at() + idle_timeout
+            if now >= idle_deadline:
+                return ProcessWaitReason.IDLE_TIMEOUT
+
+        remaining = hard_deadline - now
+        if idle_deadline is not None:
+            remaining = min(remaining, idle_deadline - now)
+        try:
+            proc.wait(timeout=min(remaining, 1.0))
+            return ProcessWaitReason.EXITED
+        except subprocess.TimeoutExpired:
+            continue
 
 
 def _max_event_id(repository: Repository, mission_id: str) -> int:

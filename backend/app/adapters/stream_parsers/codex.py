@@ -15,12 +15,26 @@ def parse(line: str) -> Optional[StreamEvent]:
         tid = event.get("thread_id")
         if isinstance(tid, str):
             return StreamEvent(type=StreamEventType.SESSION_STARTED, session_id=tid)
-    elif etype == "item.completed":
+    elif etype in {"item.started", "item.completed"}:
         item = event.get("item")
-        if isinstance(item, dict) and item.get("type") == "agent_message":
+        if not isinstance(item, dict):
+            return None
+        item_type = item.get("type")
+        if item_type == "agent_message" and etype == "item.completed":
             text = item.get("text")
             if isinstance(text, str) and text:
                 return StreamEvent(type=StreamEventType.PARTIAL_TEXT, text=text)
+        if item_type in {
+            "command_execution",
+            "dynamic_tool_call",
+            "mcp_tool_call",
+            "web_search",
+        }:
+            tool_name = item.get("name") or item.get("command") or item_type
+            return StreamEvent(
+                type=StreamEventType.TOOL_ATTEMPT,
+                tool_name=str(tool_name),
+            )
     elif etype == "turn.completed":
         usage = _parse_usage(event)
         return StreamEvent(type=StreamEventType.FINISHED, usage=usage)

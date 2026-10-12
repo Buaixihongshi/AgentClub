@@ -20,12 +20,14 @@ class ProviderRouterAdapter(CLIAdapter):
         config_dir: Path,
         *,
         cli_timeout: int = 120,
+        a2a_idle_timeout: int = 90,
         database_path: Optional[Path] = None,
         artifact_root: Optional[Path] = None,
         provider_overrides: Optional[dict[str, ProviderOverride]] = None,
     ):
         self.config_dir = config_dir
         self.cli_timeout = cli_timeout
+        self.a2a_idle_timeout = max(0, a2a_idle_timeout)
         self.database_path = database_path
         self.artifact_root = artifact_root
         self.provider_overrides = provider_overrides or {}
@@ -106,6 +108,11 @@ class ProviderRouterAdapter(CLIAdapter):
                 db_path=self.database_path,
                 artifact_root=self.artifact_root,
                 timeout=self.cli_timeout,
+                idle_timeout=(
+                    self.a2a_idle_timeout
+                    if tools.current_step_origin in {"a2a", "a2a_resume"}
+                    else 0
+                ),
                 gemini_home_override=gemini_home,
                 gemini_resume_session_id=resume_sid,
             )

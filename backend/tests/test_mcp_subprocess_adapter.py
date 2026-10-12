@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.adapters.mcp_subprocess import MCPSubprocessAdapter, _augment_prompt_for_mcp
+from backend.app.adapters.mcp_subprocess import (
+    MCPSubprocessAdapter,
+    ProcessWaitReason,
+    _augment_prompt_for_mcp,
+    _wait_for_process_with_activity,
+)
 from backend.app.domain.models import (
     Conversation,
     Message,
@@ -142,6 +147,121 @@ def _make_streaming_proc(stdout_lines: list[str], returncode: int = 0):
     proc.stdout.readline.side_effect = lines
     proc.stderr.readline.side_effect = [""]
     return proc
+
+
+def test_activity_wait_uses_idle_deadline(monkeypatch):
+    import subprocess as _subprocess
+
+    times = iter([100.0, 100.0, 191.0])
+    monkeypatch.setattr(
+        "backend.app.adapters.mcp_subprocess.time.time",
+        lambda: next(times),
+    )
+
+    class SilentProc:
+        def wait(self, timeout):
+            raise _subprocess.TimeoutExpired(["fake"], timeout)
+
+    reason = _wait_for_process_with_activity(
+        SilentProc(),
+        hard_timeout=240,
+        idle_timeout=90,
+        last_activity_at=lambda: 100.0,
+        refresh_activity=lambda: None,
+    )
+    assert reason is ProcessWaitReason.IDLE_TIMEOUT
+
+
+def test_activity_wait_renews_idle_deadline(monkeypatch):
+    import subprocess as _subprocess
+
+    times = iter([100.0, 100.0, 150.0, 170.0, 241.0])
+    monkeypatch.setattr(
+        "backend.app.adapters.mcp_subprocess.time.time",
+        lambda: next(times),
+    )
+    activity = {"at": 100.0, "refreshes": 0}
+
+    def refresh():
+        activity["refreshes"] += 1
+        if activity["refreshes"] == 2:
+            activity["at"] = 150.0
+
+    class ActiveProc:
+        def wait(self, timeout):
+            raise _subprocess.TimeoutExpired(["fake"], timeout)
+
+    reason = _wait_for_process_with_activity(
+        ActiveProc(),
+        hard_timeout=300,
+        idle_timeout=90,
+        last_activity_at=lambda: activity["at"],
+        refresh_activity=refresh,
+    )
+    assert reason is ProcessWaitReason.IDLE_TIMEOUT
+    assert activity["refreshes"] == 4
+
+
+def test_activity_wait_can_disable_idle_timeout(monkeypatch):
+    import subprocess as _subprocess
+
+    times = iter([100.0, 100.0, 221.0])
+    monkeypatch.setattr(
+        "backend.app.adapters.mcp_subprocess.time.time",
+        lambda: next(times),
+    )
+
+    class SilentProc:
+        def wait(self, timeout):
+            raise _subprocess.TimeoutExpired(["fake"], timeout)
+
+    reason = _wait_for_process_with_activity(
+        SilentProc(),
+        hard_timeout=120,
+        idle_timeout=0,
+        last_activity_at=lambda: 0.0,
+        refresh_activity=lambda: None,
+    )
+    assert reason is ProcessWaitReason.HARD_TIMEOUT
+
+
+def test_adapter_blocks_and_kills_process_on_a2a_idle_timeout(
+    repository, temp_settings, seeded_mission,
+):
+    import unittest.mock as _mock
+
+    tools = MCPTools(repository, temp_settings.artifact_root)
+    proc = _make_streaming_proc([], returncode=-15)
+    adapter = MCPSubprocessAdapter(
+        command=sys.executable,
+        args=[str(FAKE_CLI)],
+        db_path=temp_settings.database_path,
+        artifact_root=temp_settings.artifact_root,
+        timeout=240,
+        idle_timeout=90,
+    )
+
+    with _mock.patch(
+        "backend.app.adapters.mcp_subprocess.subprocess.Popen",
+        return_value=proc,
+    ), _mock.patch(
+        "backend.app.adapters.mcp_subprocess._wait_for_process_with_activity",
+        return_value=ProcessWaitReason.IDLE_TIMEOUT,
+    ), _mock.patch(
+        "backend.app.adapters.mcp_subprocess.kill_process_tree",
+    ) as kill:
+        outcome = adapter.run_turn(
+            seeded_mission.id,
+            "baobao",
+            "t_idle",
+            "codex",
+            "请发声",
+            tools,
+        )
+
+    assert outcome.status == TurnStatus.BLOCKED
+    assert "idle timeout after 90s" in (outcome.summary or "")
+    kill.assert_called_once_with(proc)
 
 
 def test_claude_writes_json_mcp_config(repository, temp_settings, seeded_mission):

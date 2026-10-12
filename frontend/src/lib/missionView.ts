@@ -183,6 +183,17 @@ export function buildTurnViews(
     if (existingTurnIds.has(turnId)) continue;
     const turnRec = turnRecords.find((t) => t.turn_id === turnId);
     if (!turnRec || turnRec.status !== "started") continue; // only show for in-flight turns
+    let invocationIndex = pendingInvocations.findIndex(
+      (item) => item.target_turn_id === turnId,
+    );
+    if (invocationIndex < 0) {
+      invocationIndex = pendingInvocations.findIndex(
+        (item) => item.target_turn_id == null && item.target_agent_id === turnRec.agent_id,
+      );
+    }
+    const a2aInvocation = invocationIndex >= 0
+      ? pendingInvocations.splice(invocationIndex, 1)[0]
+      : undefined;
     agentTurnCount += 1;
     synthetic.push({
       id: `live:${turnId}`,
@@ -197,29 +208,50 @@ export function buildTurnViews(
       createdAt: turnRec.started_at ?? new Date().toISOString(),
       metadata: { turn_id: turnId, provider_id: turnRec.provider_id },
       isStatusEvent: false,
+      a2aInvocation,
       partialText: partial,
       thoughts: thoughtsByTurn.get(turnId) ?? [],
       toolCalls: toolCallsByTurn.get(turnId) ?? [],
     });
   }
 
-  const unmatchedA2A = pendingInvocations.map((invocation): TurnView => ({
-    id: `a2a:${invocation.event_id}`,
-    turnIndex: 0,
-    role: "system",
-    eventType: "a2a.pending",
-    content: `等待${formatAgentName(invocation.target_agent_id)}接力`,
-    capability: "coordination",
-    providerLabel: "A2A",
-    personaLabel: formatAgentName(invocation.sender_agent_id),
-    agentId: invocation.target_agent_id,
-    createdAt: invocation.created_at,
-    metadata: {},
-    isStatusEvent: true,
-    a2aInvocation: invocation,
-  }));
+  const unmatchedA2A = pendingInvocations.map((invocation): TurnView => {
+    const targetTurn = invocation.target_turn_id
+      ? turnRecords.find((turn) => turn.turn_id === invocation.target_turn_id)
+      : undefined;
+    const targetName = formatAgentName(invocation.target_agent_id);
+    return {
+      id: `a2a:${invocation.event_id}`,
+      turnIndex: 0,
+      role: "system",
+      eventType: `a2a.${targetTurn?.status ?? "pending"}`,
+      content: describeA2ATargetTurn(targetName, targetTurn),
+      capability: "coordination",
+      providerLabel: targetTurn?.provider_id || "A2A",
+      personaLabel: formatAgentName(invocation.sender_agent_id),
+      agentId: invocation.target_agent_id,
+      createdAt: targetTurn?.completed_at ?? targetTurn?.started_at ?? invocation.created_at,
+      metadata: targetTurn
+        ? { turn_id: targetTurn.turn_id, provider_id: targetTurn.provider_id }
+        : {},
+      isStatusEvent: true,
+      a2aInvocation: invocation,
+    };
+  });
 
   return [...baseViews, ...unmatchedA2A, ...synthetic];
+}
+
+function describeA2ATargetTurn(targetName: string, turn?: TurnRecord): string {
+  if (!turn) return `等待${targetName}接力`;
+  if (turn.status === "started") return `${targetName}正在接力`;
+  if (turn.status === "completed") return `${targetName}接力已结束，但未发布消息`;
+  const latestAttempt = [...turn.attempts].reverse().find(
+    (attempt) => attempt.error || attempt.summary,
+  );
+  const detail = latestAttempt?.error ?? latestAttempt?.summary;
+  const label = turn.status === "failed" ? "接力失败" : "接力已阻塞";
+  return detail ? `${targetName}${label}：${detail}` : `${targetName}${label}`;
 }
 
 function formatAgentName(agentId: string): string {

@@ -36,6 +36,7 @@ class MCPTools:
         peek_resume_chain: Optional[Callable[[str], List[str]]] = None,
         is_target_scheduled: Optional[Callable[[str], bool]] = None,
         receipt_id: Optional[str] = None,
+        current_step_origin: Optional[str] = None,
     ):
         self.repository = repository
         self.artifact_root = artifact_root
@@ -46,6 +47,12 @@ class MCPTools:
         self._peek_resume_chain = peek_resume_chain
         self._is_target_scheduled = is_target_scheduled
         self.receipt_id = receipt_id
+        self._current_step_origin = current_step_origin
+
+    @property
+    def current_step_origin(self) -> Optional[str]:
+        """Workflow origin for the active turn, used by host execution policy."""
+        return self._current_step_origin
 
     def read_context(
         self,

@@ -63,6 +63,7 @@ def _build_mission_adapter(settings: Settings) -> CLIAdapter:
     return ProviderRouterAdapter(
         settings.config_dir,
         cli_timeout=settings.cli_timeout,
+        a2a_idle_timeout=settings.a2a_idle_timeout,
         database_path=settings.database_path,
         artifact_root=settings.artifact_root,
         provider_overrides=settings.provider_overrides,

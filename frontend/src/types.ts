@@ -300,6 +300,7 @@ export interface HubSettingsRuntimeView {
   max_turns: SettingField<number>;
   max_a2a_invocations: SettingField<number>;
   cli_timeout: SettingField<number>;
+  a2a_idle_timeout: SettingField<number>;
 }
 
 export interface HubSettingsAgentView {
@@ -326,6 +327,7 @@ export interface RuntimePatch {
   max_turns?: number;
   max_a2a_invocations?: number;
   cli_timeout?: number;
+  a2a_idle_timeout?: number;
 }
 
 export interface AgentOverridePatch {

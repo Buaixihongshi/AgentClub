@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.config.providers import load_cli_providers
 from backend.app.domain.agent_registry import get_agent_registry
@@ -20,6 +20,7 @@ class RuntimePatch(BaseModel):
     max_turns: Optional[int] = None
     max_a2a_invocations: Optional[int] = None
     cli_timeout: Optional[int] = None
+    a2a_idle_timeout: Optional[int] = Field(default=None, ge=0)
 
 
 class AgentOverridePatch(BaseModel):
@@ -60,6 +61,7 @@ def build_router(settings: Settings) -> APIRouter:
             "max_turns": 6,
             "max_a2a_invocations": 8,
             "cli_timeout": 120,
+            "a2a_idle_timeout": 90,
         }
         for key, default in _RUNTIME_DEFAULTS.items():
             current = getattr(settings, key)
@@ -175,7 +177,13 @@ def build_router(settings: Settings) -> APIRouter:
 
         if patch.runtime:
             runtime_section = existing.setdefault("runtime", {})
-            for field_name in ("use_fake_cli", "max_turns", "max_a2a_invocations", "cli_timeout"):
+            for field_name in (
+                "use_fake_cli",
+                "max_turns",
+                "max_a2a_invocations",
+                "cli_timeout",
+                "a2a_idle_timeout",
+            ):
                 val = getattr(patch.runtime, field_name)
                 if val is not None:
                     runtime_section[field_name] = val
