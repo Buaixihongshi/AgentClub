@@ -1,4 +1,4 @@
-import type { ArtifactContent, Conversation, ConversationDetail, ConversationSummary, HealthView, HubSettingsPatch, HubSettingsView, Mission, MissionDetail, OnboardingFirstChatResponse, OnboardingView } from "../types";
+import type { ArtifactContent, Conversation, ConversationDetail, ConversationSummary, HealthView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository } from "../types";
 
 const API_ROOT = "";
 
@@ -183,4 +183,60 @@ export async function activateOnboardingProvider(providerId: string): Promise<On
     method: "POST",
   });
   return parseJson<OnboardingFirstChatResponse>(response, "真实 CLI 接管失败");
+}
+
+export async function listRegisteredRepositories(): Promise<RegisteredRepository[]> {
+  const response = await fetch(`${API_ROOT}/api/maintenance/repositories`);
+  return parseJson<RegisteredRepository[]>(response, "加载代码仓库失败");
+}
+
+export async function registerRepository(payload: {
+  name: string;
+  local_path: string;
+  github_repo: string;
+  validation_commands: string[][];
+}): Promise<RegisteredRepository> {
+  const response = await fetch(`${API_ROOT}/api/maintenance/repositories`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<RegisteredRepository>(response, "登记代码仓库失败");
+}
+
+export async function listMaintenanceRuns(): Promise<MaintenanceRun[]> {
+  const response = await fetch(`${API_ROOT}/api/maintenance/runs`);
+  return parseJson<MaintenanceRun[]>(response, "加载维护任务失败");
+}
+
+export async function createMaintenanceRun(payload: {
+  repository_id: string;
+  goal: string;
+  issue_url?: string;
+}): Promise<MaintenanceRunDetail> {
+  const response = await fetch(`${API_ROOT}/api/maintenance/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<MaintenanceRunDetail>(response, "创建维护任务失败");
+}
+
+export async function getMaintenanceRun(runId: string): Promise<MaintenanceRunDetail> {
+  const response = await fetch(`${API_ROOT}/api/maintenance/runs/${runId}`);
+  return parseJson<MaintenanceRunDetail>(response, "加载维护任务详情失败");
+}
+
+export async function validateMaintenanceRun(runId: string): Promise<MaintenanceRunDetail> {
+  const response = await fetch(`${API_ROOT}/api/maintenance/runs/${runId}/validate`, {
+    method: "POST",
+  });
+  return parseJson<MaintenanceRunDetail>(response, "运行仓库验证失败");
+}
+
+export async function resumeMaintenanceRun(runId: string): Promise<MaintenanceRunDetail> {
+  const response = await fetch(`${API_ROOT}/api/maintenance/runs/${runId}/resume`, {
+    method: "POST",
+  });
+  return parseJson<MaintenanceRunDetail>(response, "恢复维护任务失败");
 }

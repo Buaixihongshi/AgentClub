@@ -15,6 +15,7 @@ import {
 import { ConversationList } from "./ConversationList";
 import { MissionComposer } from "./MissionComposer";
 import { MissionHeader } from "./MissionHeader";
+import { MaintenanceButton } from "./MaintenanceButton";
 import { MissionSideRail } from "./MissionSideRail";
 import { OnboardingCard, type OnboardingCardProps } from "./OnboardingCard";
 import { SettingsButton } from "./SettingsButton";
@@ -63,6 +64,7 @@ export function MissionRoomPage(props: {
           runtimeSummary={props.runtimeSummary}
           streamState={props.streamState}
         />
+        <MaintenanceButton />
         <SettingsButton
           view={props.hubSettings ?? null}
           providerStatus={props.providerStatus}
