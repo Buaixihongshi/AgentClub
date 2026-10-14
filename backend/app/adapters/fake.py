@@ -33,7 +33,8 @@ class FakeCLIAdapter(CLIAdapter):
         )
         tools.publish_message(mission_id, agent_id, turn_id, content, provider_id)
 
-        if agent_id == "baobao":
+        mission = tools.repository.get_mission(mission_id)
+        if agent_id == "baobao" and mission is not None and _requires_demo_artifact(mission.goal):
             tools.write_artifact(
                 mission_id,
                 agent_id,
@@ -43,3 +44,40 @@ class FakeCLIAdapter(CLIAdapter):
             )
 
         return TurnOutcome(status=TurnStatus.COMPLETED)
+
+
+def _requires_demo_artifact(goal: str) -> bool:
+    """Keep offline demo behavior aligned with explicit delivery intent.
+
+    Real providers receive the full delivery policy in their prompt. The fake
+    adapter has no model to interpret that policy, so it uses a deliberately
+    small set of explicit execution/delivery phrases instead of treating every
+    baobao turn as a file request.
+    """
+    normalized = goal.strip().lower()
+    markers = (
+        "实现一个",
+        "实现这个",
+        "执行改动",
+        "帮我实现",
+        "请实现",
+        "修复",
+        "写一个",
+        "写个",
+        "写份",
+        "生成一个",
+        "创建一个",
+        "整理成",
+        "输出为",
+        "交付",
+        "implement ",
+        "fix ",
+        "build ",
+        "create ",
+        "write ",
+        "generate ",
+        "report",
+        "script",
+        "readme",
+    )
+    return any(marker in normalized for marker in markers)

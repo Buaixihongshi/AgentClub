@@ -116,6 +116,19 @@ def test_complex_workflow_uses_three_agents():
     assert [step.agent_id for step in workflow] == ["chulan", "baobao", "wangye", "chulan"]
 
 
+def test_complex_workflow_does_not_force_baobao_to_create_an_artifact():
+    workflow = select_workflow(
+        TaskComplexity.COMPLEX,
+        "三位 Agent 讨论最近的发展趋势并给我讲讲",
+        AGENTS,
+    )
+
+    baobao_step = next(step for step in workflow if step.agent_id == "baobao")
+    assert baobao_step.purpose == "补充具体做法、实例和可行性；按用户需求执行"
+    assert "产物" not in baobao_step.purpose
+    assert "文件" not in baobao_step.purpose
+
+
 def test_workflow_steps_default_to_declared_workflow_origin():
     workflow = select_workflow(TaskComplexity.COMPLEX, "设计并实现系统", AGENTS)
 
