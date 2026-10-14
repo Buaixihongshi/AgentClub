@@ -110,3 +110,17 @@ def test_canonical_agent_personas_preserve_character_voice():
         assert "宝儿姐" in chulan.persona
         assert "四川" in baobao.persona or "晓得" in baobao.persona
         assert "道长" in wangye.persona or "北京腔" in wangye.persona
+
+
+def test_baobao_trigger_points_require_delivery_intent():
+    for registry in (
+        AgentRegistry.builtin(),
+        AgentRegistry.from_config(REPO_ROOT / "config"),
+    ):
+        guidance = "\n".join(registry.require("baobao").trigger_points)
+
+        assert "明确要求文件" in guidance
+        assert "讨论中方案过于抽象" in guidance
+        assert "不擅自转成写文件" in guidance
+        assert "被点名或接力" in guidance
+        assert "明确要求交付时才给文件" in guidance

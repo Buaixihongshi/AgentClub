@@ -57,7 +57,7 @@ def select_workflow(
     return _require_available(
         [
             WorkflowStep("chulan", "拆解任务和制定协作顺序"),
-            WorkflowStep("baobao", "生成执行型产物草案"),
+            WorkflowStep("baobao", "补充具体做法、实例和可行性；按用户需求执行"),
             WorkflowStep("wangye", "进行分析和风险复盘"),
             WorkflowStep("chulan", "收束结论和下一步", is_closing=True),
         ],

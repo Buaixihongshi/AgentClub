@@ -66,6 +66,29 @@ def test_fake_adapter_publishes_message_and_artifact(repository, temp_settings):
     assert (temp_settings.artifact_root / "m_1" / "demo-baobao.md").exists()
 
 
+def test_fake_adapter_does_not_create_artifact_for_discussion(repository, temp_settings):
+    repository.create_mission(
+        Mission(id="m_discuss", title="Discuss", goal="三位 Agent 讨论近期趋势并给我讲讲")
+    )
+    tools = MCPTools(repository, temp_settings.artifact_root)
+
+    FakeCLIAdapter().run_turn(
+        "m_discuss",
+        "baobao",
+        "t_1",
+        "fake",
+        "讨论近期趋势",
+        tools,
+    )
+
+    assert repository.list_messages("m_discuss")[0].agent_id == "baobao"
+    assert not (temp_settings.artifact_root / "m_discuss" / "demo-baobao.md").exists()
+    assert all(
+        event.event_type != "artifact"
+        for event in repository.list_events_after("m_discuss", 0)
+    )
+
+
 def test_runner_completes_mission_with_fake_cli(repository, temp_settings):
     mission = Mission(id="m_1", title="Build", goal="设计并实现一个多 Agent 聊天室系统，包含后端、前端、测试和 MCP")
     repository.create_mission(mission)
@@ -471,6 +494,25 @@ def test_build_prompt_constrains_cli_to_short_chat_response():
     assert "120字以内" not in prompt
     assert "短中文回复" not in prompt
     assert "不设置固定字数上限" in prompt
+
+
+def test_build_prompt_separates_discussion_from_file_delivery():
+    mission = Mission(id="m_discuss", title="Discuss", goal="讨论近期 Agent 趋势")
+    agent = AgentProfile(
+        id="baobao",
+        display_name="冯宝宝",
+        role="执行",
+        persona="具体",
+        default_provider_id="codex",
+    )
+
+    prompt = _build_prompt(mission, "补充具体做法和实例", agent)
+
+    assert "任务复杂度只决定协作轮次，不决定是否交付文件" in prompt
+    assert "讨论、比较、解释、评审修改意见时" in prompt
+    assert "不主动创建或登记文件" in prompt
+    assert "只有用户明确要求文件交付" in prompt
+    assert "不为每轮发言额外生成总结文件" in prompt
 
 
 def test_build_prompt_includes_trigger_points_when_agent_has_them():
