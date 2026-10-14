@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新增代码仓库维护内核：受信仓库登记、隔离 Git worktree、无 shell 验证契约、持久化维护状态、重启恢复、审批/反馈记录与受控进化提案。
+
 ### Changed
 
 - 将用户可见的产品名称统一为 AgentClub。

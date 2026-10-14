@@ -4,6 +4,15 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from backend.app.domain.maintenance import (
+    EvolutionBatch,
+    MaintenanceApproval,
+    MaintenanceFeedback,
+    MaintenanceRun,
+    MemoryCandidate,
+    RegisteredRepository,
+    ValidationResult,
+)
 from backend.app.domain.models import Conversation, Message, Mission, MissionEvent
 
 
@@ -36,6 +45,54 @@ class Repository:
                     id TEXT PRIMARY KEY,
                     data TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS registered_repositories (
+                    id TEXT PRIMARY KEY,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS maintenance_runs (
+                    id TEXT PRIMARY KEY,
+                    repository_id TEXT NOT NULL,
+                    data TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_maintenance_runs_repository
+                    ON maintenance_runs(repository_id);
+                CREATE TABLE IF NOT EXISTS validation_results (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    data TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_validation_results_run
+                    ON validation_results(run_id);
+                CREATE TABLE IF NOT EXISTS maintenance_approvals (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS maintenance_feedback (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS memory_candidates (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    repository_id TEXT NOT NULL,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS evolution_batches (
+                    id TEXT PRIMARY KEY,
+                    repository_id TEXT,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS maintenance_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_maintenance_events_run
+                    ON maintenance_events(run_id, id);
                 """
             )
 
@@ -196,6 +253,165 @@ class Repository:
             [m for m in messages if m.conversation_id == conversation_id],
             key=lambda m: (m.created_at, m.id),
         )
+
+    def save_registered_repository(self, repository: RegisteredRepository) -> None:
+        with self._transaction() as db:
+            db.execute(
+                """
+                INSERT INTO registered_repositories (id, data) VALUES (?, ?)
+                ON CONFLICT(id) DO UPDATE SET data = excluded.data
+                """,
+                (repository.id, repository.model_dump_json()),
+            )
+
+    def get_registered_repository(self, repository_id: str) -> Optional[RegisteredRepository]:
+        with self._transaction() as db:
+            row = db.execute(
+                "SELECT data FROM registered_repositories WHERE id = ?", (repository_id,)
+            ).fetchone()
+        return RegisteredRepository.model_validate_json(row["data"]) if row else None
+
+    def list_registered_repositories(self) -> list[RegisteredRepository]:
+        with self._transaction() as db:
+            rows = db.execute("SELECT data FROM registered_repositories ORDER BY id").fetchall()
+        return [RegisteredRepository.model_validate_json(row["data"]) for row in rows]
+
+    def create_maintenance_run(self, run: MaintenanceRun) -> None:
+        with self._transaction() as db:
+            db.execute(
+                "INSERT INTO maintenance_runs (id, repository_id, data) VALUES (?, ?, ?)",
+                (run.id, run.repository_id, run.model_dump_json()),
+            )
+            self.add_maintenance_event(run.id, "run.created", run.model_dump(mode="json"), db=db)
+
+    def update_maintenance_run(self, run: MaintenanceRun) -> None:
+        with self._transaction() as db:
+            db.execute(
+                "UPDATE maintenance_runs SET repository_id = ?, data = ? WHERE id = ?",
+                (run.repository_id, run.model_dump_json(), run.id),
+            )
+
+    def get_maintenance_run(self, run_id: str) -> Optional[MaintenanceRun]:
+        with self._transaction() as db:
+            row = db.execute("SELECT data FROM maintenance_runs WHERE id = ?", (run_id,)).fetchone()
+        return MaintenanceRun.model_validate_json(row["data"]) if row else None
+
+    def list_maintenance_runs(self, repository_id: Optional[str] = None) -> list[MaintenanceRun]:
+        with self._transaction() as db:
+            if repository_id is None:
+                rows = db.execute("SELECT data FROM maintenance_runs").fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT data FROM maintenance_runs WHERE repository_id = ?",
+                    (repository_id,),
+                ).fetchall()
+        runs = [MaintenanceRun.model_validate_json(row["data"]) for row in rows]
+        return sorted(runs, key=lambda item: item.created_at, reverse=True)
+
+    def add_validation_result(self, result: ValidationResult) -> None:
+        self._insert_json_row("validation_results", result.id, result.run_id, result.model_dump_json())
+
+    def list_validation_results(self, run_id: str) -> list[ValidationResult]:
+        return self._list_json_rows("validation_results", "run_id", run_id, ValidationResult)
+
+    def add_maintenance_approval(self, approval: MaintenanceApproval) -> None:
+        self._insert_json_row("maintenance_approvals", approval.id, approval.run_id, approval.model_dump_json())
+
+    def list_maintenance_approvals(self, run_id: str) -> list[MaintenanceApproval]:
+        return self._list_json_rows("maintenance_approvals", "run_id", run_id, MaintenanceApproval)
+
+    def add_maintenance_feedback(self, feedback: MaintenanceFeedback) -> None:
+        self._insert_json_row("maintenance_feedback", feedback.id, feedback.run_id, feedback.model_dump_json())
+
+    def list_maintenance_feedback(self, run_id: str) -> list[MaintenanceFeedback]:
+        return self._list_json_rows("maintenance_feedback", "run_id", run_id, MaintenanceFeedback)
+
+    def add_memory_candidate(self, candidate: MemoryCandidate) -> None:
+        with self._transaction() as db:
+            db.execute(
+                "INSERT INTO memory_candidates (id, run_id, repository_id, data) VALUES (?, ?, ?, ?)",
+                (candidate.id, candidate.run_id, candidate.repository_id, candidate.model_dump_json()),
+            )
+
+    def list_memory_candidates(self, repository_id: Optional[str] = None) -> list[MemoryCandidate]:
+        with self._transaction() as db:
+            if repository_id is None:
+                rows = db.execute("SELECT data FROM memory_candidates").fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT data FROM memory_candidates WHERE repository_id = ?",
+                    (repository_id,),
+                ).fetchall()
+        return [MemoryCandidate.model_validate_json(row["data"]) for row in rows]
+
+    def add_evolution_batch(self, batch: EvolutionBatch) -> None:
+        with self._transaction() as db:
+            db.execute(
+                "INSERT INTO evolution_batches (id, repository_id, data) VALUES (?, ?, ?)",
+                (batch.id, batch.repository_id, batch.model_dump_json()),
+            )
+
+    def list_evolution_batches(self) -> list[EvolutionBatch]:
+        with self._transaction() as db:
+            rows = db.execute("SELECT data FROM evolution_batches ORDER BY id DESC").fetchall()
+        return [EvolutionBatch.model_validate_json(row["data"]) for row in rows]
+
+    def add_maintenance_event(
+        self,
+        run_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+        db: Optional[sqlite3.Connection] = None,
+    ) -> str:
+        if db is None:
+            with self._transaction() as connection:
+                return self.add_maintenance_event(run_id, event_type, payload, db=connection)
+        cursor = db.execute(
+            "INSERT INTO maintenance_events (run_id, event_type, payload, created_at) "
+            "VALUES (?, ?, ?, datetime('now'))",
+            (run_id, event_type, json.dumps(payload, ensure_ascii=False)),
+        )
+        return str(cursor.lastrowid)
+
+    def list_maintenance_events(self, run_id: str) -> list[dict[str, Any]]:
+        with self._transaction() as db:
+            rows = db.execute(
+                "SELECT id, event_type, payload, created_at FROM maintenance_events "
+                "WHERE run_id = ? ORDER BY id",
+                (run_id,),
+            ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "event_type": row["event_type"],
+                "payload": json.loads(row["payload"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
+
+    def _insert_json_row(self, table: str, row_id: str, owner_id: str, data: str) -> None:
+        allowed = {"validation_results", "maintenance_approvals", "maintenance_feedback"}
+        if table not in allowed:
+            raise ValueError("Unsupported JSON table")
+        with self._transaction() as db:
+            db.execute(
+                "INSERT INTO {table} (id, run_id, data) VALUES (?, ?, ?)".format(table=table),
+                (row_id, owner_id, data),
+            )
+
+    def _list_json_rows(self, table: str, column: str, value: str, model):
+        allowed = {"validation_results", "maintenance_approvals", "maintenance_feedback"}
+        if table not in allowed or column != "run_id":
+            raise ValueError("Unsupported JSON table")
+        with self._transaction() as db:
+            rows = db.execute(
+                "SELECT data FROM {table} WHERE {column} = ? ORDER BY id".format(
+                    table=table, column=column
+                ),
+                (value,),
+            ).fetchall()
+        return [model.model_validate_json(row["data"]) for row in rows]
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:

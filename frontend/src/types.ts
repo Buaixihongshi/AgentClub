@@ -93,6 +93,77 @@ export interface ArtifactContent {
   truncated: boolean;
 }
 
+export interface RegisteredRepository {
+  id: string;
+  name: string;
+  local_path: string;
+  github_repo: string;
+  remote_name: string;
+  default_branch: string;
+  validation_commands: string[][];
+  forbidden_paths: string[];
+  max_changed_files: number;
+  max_repair_rounds: number;
+  enabled: boolean;
+}
+
+export type MaintenancePhase =
+  | "queued"
+  | "planning"
+  | "implementing"
+  | "local_verifying"
+  | "reviewing"
+  | "draft_pr"
+  | "ci_waiting"
+  | "ci_repairing"
+  | "ready_for_approval"
+  | "merging"
+  | "completed"
+  | "waiting_approval"
+  | "blocked"
+  | "failed"
+  | "cancelled";
+
+export interface MaintenanceRun {
+  id: string;
+  repository_id: string;
+  goal: string;
+  issue_url?: string | null;
+  phase: MaintenancePhase;
+  branch_name?: string | null;
+  workspace_path?: string | null;
+  repair_round: number;
+  pull_request_url?: string | null;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ValidationResult {
+  id: string;
+  run_id: string;
+  command: string[];
+  exit_code: number;
+  duration_ms: number;
+  stdout: string;
+  stderr: string;
+  created_at: string;
+}
+
+export interface MaintenanceRunDetail {
+  run: MaintenanceRun;
+  repository: RegisteredRepository;
+  validation_results: ValidationResult[];
+  approvals: Array<Record<string, unknown>>;
+  feedback: Array<Record<string, unknown>>;
+  events: Array<{
+    id: string;
+    event_type: string;
+    payload: Record<string, unknown>;
+    created_at: string;
+  }>;
+}
+
 export interface TurnAttempt {
   attempt: number;
   provider_id: string;

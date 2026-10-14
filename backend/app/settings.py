@@ -23,6 +23,9 @@ class Settings(BaseModel):
     max_a2a_invocations: int = 8
     cli_timeout: int = 120
     a2a_idle_timeout: int = Field(default=90, ge=0)
+    maintenance_enabled: bool = True
+    maintenance_worktree_root: Path = Path("data/maintenance-worktrees")
+    maintenance_command_timeout: int = Field(default=900, ge=1)
     provider_overrides: Dict[str, ProviderOverride] = {}
     agent_overrides: Dict[str, AgentOverride] = {}
 
@@ -33,6 +36,8 @@ _RUNTIME_FIELDS = {
     "max_a2a_invocations",
     "cli_timeout",
     "a2a_idle_timeout",
+    "maintenance_enabled",
+    "maintenance_command_timeout",
 }
 
 
@@ -48,6 +53,12 @@ def get_settings() -> Settings:
         max_a2a_invocations=_env_int("YIREN_MAX_A2A_INVOCATIONS", default=8),
         cli_timeout=_env_int("YIREN_CLI_TIMEOUT", default=120),
         a2a_idle_timeout=_env_int("YIREN_A2A_IDLE_TIMEOUT", default=90),
+        maintenance_enabled=_env_bool("YIREN_MAINTENANCE_ENABLED", default=True),
+        maintenance_worktree_root=_env_path(
+            "YIREN_MAINTENANCE_WORKTREE_ROOT",
+            default=Path("data/maintenance-worktrees"),
+        ),
+        maintenance_command_timeout=_env_int("YIREN_MAINTENANCE_COMMAND_TIMEOUT", default=900),
     )
 
     from backend.app.storage.hub_settings import default_path, load, retire_provider
@@ -109,6 +120,9 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
         "max_a2a_invocations": app_settings.max_a2a_invocations,
         "cli_timeout": app_settings.cli_timeout,
         "a2a_idle_timeout": app_settings.a2a_idle_timeout,
+        "maintenance_enabled": app_settings.maintenance_enabled,
+        "maintenance_worktree_root": app_settings.maintenance_worktree_root,
+        "maintenance_command_timeout": app_settings.maintenance_command_timeout,
     }
 
     runtime = file_data.get("runtime") or {}
