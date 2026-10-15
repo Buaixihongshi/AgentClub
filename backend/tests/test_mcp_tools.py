@@ -74,7 +74,7 @@ def test_log_thought_defaults_missing_turn_id(repository, temp_settings):
     assert repository.list_messages("m_th2") == []
 
 
-def test_read_context_returns_latest_messages_by_created_at(repository, temp_settings):
+def test_read_context_returns_latest_messages_by_committed_event_order(repository, temp_settings):
     repository.create_mission(Mission(id="m_1", title="Plan", goal="Plan something"))
     repository.add_message(
         Message(
@@ -107,7 +107,8 @@ def test_read_context_returns_latest_messages_by_created_at(repository, temp_set
 
     context = tools.read_context("m_1", limit=2)
 
-    assert [message["content"] for message in context["messages"]] == ["middle", "latest"]
+    # Backdated timestamps do not reorder the committed dialogue timeline.
+    assert [message["content"] for message in context["messages"]] == ["oldest", "middle"]
 
 
 def test_read_context_spans_conversation_across_missions(repository, temp_settings):

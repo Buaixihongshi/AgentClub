@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
+from backend.app.domain.history import select_context_messages
 from backend.app.domain.models import (
     Message,
     MessageRole,
@@ -76,16 +77,11 @@ class MCPTools:
         mission = self.repository.get_mission(mission_id)
         if mission is None:
             raise MCPToolError(f"Unknown mission: {mission_id}")
-        # Scope to the whole conversation so cross-mission memory works
-        # (matches build_conversation_context). Fall back to mission scope
-        # for legacy missions created without a conversation_id.
-        if mission.conversation_id and not is_provider_verification_mission(mission):
-            raw = self.repository.list_messages_for_conversation(
-                mission.conversation_id
-            )
-        else:
-            raw = self.repository.list_messages(mission_id)
-        messages = sorted(raw, key=lambda message: message.created_at)[-limit:]
+        conversation_id = mission.conversation_id if not is_provider_verification_mission(mission) else None
+        history = self.repository.read_message_history(
+            conversation_id=conversation_id, mission_id=None if conversation_id else mission_id,
+        )
+        messages = select_context_messages(history.project(), limit)
         result = {
             "mission": mission.model_dump(mode="json"),
             "messages": [message.model_dump(mode="json") for message in messages],

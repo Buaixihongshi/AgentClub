@@ -518,40 +518,31 @@ def _derive_thoughts(db_events) -> list[dict[str, object]]:
 
 
 def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) -> dict[str, object]:
-    mission = repo.get_mission(mission_id)
-    if mission is None:
+    history = repo.read_message_history(mission_id=mission_id)
+    if not history.missions:
         raise HTTPException(status_code=404, detail="Mission not found")
 
-    messages = repo.list_messages(mission_id)
-    messages_by_id = {message.id: message for message in messages}
-    db_events = repo.list_events_after(mission_id, 0)
+    mission = history.missions[0]
+    entries = history.project(include_system=True)
+    db_events = history.events
+    messages_by_event = {entry.event_id: entry.message for entry in entries if entry.event_id}
     serialized_events = []
-    serialized_message_ids = set()
 
     for index, event in enumerate(db_events):
-        if event.event_type == "message":
-            message_id = event.payload.get("id")
-            message = messages_by_id.get(message_id)
-            if message is None:
-                continue
-            serialized_events.append(_message_event(message, sort_key=(index, 0)))
-            serialized_message_ids.add(message.id)
+        if event.event_type in ("message", "interrupt"):
+            message = messages_by_event.get(event.id)
+            if message is not None:
+                serialized_events.append(_message_event(message, sort_key=(index, 0)))
             continue
         serialized_events.append(_raw_event(event, sort_key=(index, 0)))
 
-    missing_messages = [
-        message for message in messages if message.id not in serialized_message_ids
-    ]
-    missing_messages.sort(key=lambda message: message.created_at)
+    missing_messages = [entry.message for entry in entries if entry.event_id is None]
     for index, message in enumerate(missing_messages):
         serialized_events.append(_message_event(message, sort_key=(len(db_events), index)))
 
     serialized_events.sort(key=lambda item: item["_sort_key"])
     events = [_strip_sort_key(event) for event in serialized_events]
-    message_events = [
-        _strip_sort_key(_message_event(message))
-        for message in sorted(messages, key=lambda item: item.created_at)
-    ]
+    message_events = [_message_event(entry.message) for entry in entries]
 
     result = {
         "mission": _mission_payload(mission),

@@ -126,8 +126,9 @@ _TOOL_DESCRIPTORS = [
     {
         "name": "read_context",
         "description": (
-            "读取当前 mission 的上下文，包含最近的消息列表和 mission 元数据。"
-            "可选参数 limit 控制返回消息条数（默认 20）。"
+            "读取当前会话的正式对话与当前 mission 元数据；无会话时仅读取当前 mission。"
+            "优先保留最新用户输入和插话，再补充近期发言，按事件顺序返回正文全文。"
+            "可选参数 limit 控制最多返回消息条数（默认 20，上限 100）。"
         ),
         "inputSchema": {
             "type": "object",

@@ -81,11 +81,8 @@ def _conversation_summary(repo: Repository, conversation: Conversation) -> dict:
         mission.id for mission in all_missions if is_provider_verification_mission(mission)
     }
     missions = [mission for mission in all_missions if mission.id not in verification_ids]
-    messages = [
-        message
-        for message in repo.list_messages_for_conversation(conversation.id)
-        if message.mission_id not in verification_ids
-    ]
+    history = repo.read_message_history(conversation_id=conversation.id)
+    messages = [entry.message for entry in history.project()]
     latest_mission_id = missions[-1].id if missions else None
     preview = messages[-1].content[:80] if messages else None
     payload = conversation.model_dump(mode="json")
@@ -105,15 +102,10 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
     ]
     verification_ids = {mission.id for mission in verification_missions}
     missions = [mission for mission in all_missions if mission.id not in verification_ids]
-    messages = [
-        message
-        for message in repo.list_messages_for_conversation(conversation.id)
-        if message.mission_id not in verification_ids
-    ]
+    history = repo.read_message_history(conversation_id=conversation.id)
+    messages = [entry.message for entry in history.project()]
     from backend.app.api.mission_detail import _message_event
-    message_events = [
-        _message_event(m) for m in sorted(messages, key=lambda m: m.created_at)
-    ]
+    message_events = [_message_event(m) for m in messages]
     latest_detail = None
     active_verification = next(
         (

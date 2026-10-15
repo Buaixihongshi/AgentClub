@@ -184,15 +184,7 @@ def build_router(
     ):
         if repo.get_mission(mission_id) is None:
             raise HTTPException(status_code=404, detail="Mission not found")
-        repo.add_event(
-            mission_id,
-            "interrupt",
-            {
-                "mission_id": mission_id,
-                "content": payload.content,
-                "target_agent_id": payload.target_agent_id,
-            },
-        )
+        repo.add_interruption(mission_id, payload.content, payload.target_agent_id)
         return build_mission_detail(repo, settings, mission_id)
 
     @router.get("/{mission_id}/artifacts")
