@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import threading
 from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Optional
@@ -23,6 +24,7 @@ from backend.app.domain.models import (
 class Repository:
     def __init__(self, database_path: Path):
         self.database_path = database_path
+        self._local = threading.local()
 
     def initialize(self) -> None:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -137,7 +139,7 @@ class Repository:
         )
         self.add_event(message.mission_id, "message", message.model_dump(mode="json"), db=db)
 
-    def add_interruption(self, mission_id: str, content: str, target_agent_id: Optional[str] = None) -> Message:
+    def add_interruption(self, mission_id: str, content: str, target_agent_id: Optional[str] = None, *, request_id: Optional[str] = None, request: Optional[dict] = None) -> Message:
         """Commit the visible user message and its routing event together."""
         with self._transaction() as db:
             row = db.execute("SELECT data FROM missions WHERE id = ?", (mission_id,)).fetchone()
@@ -152,6 +154,7 @@ class Repository:
             self.add_event(mission_id, "interrupt", {
                 "mission_id": mission_id, "message_id": message.id,
                 "content": content, "target_agent_id": target_agent_id,
+                **({"request_id": request_id, "request": request} if request_id else {}),
             }, db=db)
         return message
 
@@ -171,7 +174,8 @@ class Repository:
             return MessageHistory([], [], [])
         with self._transaction() as db:
             # SELECT alone does not start a snapshot in sqlite3's legacy mode.
-            db.execute("BEGIN")
+            if not db.in_transaction:
+                db.execute("BEGIN")
             rows = db.execute(f"SELECT m.data FROM missions m WHERE {scope}", parameters).fetchall()
             missions = [Mission.model_validate_json(row["data"]) for row in rows]
             if not mission_id:
@@ -479,10 +483,20 @@ class Repository:
         return [model.model_validate_json(row["data"]) for row in rows]
 
     @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
+    def _transaction(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
+        active = getattr(self._local, "connection", None)
+        if active is not None:
+            yield active
+            return
         with closing(self._connect()) as connection:
             with connection:
-                yield connection
+                if immediate:
+                    connection.execute("BEGIN IMMEDIATE")
+                self._local.connection = connection
+                try:
+                    yield connection
+                finally:
+                    self._local.connection = None
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path)

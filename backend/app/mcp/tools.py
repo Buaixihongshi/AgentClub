@@ -1,3 +1,6 @@
+from functools import wraps
+from inspect import signature
+
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set
 from uuid import uuid4
@@ -22,6 +25,30 @@ from backend.app.storage.repository import Repository
 
 class MCPToolError(ValueError):
     pass
+
+
+def roundtable_guard(fn):
+    call_signature = signature(fn)
+
+    @wraps(fn)
+    def guarded(self, *args, **kwargs):
+        from backend.app.orchestration.roundtable import Roundtable, DiscussionError
+        values = call_signature.bind(self, *args, **kwargs).arguments
+        mission_id = values.get('mission_id')
+        mission = self.repository.get_mission(mission_id)
+        agent = values.get('agent_id') or values.get('sender_agent_id')
+        turn = values.get('turn_id') or values.get('sender_turn_id')
+        if mission is None or mission.room_mode != 'roundtable' or (fn.__name__ == 'update_status' and not agent):
+            return fn(self, *args, **kwargs)
+        try:
+            with Roundtable(self.repository).tool_scope(mission_id, agent, turn, values.get('provider_id')):
+                if fn.__name__ == 'update_status' and values.get('status') != 'running':
+                    raise DiscussionError('The host owns roundtable lifecycle; publish your conclusion as a message')
+                return fn(self, *args, **kwargs)
+        except (DiscussionError, MCPToolError) as exc:
+            record_tool_error(self.repository, mission_id, turn or 'unknown', agent or 'unknown', fn.__name__, str(exc), values.get('provider_id'))
+            raise MCPToolError(str(exc)) from exc
+    return guarded
 
 
 class MCPTools:
@@ -98,6 +125,7 @@ class MCPTools:
             )
         return result
 
+    @roundtable_guard
     def publish_message(
         self,
         mission_id: str,
@@ -155,6 +183,7 @@ class MCPTools:
             )
         return message
 
+    @roundtable_guard
     def write_artifact(
         self,
         mission_id: str,
@@ -302,6 +331,7 @@ class MCPTools:
         )
         return result
 
+    @roundtable_guard
     def log_thought(
         self,
         mission_id: str,
@@ -412,6 +442,7 @@ class MCPTools:
             )
         return {"ok": True, "event_id": event_id}
 
+    @roundtable_guard
     def update_status(
         self,
         mission_id: str,
@@ -446,6 +477,7 @@ class MCPTools:
                 provider_id=provider_id,
             )
 
+    @roundtable_guard
     def invoke_agent(
         self,
         mission_id: str,
@@ -457,6 +489,13 @@ class MCPTools:
         *,
         mode: str = "fire_and_forget",
     ) -> Dict[str, int]:
+        mission = self._require_mission(mission_id)
+        if mission.room_mode == 'roundtable':
+            from backend.app.orchestration.roundtable import Roundtable
+            record_tool_call(self.repository, mission_id, sender_turn_id, sender_agent_id, 'invoke_agent', {'target_agent_id': target_agent_id, 'purpose': purpose, 'mode': mode}, provider_id)
+            result = Roundtable(self.repository).invoke(mission_id, sender_agent_id, sender_turn_id, target_agent_id, purpose, mode)
+            record_tool_result(self.repository, mission_id, sender_turn_id, sender_agent_id, 'invoke_agent', summary=result['status'], provider_id=provider_id)
+            return result
         self._require_mission(mission_id)
         record_tool_call(
             self.repository,

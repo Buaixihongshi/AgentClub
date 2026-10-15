@@ -1,6 +1,8 @@
 from typing import Optional
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from backend.app.orchestration.roundtable import Roundtable, DiscussionError
 
 from backend.app.api.agents import build_router as build_agents_router
 from backend.app.api.conversations import build_router as build_conversations_router
@@ -20,20 +22,27 @@ def create_app(
     settings: Optional[Settings] = None,
     *,
     onboarding_verification_adapter: Optional[CLIAdapter] = None,
+    mission_adapter: Optional[CLIAdapter] = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
     repository = Repository(app_settings.database_path)
     repository.initialize()
+    Roundtable(repository).recover()
     MaintenanceService(repository, app_settings).recover_interrupted_runs()
     app_settings.artifact_root.mkdir(parents=True, exist_ok=True)
 
     app = FastAPI(title="AgentClub")
+
+    @app.exception_handler(DiscussionError)
+    async def discussion_error_handler(request, exc):
+        return JSONResponse(status_code=exc.status_code, content={'detail': str(exc)})
+
     app.include_router(build_health_router(app_settings, repository))
     app.include_router(build_maintenance_router(app_settings, repository))
     app.include_router(build_agents_router(app_settings))
-    app.include_router(build_conversations_router(app_settings, repository))
+    app.include_router(build_conversations_router(app_settings, repository, adapter_override=mission_adapter))
     app.include_router(build_hub_settings_router(app_settings))
-    app.include_router(build_missions_router(app_settings, repository))
+    app.include_router(build_missions_router(app_settings, repository, adapter_override=mission_adapter))
     app.include_router(
         build_onboarding_router(
             app_settings,

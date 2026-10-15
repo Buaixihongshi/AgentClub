@@ -1,26 +1,27 @@
 import logging
 import re
 import threading
-from typing import List, Optional
+from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from backend.app.adapters.base import CLIAdapter
 from backend.app.api.mission_detail import build_mission_detail, _mission_payload
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.models import (
     Conversation,
     ConversationStatus,
-    Message,
-    MessageRole,
-    Mission,
     MissionStatus,
     is_provider_verification_mission,
     utc_now,
 )
 from backend.app.settings import Settings, snapshot_settings
 from backend.app.storage.repository import Repository
+
+from backend.app.api.mission_requests import MissionRequest as CreateConversationMissionRequest, create_requested_mission
+from backend.app.orchestration.roundtable import Roundtable, DiscussionError, ACTIVE
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +37,6 @@ class CreateConversationRequest(BaseModel):
 class UpdateConversationRequest(BaseModel):
     title: Optional[str] = None
     status: Optional[ConversationStatus] = None
-
-
-class CreateConversationMissionRequest(BaseModel):
-    goal: str
-    title: Optional[str] = None
-    target_agent_id: Optional[str] = None
-    target_agent_ids: Optional[List[str]] = None
 
 
 # 缺省占位标题:满足这些时才用首个 mission 的 goal 派生语义标题,
@@ -131,17 +125,20 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
     }
 
 
-def _run_mission_in_background(repo: Repository, settings: Settings, mission_id: str) -> None:
+def _run_mission_in_background(repo: Repository, settings: Settings, mission_id: str, adapter: Optional[CLIAdapter] = None) -> None:
     from backend.app.api.missions import _build_mission_adapter
     from backend.app.orchestration.runner import MissionRunner
     from backend.app.domain.models import MissionStatus
 
     try:
-        MissionRunner(repo, settings, _build_mission_adapter(settings)).run(mission_id)
+        MissionRunner(repo, settings, adapter or _build_mission_adapter(settings)).run(mission_id)
     except Exception as exc:
         logger.exception("Mission runner failed for %s", mission_id)
         mission = repo.get_mission(mission_id)
         if mission is None:
+            return
+        if mission.room_mode == 'roundtable':
+            Roundtable(repo).fail(mission_id)
             return
         failed = mission.model_copy(update={"status": MissionStatus.FAILED, "updated_at": utc_now()})
         repo.update_mission(failed)
@@ -153,7 +150,7 @@ def _run_mission_in_background(repo: Repository, settings: Settings, mission_id:
         )
 
 
-def build_router(settings: Settings, repository: Repository) -> APIRouter:
+def build_router(settings: Settings, repository: Repository, adapter_override: Optional[CLIAdapter] = None) -> APIRouter:
     router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
     def get_repo() -> Repository:
@@ -204,9 +201,13 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
         if not update_data:
             return _conversation_detail(repo, settings, conversation)
 
-        updated = conversation.model_copy(update=update_data)
-        updated.updated_at = utc_now()
-        repo.update_conversation(updated)
+        with repo._transaction(immediate=True):
+            conversation = repo.get_conversation(conversation_id)
+            if update_data.get('status') == ConversationStatus.ARCHIVED:
+                if any(m.status in ACTIVE for m in repo.list_missions_for_conversation(conversation_id)):
+                    raise DiscussionError('Stop the active mission before archiving')
+            updated = conversation.model_copy(update={**update_data, 'updated_at': utc_now()})
+            repo.update_conversation(updated)
         return _conversation_detail(repo, settings, updated)
 
     @router.post("/{conversation_id}/missions", status_code=201)
@@ -215,57 +216,10 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
         payload: CreateConversationMissionRequest,
         repo: Repository = Depends(get_repo),
     ):
-        conversation = repo.get_conversation(conversation_id)
-        if conversation is None:
-            raise HTTPException(status_code=404, detail="Conversation not found")
-        if conversation.status == ConversationStatus.ARCHIVED:
-            raise HTTPException(
-                status_code=409,
-                detail="Conversation is archived; restore it before creating a mission",
-            )
-
-        from backend.app.api.missions import _resolve_target_ids
-        target_ids = _resolve_target_ids(payload.target_agent_ids, payload.target_agent_id)
-        valid_ids = _valid_agent_ids()
-        invalid = [tid for tid in target_ids if tid not in valid_ids]
-        if invalid:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid target_agent_id(s) {bad}: must be one of {ids}".format(
-                    bad=", ".join(invalid),
-                    ids=", ".join(sorted(valid_ids)),
-                ),
-            )
-
-        mission = Mission(
-            id="m_{suffix}".format(suffix=uuid4().hex),
-            title=payload.title or payload.goal,
-            goal=payload.goal,
-            conversation_id=conversation_id,
-            target_agent_id=target_ids[0] if target_ids else None,
-            target_agent_ids=target_ids,
-        )
-        repo.create_mission(mission)
-        repo.add_message(
-            Message(
-                id="msg_{suffix}".format(suffix=uuid4().hex),
-                mission_id=mission.id,
-                conversation_id=conversation_id,
-                role=MessageRole.USER,
-                content=payload.goal,
-            )
-        )
-
-        updated = conversation.model_copy(update={"updated_at": utc_now()})
-        repo.update_conversation(updated)
-
         mission_settings = snapshot_settings(settings)
-        threading.Thread(
-            target=_run_mission_in_background,
-            args=(repo, mission_settings, mission.id),
-            daemon=True,
-        ).start()
-
-        return _conversation_detail(repo, settings, updated)
+        mission, conversation, created = create_requested_mission(repo, mission_settings, payload, conversation_id)
+        if created:
+            threading.Thread(target=_run_mission_in_background, args=(repo, mission_settings, mission.id, adapter_override), daemon=True).start()
+        return _conversation_detail(repo, settings, conversation)
 
     return router

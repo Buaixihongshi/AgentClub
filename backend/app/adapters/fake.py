@@ -34,7 +34,7 @@ class FakeCLIAdapter(CLIAdapter):
         tools.publish_message(mission_id, agent_id, turn_id, content, provider_id)
 
         mission = tools.repository.get_mission(mission_id)
-        if mission is not None and _requires_demo_artifact(mission.goal):
+        if mission is not None and mission.room_mode != "roundtable" and _requires_demo_artifact(mission.goal):
             tools.write_artifact(
                 mission_id,
                 agent_id,

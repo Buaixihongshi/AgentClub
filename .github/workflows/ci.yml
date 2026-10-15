@@ -46,6 +46,7 @@ jobs:
           python scripts/smoke_onboarding.py --fresh --fake
           python scripts/smoke_conversation_flow.py --fake
           python scripts/smoke_real_cli_mission.py --fake
+          python scripts/smoke_roundtable.py --fake
 
       - name: Run privacy check
         run: python scripts/privacy-check.py

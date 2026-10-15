@@ -8,6 +8,7 @@ from backend.app.domain.models import Message, Mission
 from backend.app.orchestration.live_progress import get_live_progress_registry
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
+from backend.app.orchestration.roundtable import discussion_view
 
 _CAPABILITY_FALLBACK = {
     "planning": "planning",
@@ -362,6 +363,13 @@ def _derive_interrupts(db_events) -> list[dict[str, object]]:
                 interrupts[interrupt_event_id]["handled_at"] = created_at
                 interrupts[interrupt_event_id]["handled_by_agent_id"] = payload.get("handled_by_agent_id")
                 interrupts[interrupt_event_id]["turn_id"] = payload.get("turn_id")
+                interrupts[interrupt_event_id]["handled_in_summary"] = payload.get("handled_in_summary", False)
+        elif event.event_type in ('interrupt.cancelled', 'interrupt.deferred'):
+            payload = event.payload
+            key = str(payload.get('interrupt_event_id', ''))
+            if key in interrupts:
+                interrupts[key]['status'] = 'cancelled' if event.event_type == 'interrupt.cancelled' else 'deferred'
+                interrupts[key]['reason'] = payload.get('reason')
     return list(interrupts.values())
 
 
@@ -546,6 +554,7 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
 
     result = {
         "mission": _mission_payload(mission),
+        "discussion": discussion_view(mission, db_events),
         "messages": message_events,
         "events": events,
         "artifacts": _artifact_records(settings, mission_id, db_events),
