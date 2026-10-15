@@ -202,8 +202,8 @@ def test_recommended_provider_is_verified_before_atomic_activation(temp_settings
         "fake",
         "fake",
     ]
-    assert "代码、文件" in agent_messages[1]["content"]
-    assert "风险复盘" in agent_messages[2]["content"]
+    assert "不懂的我会问" in agent_messages[1]["content"]
+    assert "改主意的道理" in agent_messages[2]["content"]
 
     completed = client.patch("/api/onboarding", json={"completed": True})
     assert completed.status_code == 200

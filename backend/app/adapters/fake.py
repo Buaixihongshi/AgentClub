@@ -34,13 +34,13 @@ class FakeCLIAdapter(CLIAdapter):
         tools.publish_message(mission_id, agent_id, turn_id, content, provider_id)
 
         mission = tools.repository.get_mission(mission_id)
-        if agent_id == "baobao" and mission is not None and _requires_demo_artifact(mission.goal):
+        if mission is not None and _requires_demo_artifact(mission.goal):
             tools.write_artifact(
                 mission_id,
                 agent_id,
                 turn_id,
-                "demo-baobao.md",
-                "# 演示产物：冯宝宝\n\n{content}\n".format(content=content),
+                "demo-{agent_id}.md".format(agent_id=agent_id),
+                "# 演示产物：{agent_id}\n\n{content}\n".format(agent_id=agent_id, content=content),
             )
 
         return TurnOutcome(status=TurnStatus.COMPLETED)
@@ -52,7 +52,7 @@ def _requires_demo_artifact(goal: str) -> bool:
     Real providers receive the full delivery policy in their prompt. The fake
     adapter has no model to interpret that policy, so it uses a deliberately
     small set of explicit execution/delivery phrases instead of treating every
-    baobao turn as a file request.
+    agent turn as a file request.
     """
     normalized = goal.strip().lower()
     markers = (

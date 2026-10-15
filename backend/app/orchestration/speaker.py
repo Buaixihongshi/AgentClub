@@ -37,32 +37,25 @@ def select_workflow(
             available,
         )
 
+    # Configuration order is a deterministic turn order, not a job assignment.
+    # Explicit mentions above still take precedence. Any configured participant
+    # can open, respond or close when placed at that position.
+    participants = list(available)
+    if not participants:
+        raise ValueError("No agents available")
     if complexity == TaskComplexity.SIMPLE:
-        return _require_available(
-            [WorkflowStep(_best_single_agent(goal), "处理简单任务")],
-            available,
-        )
-
+        return [WorkflowStep(participants[0], "回应用户当前请求")]
     if complexity == TaskComplexity.MEDIUM:
-        primary = "baobao" if _looks_engineering(goal) else "chulan"
-        reviewer = "wangye" if primary != "wangye" else "chulan"
-        return _require_available(
-            [
-                WorkflowStep(primary, "主办任务"),
-                WorkflowStep(reviewer, "复核风险和遗漏"),
-            ],
-            available,
-        )
-
-    return _require_available(
-        [
-            WorkflowStep("chulan", "拆解任务和制定协作顺序"),
-            WorkflowStep("baobao", "补充具体做法、实例和可行性；按用户需求执行"),
-            WorkflowStep("wangye", "进行分析和风险复盘"),
-            WorkflowStep("chulan", "收束结论和下一步", is_closing=True),
-        ],
-        available,
-    )
+        return [
+            WorkflowStep(participants[0], "回应用户当前请求"),
+            WorkflowStep(participants[1 % len(participants)], "回应已有观点，补充有帮助的信息；按用户需求推进"),
+        ]
+    steps = [
+        WorkflowStep(agent_id, "结合已有对话提出判断，回应具体观点；按用户需求推进")
+        for agent_id in participants
+    ]
+    steps.append(WorkflowStep(participants[0], "收束讨论：保留共识、分歧和待验证问题，说明下一步", is_closing=True))
+    return steps
 
 
 def _build_discussion_workflow(targets: List[str]) -> List[WorkflowStep]:
@@ -74,9 +67,9 @@ def _build_discussion_workflow(targets: List[str]) -> List[WorkflowStep]:
     steps: List[WorkflowStep] = []
     for i in range(DISCUSSION_ALTERNATION_STEPS):
         steps.append(
-            WorkflowStep(targets[i % len(targets)], "讨论：第 {n} 轮".format(n=i + 1))
+            WorkflowStep(targets[i % len(targets)], "讨论：第 {n} 轮，回应具体观点，补充有帮助的信息".format(n=i + 1))
         )
-    steps.append(WorkflowStep(targets[-1], "收束讨论：给出共识或下一步", is_closing=True))
+    steps.append(WorkflowStep(targets[-1], "收束讨论：保留共识、分歧和待验证问题，说明下一步", is_closing=True))
     return steps
 
 
@@ -94,15 +87,3 @@ def _require_available(
                 )
             )
     return steps
-
-
-def _best_single_agent(goal: str) -> str:
-    if _looks_engineering(goal):
-        return "baobao"
-    if any(word in goal for word in ("风险", "分析", "报错", "解释", "比较")):
-        return "wangye"
-    return "chulan"
-
-
-def _looks_engineering(goal: str) -> bool:
-    return any(word in goal for word in ("代码", "实现", "脚本", "文件", "测试", "修复"))

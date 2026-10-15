@@ -29,7 +29,7 @@ def _agent_metadata(agent_id: str) -> dict[str, str]:
         return {}
     capability = next(
         (_CAPABILITY_FALLBACK[h] for h in agent.capability_hints if h in _CAPABILITY_FALLBACK),
-        "review",
+        "unknown",
     )
     return {"persona_label": agent.display_name, "capability": capability}
 

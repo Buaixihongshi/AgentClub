@@ -189,8 +189,8 @@ describe("OnboardingCard", () => {
     );
 
     expect(screen.getByText("三位角色都到齐了")).toBeInTheDocument();
-    expect(screen.getByText(/冯宝宝 · 执行与产物/)).toBeInTheDocument();
-    expect(screen.getByText(/王也 · 分析与复盘/)).toBeInTheDocument();
+    expect(screen.getByText(/冯宝宝 · 坦率好奇/)).toBeInTheDocument();
+    expect(screen.getByText(/王也 · 松弛笃定/)).toBeInTheDocument();
     expect(screen.getByText("可选扩展")).toBeInTheDocument();
     expect(screen.getByText("Claude Code")).toBeInTheDocument();
     expect(screen.getByText("Antigravity CLI")).toBeInTheDocument();
@@ -209,7 +209,7 @@ describe("OnboardingCard", () => {
     await userEvent.click(screen.getByRole("button", { name: "打开团队配置" }));
     expect(onOpenTeamSettings).toHaveBeenCalledOnce();
 
-    await userEvent.click(screen.getByRole("button", { name: "保持当前分工" }));
+    await userEvent.click(screen.getByRole("button", { name: "保持当前配置" }));
     expect(onComplete).toHaveBeenCalledOnce();
   });
 

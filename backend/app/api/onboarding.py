@@ -68,11 +68,11 @@ _TERMINAL_STATUSES = {
 TEAM_AGENT_IDS = ("baobao", "wangye")
 TEAM_INTRO_GOAL = (
     "@冯宝宝 @王也 张楚岚已经接入 {provider_label}。请你们各用一句话向新用户介绍自己，"
-    "说清楚最擅长帮他做什么。"
+    "说说自己的性格和交流习惯，不介绍固定分工。"
 )
 TEAM_INTRO_REPLIES = {
-    "baobao": "我是冯宝宝。代码、文件和需要直接动手的活交给我，晓得。",
-    "wangye": "王也。方案比较、风险复盘和查漏补缺我来，您先说想做什么。",
+    "baobao": "我是冯宝宝。有啥子就直说，不懂的我会问，想明白了也会告诉你。",
+    "wangye": "王也。慢慢聊，我有自己的想法，也愿意听能让我改主意的道理。",
 }
 
 
@@ -90,7 +90,7 @@ class _TeamIntroAdapter(CLIAdapter):
     ) -> TurnOutcome:
         content = TEAM_INTRO_REPLIES.get(
             agent_id,
-            "我已经加入聊天室，后续会按自己的分工协助你。",
+            "我已经加入聊天室，很高兴和你一起聊聊、解决问题。",
         )
         tools.publish_message(
             mission_id,
@@ -105,7 +105,7 @@ class _TeamIntroAdapter(CLIAdapter):
                 sender_agent_id=agent_id,
                 sender_turn_id=turn_id,
                 target_agent_id="wangye",
-                purpose="向新用户介绍你擅长的分析与复盘工作",
+                purpose="向新用户介绍你的性格和交流习惯",
                 provider_id=provider_id,
             )
         return TurnOutcome(status=TurnStatus.COMPLETED)

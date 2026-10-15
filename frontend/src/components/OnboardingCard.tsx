@@ -110,7 +110,7 @@ export function OnboardingCard(props: OnboardingCardProps) {
       <section className="onboarding-card onboarding-card--success" aria-label="启动引导">
         <p className="onboarding-kicker">{currentProvider.label} 验证成功</p>
         <h2>Codex 已经完成第一次真实对话</h2>
-        <p>现在让它接管张楚岚，并请宝儿姐和王也各自介绍分工。后两位使用演示模式，不会追加真实模型请求。</p>
+        <p>现在让它接管张楚岚，并请宝儿姐和王也各自介绍自己。后两位使用演示模式，不会追加真实模型请求。</p>
         <div className="onboarding-actions">
           <button type="button" onClick={() => props.onActivateProvider(currentProvider.id)} disabled={props.actionBusy}>
             {props.actionBusy ? "正在召集团队…" : "让 Codex 接管并认识团队"}
@@ -129,7 +129,7 @@ export function OnboardingCard(props: OnboardingCardProps) {
       <section className="onboarding-card" aria-label="启动引导" aria-live="polite">
         <p className="onboarding-kicker">最后一步</p>
         <h2>宝儿姐和王也正在进场…</h2>
-        <p>他们会各用一句话介绍自己的分工；这里使用演示模式，不会追加真实模型请求。</p>
+        <p>他们会各用一句话介绍自己的性格；这里使用演示模式，不会追加真实模型请求。</p>
       </section>
     );
   }
@@ -162,9 +162,9 @@ export function OnboardingCard(props: OnboardingCardProps) {
         <p className="onboarding-kicker">Codex-first 已完成</p>
         <h2>三位角色都到齐了</h2>
         <ul className="onboarding-checks">
-          <li>张楚岚 · 协调与收束 · {providerLabel}</li>
-          <li>冯宝宝 · 执行与产物 · 演示模式</li>
-          <li>王也 · 分析与复盘 · 演示模式</li>
+          <li>张楚岚 · 通透机敏 · {providerLabel}</li>
+          <li>冯宝宝 · 坦率好奇 · 演示模式</li>
+          <li>王也 · 松弛笃定 · 演示模式</li>
         </ul>
 
         <div className="onboarding-expansion">
@@ -204,7 +204,7 @@ export function OnboardingCard(props: OnboardingCardProps) {
             打开团队配置
           </button>
           <button type="button" className="button-secondary" onClick={props.onComplete} disabled={props.actionBusy}>
-            保持当前分工
+            保持当前配置
           </button>
         </div>
         <p className="onboarding-cost-note" role="note">每次真实 CLI 验证都会使用对应账号发起 1 次模型请求，可能计入套餐额度或产生费用；安装、登录和页面检测本身不会调用模型。</p>

@@ -112,15 +112,16 @@ def test_canonical_agent_personas_preserve_character_voice():
         assert "道长" in wangye.persona or "北京腔" in wangye.persona
 
 
-def test_baobao_trigger_points_require_delivery_intent():
-    for registry in (
-        AgentRegistry.builtin(),
-        AgentRegistry.from_config(REPO_ROOT / "config"),
-    ):
-        guidance = "\n".join(registry.require("baobao").trigger_points)
 
-        assert "明确要求文件" in guidance
-        assert "讨论中方案过于抽象" in guidance
-        assert "不擅自转成写文件" in guidance
-        assert "被点名或接力" in guidance
-        assert "明确要求交付时才给文件" in guidance
+def test_shipped_profiles_match_builtin_fallback():
+    configured = AgentRegistry.from_config(REPO_ROOT / "config")
+    assert [agent.model_dump() for agent in configured.all()] == [
+        agent.model_dump() for agent in AgentRegistry.builtin().all()
+    ]
+
+
+def test_personalities_share_capabilities_without_fixed_jobs():
+    agents = AgentRegistry.builtin().all()
+    assert len({agent.role for agent in agents}) == 3
+    assert all(agent.role not in {"规划", "执行", "分析"} for agent in agents)
+    assert all(agent.capability_hints == ["conversation"] for agent in agents)

@@ -11,12 +11,12 @@
 
 Once users have more than one AI CLI, calling a model is no longer the hardest part. The real challenge is deciding who should do the work, preserving context across turns, recovering from provider failures, and understanding what each Agent actually produced.
 
-AgentClub is a local Agent team workspace built on top of existing AI CLIs. It turns a user goal into an observable collaboration process: one role plans and coordinates, another executes and produces artifacts, and another reviews assumptions and risks. A Provider Router then selects the appropriate CLI for each turn.
+AgentClub is a local Agent team workspace built on top of existing AI CLIs. It turns a user goal into an observable collaboration process: three distinct personalities exchange views, respond to each other, and advance the work requested by the user. A Provider Router then selects the appropriate CLI for each turn.
 
 ```text
 User goal
    ↓
-Agent teamwork: planning / execution / analysis
+Agent teamwork: distinct personalities / shared abilities / continuous dialogue
    ↓
 Provider Router: primary provider + fallbacks
    ↓
@@ -33,7 +33,7 @@ AgentClub includes a built-in Demo Mode that does not call a real model. Users c
 
 ### Turn one goal into multi-Agent teamwork
 
-AgentClub schedules roles according to task complexity and also supports directing a task to a specific role. Zhang Chulan plans and coordinates, Feng Baobao executes and produces artifacts, and Wang Ye reviews options and risks. This gives users a clear team model instead of exposing orchestration as an abstract graph.
+AgentClub schedules roles according to task complexity and also supports directing a task to a specific role. Zhang Chulan is socially perceptive and pragmatic; Feng Baobao is candid, curious, and attentive to concrete facts; Wang Ye is relaxed, independent, and mindful of long-term choices. All three can propose, analyze, execute, and summarize. Their views can change with evidence. Without mentions, turns follow configuration order rather than job keywords; multiple mentions retain the selected order.
 
 ### Manage multiple AI CLIs in one place
 
@@ -55,7 +55,7 @@ This is the central product principle behind AgentClub. A role defines **who is 
 
 | Layer | Responsibility | Example |
 | --- | --- | --- |
-| Role | Persona, responsibility, capability hints, conversation identity | Planning, execution, and analysis roles |
+| Role | Personality, perspective, communication habits, conversation identity | Perceptive Chulan, candid Baobao, independent Wang Ye |
 | Provider | Model capability, CLI command, authentication, runtime behavior | Codex CLI, Claude Code, Antigravity CLI |
 | Routing | Primary provider, fallbacks, and failure recovery | Claude → Codex → Demo Mode |
 
@@ -80,7 +80,7 @@ Conversation data, settings, and artifacts are stored locally, while SSE updates
 
 ### 5. From a single answer to a team workflow
 
-AgentClub is designed around a process—plan, execute, review, and close—not just a generated response. Role ownership, continuous conversations, Agent handoffs, and artifact attribution provide a foundation for reusable team templates, task workflows, and provider-routing strategies.
+AgentClub is designed around a process—plan, execute, review, and close—not just a generated response. Distinct personalities, continuous conversations, Agent handoffs, and artifact attribution provide a foundation for reusable team templates, task workflows, and provider-routing strategies.
 
 ## Product Demo
 

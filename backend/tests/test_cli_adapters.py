@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from backend.app.adapters.base import TurnOutcome
 from backend.app.adapters.fake import FakeCLIAdapter
 from backend.app.adapters.provider_router import ProviderRouterAdapter
@@ -55,18 +57,20 @@ def _make_mock_popen(
     return mock_proc
 
 
-def test_fake_adapter_publishes_message_and_artifact(repository, temp_settings):
+@pytest.mark.parametrize("agent_id", ["chulan", "baobao", "wangye"])
+def test_fake_adapter_publishes_message_and_artifact(repository, temp_settings, agent_id):
     repository.create_mission(Mission(id="m_1", title="Plan", goal="Create a report"))
     tools = MCPTools(repository, temp_settings.artifact_root)
     adapter = FakeCLIAdapter()
 
-    adapter.run_turn("m_1", "baobao", "t_1", "fake", "Create a report", tools)
+    adapter.run_turn("m_1", agent_id, "t_1", "fake", "Create a report", tools)
 
-    assert repository.list_messages("m_1")[0].agent_id == "baobao"
-    assert (temp_settings.artifact_root / "m_1" / "demo-baobao.md").exists()
+    assert repository.list_messages("m_1")[0].agent_id == agent_id
+    assert (temp_settings.artifact_root / "m_1" / f"demo-{agent_id}.md").exists()
 
 
-def test_fake_adapter_does_not_create_artifact_for_discussion(repository, temp_settings):
+@pytest.mark.parametrize("agent_id", ["chulan", "baobao", "wangye"])
+def test_fake_adapter_does_not_create_artifact_for_discussion(repository, temp_settings, agent_id):
     repository.create_mission(
         Mission(id="m_discuss", title="Discuss", goal="三位 Agent 讨论近期趋势并给我讲讲")
     )
@@ -74,15 +78,15 @@ def test_fake_adapter_does_not_create_artifact_for_discussion(repository, temp_s
 
     FakeCLIAdapter().run_turn(
         "m_discuss",
-        "baobao",
+        agent_id,
         "t_1",
         "fake",
         "讨论近期趋势",
         tools,
     )
 
-    assert repository.list_messages("m_discuss")[0].agent_id == "baobao"
-    assert not (temp_settings.artifact_root / "m_discuss" / "demo-baobao.md").exists()
+    assert repository.list_messages("m_discuss")[0].agent_id == agent_id
+    assert not (temp_settings.artifact_root / "m_discuss" / f"demo-{agent_id}.md").exists()
     assert all(
         event.event_type != "artifact"
         for event in repository.list_events_after("m_discuss", 0)
@@ -361,7 +365,7 @@ def test_undirected_mission_uses_default_workflow(repository, temp_settings):
 
     assert completed.status == MissionStatus.COMPLETED
     messages = repository.list_messages("m_dir3")
-    assert messages[0].agent_id == "wangye"
+    assert messages[0].agent_id == "chulan"
 
 
 def test_directed_mission_uses_target_agent_providers_for_fallback(
@@ -531,7 +535,7 @@ def test_build_prompt_includes_trigger_points_when_agent_has_them():
 
     prompt = _build_prompt(mission, "复核风险", agent)
 
-    assert "【你的触发点】" in prompt
+    assert "【自然关注点】" in prompt
     assert "别人给出方案后还没有人挑过隐含假设" in prompt
     assert "讨论开始相互附和" in prompt
 
@@ -563,7 +567,7 @@ def test_build_prompt_skips_trigger_points_when_agent_has_none():
 
     prompt = _build_prompt(mission, "拆解任务", agent)
 
-    assert "【你的触发点】" not in prompt
+    assert "【自然关注点】" not in prompt
 
 
 def test_build_prompt_includes_artifact_index_section():
@@ -1428,3 +1432,18 @@ def _latest_status_event(repository, mission_id):
         if event.event_type == "status"
     ]
     return status_events[-1]
+
+
+@pytest.mark.parametrize("agent_id", ["chulan", "baobao", "wangye"])
+def test_personality_prompt_keeps_shared_abilities_and_independent_judgment(agent_id):
+    from backend.app.domain.agent_registry import AgentRegistry
+    agent = AgentRegistry.builtin().require(agent_id)
+    mission = Mission(id="m_persona", title="讨论", goal="每个人都要参与吗？")
+    prompt = _build_prompt(mission, "回应已有观点", agent)
+    assert agent.persona in prompt
+    assert "三位伙伴都可以提方案、分析、执行和总结" in prompt
+    assert "立场随事实与交流改变" in prompt
+    assert "不为显得不同而强行反对或附和" in prompt
+    assert "只有用户明确要求文件交付" in prompt
+    assert "职责是" not in prompt
+    assert "不要等别人点名" not in prompt
