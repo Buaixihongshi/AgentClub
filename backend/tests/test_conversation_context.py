@@ -63,7 +63,8 @@ def test_long_message_truncated(repository):
 
     lines = ctx.split("\n")
     user_line = [l for l in lines if l.startswith("用户：")][0]
-    assert user_line.endswith("…")
+    assert "已截断" in user_line
+    assert "id=msg_long" in user_line
     assert len(user_line) < 100
 
 
@@ -86,7 +87,7 @@ def test_respects_limit(repository):
     assert "消息0" not in ctx
 
 
-def test_system_role_labeled(repository):
+def test_system_role_excluded_from_dialogue(repository):
     repository.create_conversation(Conversation(id="c_sys", title="sys"))
     repository.create_mission(Mission(id="m_sys", title="t", goal="g", conversation_id="c_sys"))
     repository.add_message(Message(
@@ -96,7 +97,7 @@ def test_system_role_labeled(repository):
 
     ctx = build_conversation_context(repository, "c_sys")
 
-    assert "系统：任务已完成" in ctx
+    assert ctx == ""
 
 
 def test_unknown_agent_id_uses_raw_id(repository):

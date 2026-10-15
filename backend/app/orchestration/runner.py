@@ -96,12 +96,6 @@ class MissionRunner:
             target_agent_id=mission.target_agent_id,
             target_agent_ids=list(mission.target_agent_ids) or None,
         )
-        conversation_context = ""
-        if not is_provider_verification_mission(mission):
-            conversation_context = build_conversation_context(
-                self.repository, mission.conversation_id,
-                agent_registry=self.agent_registry,
-            )
         agents = {agent.id: agent for agent in self.agents}
         providers = _providers_by_agent(self.agents)
         max_turns = max(0, self.settings.max_turns)
@@ -183,6 +177,13 @@ class MissionRunner:
                 a2a_reply_text = pending_replies.pop(step.step_id, "<no reply: missing>")
 
             artifact_index = build_artifact_index(self.repository, mission.id)
+            conversation_context = ""
+            if not is_provider_verification_mission(mission):
+                conversation_context = build_conversation_context(
+                    self.repository, mission.conversation_id, mission_id=mission.id,
+                    reply_to_turn_id=step.sender_turn_id,
+                    agent_registry=self.agent_registry,
+                )
             prompt = _build_prompt(
                 mission,
                 turn_purpose,

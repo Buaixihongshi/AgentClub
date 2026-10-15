@@ -396,14 +396,16 @@ def test_interruption_records_event_payload(temp_settings):
     events = Repository(temp_settings.database_path).list_events_after(mission["id"], 0)
     interrupt_events = [event for event in events if event.event_type == "interrupt"]
     assert len(interrupt_events) == 1
+    interruption_message = next(message for message in data["messages"] if message["content"] == "暂停并等我确认")
     assert interrupt_events[0].payload == {
         "mission_id": mission["id"],
+        "message_id": interruption_message["id"],
         "content": "暂停并等我确认",
         "target_agent_id": "baobao",
     }
 
 
-def test_interruption_returns_detail_with_interrupt_event(temp_settings):
+def test_interruption_returns_detail_with_one_user_message(temp_settings):
     client = make_client(temp_settings)
     detail = client.post("/api/missions", json={"title": "Build", "goal": "解释报错"}).json()
     mission = detail["mission"]
@@ -420,9 +422,10 @@ def test_interruption_returns_detail_with_interrupt_event(temp_settings):
     interrupt_events = [
         event
         for event in data["events"]
-        if event["event_type"] == "interrupt" and event["content"] == "暂停并等我确认"
+        if event["role"] == "user" and event["content"] == "暂停并等我确认"
     ]
-    assert interrupt_events
+    assert len(interrupt_events) == 1
+    assert interrupt_events[0]["event_type"] == "message"
 
 
 def test_mission_stream_data_lines_are_json(temp_settings):
