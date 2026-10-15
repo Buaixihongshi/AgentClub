@@ -6,9 +6,9 @@ export interface MentionOption {
 }
 
 const DEFAULT_MENTION_OPTIONS: MentionOption[] = [
-  { id: "chulan", label: "张楚岚", aliases: ["张楚岚", "chulan"], role: "规划" },
-  { id: "baobao", label: "冯宝宝", aliases: ["冯宝宝", "宝宝", "baobao"], role: "执行" },
-  { id: "wangye", label: "王也", aliases: ["王也", "老王", "wangye"], role: "分析" },
+  { id: "chulan", label: "张楚岚", aliases: ["张楚岚", "chulan"], role: "通透机敏" },
+  { id: "baobao", label: "冯宝宝", aliases: ["冯宝宝", "宝宝", "baobao"], role: "坦率好奇" },
+  { id: "wangye", label: "王也", aliases: ["王也", "老王", "wangye"], role: "松弛笃定" },
 ];
 
 // Mutable so loadMentionOptions() can sync with /api/agents at startup while

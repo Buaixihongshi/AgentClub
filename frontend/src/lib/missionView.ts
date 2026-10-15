@@ -25,9 +25,9 @@ const CAPABILITY_LABEL: Record<Capability, string> = {
 };
 
 const DEFAULT_AGENTS: Array<{ agentId: string; personaLabel: string; capability: Capability }> = [
-  { agentId: "chulan", personaLabel: "张楚岚", capability: "planning" },
-  { agentId: "baobao", personaLabel: "冯宝宝", capability: "implementation" },
-  { agentId: "wangye", personaLabel: "王也", capability: "review" },
+  { agentId: "chulan", personaLabel: "张楚岚", capability: "unknown" },
+  { agentId: "baobao", personaLabel: "冯宝宝", capability: "unknown" },
+  { agentId: "wangye", personaLabel: "王也", capability: "unknown" },
 ];
 
 const AGENT_NAME_BY_ID = new Map(DEFAULT_AGENTS.map((agent) => [agent.agentId, agent.personaLabel]));

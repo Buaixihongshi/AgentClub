@@ -285,7 +285,7 @@ export function SettingsModal({
         <div className="settings-modal-header">
           <div>
             <h2>设置</h2>
-            <p>管理 CLI、角色分工和运行参数</p>
+            <p>管理 CLI、角色配置和运行参数</p>
           </div>
           <button
             type="button"

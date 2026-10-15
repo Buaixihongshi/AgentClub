@@ -1,3 +1,4 @@
+from backend.app.domain.agent_registry import AgentRegistry
 from backend.app.adapters.base import TurnOutcome
 from backend.app.domain.models import Mission, MissionStatus, TurnStatus
 from backend.app.mcp.tools import MCPToolError
@@ -147,7 +148,10 @@ def test_interrupt_clears_pending_a2a_queue(repository, temp_settings):
     temp_settings.max_a2a_invocations = 2
     adapter = InterruptAfterFirstA2AAdapter(invoke_on_agent="chulan", invoke_times=1)
 
-    completed = MissionRunner(repository, temp_settings, adapter=adapter).run(mission.id)
+    completed = MissionRunner(
+        repository, temp_settings, adapter=adapter,
+        agent_registry=_a2a_scenario_registry(),
+    ).run(mission.id)
 
     assert completed.status == MissionStatus.COMPLETED
     assert [call["agent_id"] for call in adapter.calls] == ["chulan", "wangye"]
@@ -334,7 +338,7 @@ def test_fire_and_forget_a2a_runs_right_after_inviting_turn(repository, temp_set
     """A fire-and-forget invoke_agent must be honored right after the inviting
     turn, not drift to the end of a multi-step workflow.
 
-    goal="设计方案" → MEDIUM workflow [chulan, wangye]. chulan invokes baobao on
+    Configured order gives MEDIUM workflow [chulan, wangye]. chulan invokes baobao on
     its first turn. The baobao a2a turn should land between chulan and wangye,
     so the speaking order is chulan → baobao → wangye — not chulan → wangye →
     baobao (which strands the A2A reply after the discussion already closed).
@@ -345,7 +349,10 @@ def test_fire_and_forget_a2a_runs_right_after_inviting_turn(repository, temp_set
     temp_settings.max_a2a_invocations = 2
     adapter = A2ATestAdapter(invoke_on_agent="chulan", invoke_times=1)
 
-    completed = MissionRunner(repository, temp_settings, adapter=adapter).run(mission.id)
+    completed = MissionRunner(
+        repository, temp_settings, adapter=adapter,
+        agent_registry=_a2a_scenario_registry(),
+    ).run(mission.id)
 
     assert completed.status == MissionStatus.COMPLETED
     assert [call["agent_id"] for call in adapter.calls] == ["chulan", "baobao", "wangye"]
@@ -355,7 +362,7 @@ def test_fire_and_forget_a2a_skipped_when_target_still_in_workflow(repository, t
     """A redundant fire-and-forget invoke is absorbed when the target still has a
     scheduled turn in the remaining workflow.
 
-    goal="设计方案" → MEDIUM workflow [chulan, wangye]. chulan invokes wangye, but
+    Configured order gives MEDIUM workflow [chulan, wangye]. chulan invokes wangye, but
     wangye is already going to speak (workflow step 2). The invoke should be
     skipped — recorded as a2a.skipped, no a2a.invoke, no extra wangye turn — so
     the speaking order stays chulan → wangye.
@@ -366,7 +373,10 @@ def test_fire_and_forget_a2a_skipped_when_target_still_in_workflow(repository, t
     temp_settings.max_a2a_invocations = 2
     adapter = A2ATestAdapter(invoke_on_agent="chulan", invoke_times=1, invoke_target="wangye")
 
-    completed = MissionRunner(repository, temp_settings, adapter=adapter).run(mission.id)
+    completed = MissionRunner(
+        repository, temp_settings, adapter=adapter,
+        agent_registry=_a2a_scenario_registry(),
+    ).run(mission.id)
 
     assert completed.status == MissionStatus.COMPLETED
     assert [call["agent_id"] for call in adapter.calls] == ["chulan", "wangye"]
@@ -451,10 +461,20 @@ def test_subprocess_a2a_request_skipped_when_target_still_in_workflow(repository
     temp_settings.max_a2a_invocations = 2
     adapter = SubprocessRequestAdapter()
 
-    completed = MissionRunner(repository, temp_settings, adapter=adapter).run(mission.id)
+    completed = MissionRunner(
+        repository, temp_settings, adapter=adapter,
+        agent_registry=_a2a_scenario_registry(),
+    ).run(mission.id)
 
     assert completed.status == MissionStatus.COMPLETED
     assert [call["agent_id"] for call in adapter.calls] == ["chulan", "wangye"]
     events = repository.list_events_after(mission.id, 0)
     assert [e.event_type for e in events if e.event_type == "a2a.invoke"] == []
     assert any(e.event_type == "a2a.skipped" for e in events)
+
+
+def _a2a_scenario_registry():
+    # These scenarios need chulan -> wangye scheduled and baobao unscheduled;
+    # make that arrangement explicit rather than relying on default personas.
+    registry = AgentRegistry.builtin()
+    return AgentRegistry([registry.require(agent_id) for agent_id in ("chulan", "wangye", "baobao")])

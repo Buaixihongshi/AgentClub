@@ -24,10 +24,11 @@ def test_explicit_multi_agent_demo_is_complex():
     assert classify_task("真实 CLI 演示：请三位 Agent 各用一句话说明当前联调状态") == TaskComplexity.COMPLEX
 
 
-def test_simple_workflow_uses_single_best_agent():
-    workflow = select_workflow(TaskComplexity.SIMPLE, "解释 Python 报错", AGENTS)
+@pytest.mark.parametrize("goal", ["解释 Python 报错", "写一个脚本", "分析风险", "聊聊周末"])
+def test_simple_workflow_uses_configured_order_regardless_of_job_keywords(goal):
+    workflow = select_workflow(TaskComplexity.SIMPLE, goal, AGENTS)
 
-    assert [step.agent_id for step in workflow] == ["wangye"]
+    assert [step.agent_id for step in workflow] == ["chulan"]
 
 
 def test_target_agent_uses_only_requested_agent():
@@ -97,17 +98,25 @@ def test_target_agent_ids_invalid_member_raises():
         )
 
 
-def test_simple_workflow_missing_required_agent_raises_clear_error():
-    agents = [agent for agent in AGENTS if agent.id != "wangye"]
+@pytest.mark.parametrize("first_id", ["chulan", "baobao", "wangye"])
+def test_any_personality_can_open_and_close(first_id):
+    agents = sorted(AGENTS, key=lambda agent: agent.id != first_id)
+    workflow = select_workflow(TaskComplexity.COMPLEX, "设计并实现系统", agents)
+    assert workflow[0].agent_id == first_id
+    assert workflow[-1].agent_id == first_id
+    assert workflow[-1].is_closing
+    assert {step.agent_id for step in workflow} == {agent.id for agent in agents}
 
-    with pytest.raises(ValueError, match="Unavailable agent_id: wangye"):
-        select_workflow(TaskComplexity.SIMPLE, "解释 Python 报错", agents)
+
+def test_no_available_agents_reports_clear_error():
+    with pytest.raises(ValueError, match="No agents available"):
+        select_workflow(TaskComplexity.SIMPLE, "聊聊", [])
 
 
-def test_medium_workflow_uses_primary_and_reviewer():
-    workflow = select_workflow(TaskComplexity.MEDIUM, "修复代码并补测试", AGENTS)
-
-    assert [step.agent_id for step in workflow] == ["baobao", "wangye"]
+@pytest.mark.parametrize("goal", ["修复代码并补测试", "比较方案和风险"])
+def test_medium_workflow_uses_configured_order(goal):
+    workflow = select_workflow(TaskComplexity.MEDIUM, goal, AGENTS)
+    assert [step.agent_id for step in workflow] == ["chulan", "baobao"]
 
 
 def test_complex_workflow_uses_three_agents():
@@ -124,7 +133,7 @@ def test_complex_workflow_does_not_force_baobao_to_create_an_artifact():
     )
 
     baobao_step = next(step for step in workflow if step.agent_id == "baobao")
-    assert baobao_step.purpose == "补充具体做法、实例和可行性；按用户需求执行"
+    assert baobao_step.purpose == workflow[0].purpose == workflow[2].purpose
     assert "产物" not in baobao_step.purpose
     assert "文件" not in baobao_step.purpose
 
