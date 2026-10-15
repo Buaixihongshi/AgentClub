@@ -20,6 +20,40 @@ export function isTerminalMissionStatus(status: string): boolean {
   );
 }
 
+export type RoomMode = "task" | "roundtable";
+
+export type DiscussionPhase = "opening" | "exchange" | "closing" | "ended";
+
+export type DiscussionControlAction = "finish" | "stop";
+
+export type DiscussionEndReason =
+  | "budget_exhausted"
+  | "user_finish"
+  | "user_stop"
+  | "provider_failed"
+  | "summary_failed"
+  | "service_restart"
+  | "runner_failed"
+  | "no_successful_turn";
+
+export interface DiscussionConfigView {
+  participant_ids: string[];
+  max_turns: number;
+}
+
+export interface DiscussionView {
+  participant_ids: string[];
+  phase: DiscussionPhase;
+  turns_used: number;
+  turns_limit: number;
+  current_speaker?: string | null;
+  current_turn_id?: string | null;
+  pending_control?: DiscussionControlAction | null;
+  end_reason?: DiscussionEndReason | null;
+  summary_message_ids?: Array<number | string>;
+  unanswered_interrupt_ids?: Array<number | string>;
+}
+
 export type EventRole = "user" | "agent" | "assistant" | "system";
 export type Capability = "planning" | "implementation" | "review" | "coordination" | "unknown";
 
@@ -28,6 +62,8 @@ export interface Mission {
   title?: string;
   goal: string;
   kind?: "task" | "provider_verification";
+  room_mode?: RoomMode;
+  discussion?: DiscussionConfigView | null;
   status: MissionStatus;
   complexity?: string;
   current_capability?: Capability;
@@ -205,11 +241,13 @@ export interface InterruptRecord {
   event_id: number | string;
   content: string;
   target_agent_id?: string | null;
-  status: "pending" | "handled";
+  status: "pending" | "handled" | "cancelled" | "deferred";
   created_at: string;
   handled_at?: string | null;
   handled_by_agent_id?: string | null;
   turn_id?: string | null;
+  handled_in_summary?: boolean;
+  reason?: string | null;
 }
 
 export interface A2AInvocationRecord {
@@ -273,6 +311,7 @@ export interface MissionThoughtRecord {
 
 export interface MissionDetail {
   mission: Mission;
+  discussion?: DiscussionView | null;
   events?: ThreadEvent[];
   messages?: ThreadEvent[];
   artifacts?: Artifact[];
