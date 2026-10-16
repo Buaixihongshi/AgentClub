@@ -1,0 +1,36 @@
+name: Owner release
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number to approve at its current head
+        required: true
+      sha:
+        description: Full reviewed head SHA
+        required: true
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+jobs:
+  approve:
+    if: github.actor == 'Buaixihongshi'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ inputs.pr }}
+          REVIEWED_SHA: ${{ inputs.sha }}
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const pull_number = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(pull_number) || pull_number < 1) throw Error('Invalid PR');
+            const {data: pr} = await github.rest.pulls.get({owner, repo, pull_number});
+            if (pr.state !== 'open' || pr.base.ref !== 'main' || pr.head.sha !== process.env.REVIEWED_SHA) {
+              throw Error('PR must be open against main at the exact reviewed SHA');
+            }
+            await github.rest.repos.createCommitStatus({owner, repo, sha: pr.head.sha,
+              state: 'success', context: 'Owner approval',
+              description: 'Buaixihongshi approved this exact head',
+              target_url: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`});

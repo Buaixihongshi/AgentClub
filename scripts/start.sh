@@ -28,7 +28,7 @@ BACKEND_PORT="${PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 BACKEND_ORIGIN="http://${BOOT_HOST}:${BACKEND_PORT}"
 APP_URL="http://${BOOT_HOST}:${FRONTEND_PORT}"
-RUNTIME_DIR="$ROOT/.yiren"
+RUNTIME_DIR="${YIREN_RUNTIME_DIR:-$ROOT/.yiren}"
 
 for command_name in python3 node npm; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
