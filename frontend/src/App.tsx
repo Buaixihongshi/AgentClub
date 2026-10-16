@@ -14,11 +14,15 @@ import {
   interruptMission,
   listAgents,
   listConversations,
+  newRequestId,
+  sendDiscussionControl,
   updateConversation,
   updateHubSettings,
   startOnboardingFirstChat,
   verifyOnboardingProvider,
+  type MissionCreatePayload,
 } from "./lib/api";
+import { allParticipantIds, formatDiscussionError } from "./lib/roundtableView";
 import { buildAgentParticipants, buildMissionRuntimeSummary, buildTurnViews } from "./lib/missionView";
 import {
   collectMentionTargetIds,
@@ -30,11 +34,13 @@ import {
   isTerminalMissionStatus,
   type ConversationDetail,
   type ConversationSummary,
+  type DiscussionControlAction,
   type HealthView,
   type HubSettingsPatch,
   type HubSettingsView,
   type MissionDetail,
   type OnboardingView,
+  type RoomMode,
   type ThreadEvent,
 } from "./types";
 import "./styles.css";
@@ -48,6 +54,12 @@ export default function App() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [composerMode, setComposerMode] = useState<RoomMode>("task");
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>(() =>
+    allParticipantIds(),
+  );
+  const [interruptTargetId, setInterruptTargetId] = useState<string | null>(null);
+  const [discussionBusy, setDiscussionBusy] = useState(false);
   const [hubSettings, setHubSettings] = useState<HubSettingsView | null>(null);
   const [health, setHealth] = useState<HealthView | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
@@ -263,29 +275,103 @@ export default function App() {
     }
   }
 
+  const refreshConversationState = useCallback(async () => {
+    if (!selectedConvId) return;
+    try {
+      const detail = await fetchConversation(selectedConvId);
+      setConvDetail(detail);
+      setLatestMissionDetail(detail.latest_mission_detail ?? undefined);
+    } catch {
+      // Keep the last known snapshot; the stream may still recover.
+    }
+  }, [selectedConvId]);
+
+  function handleComposerModeChange(mode: RoomMode) {
+    setComposerMode(mode);
+    if (mode === "task") setInterruptTargetId(null);
+  }
+
+  function handleToggleParticipant(agentId: string) {
+    setSelectedParticipantIds((prev) =>
+      prev.includes(agentId) ? prev.filter((id) => id !== agentId) : [...prev, agentId],
+    );
+  }
+
+  function handleContinueDiscussion() {
+    const discussion = latestMissionDetail?.discussion;
+    const previousGoal = latestMissionDetail?.mission.goal ?? "";
+    setComposerMode("roundtable");
+    if (discussion?.participant_ids?.length) {
+      setSelectedParticipantIds([...discussion.participant_ids]);
+    }
+    setInterruptTargetId(null);
+    setError(null);
+    if (previousGoal) {
+      setInput((prev) => (prev.trim() ? prev : previousGoal));
+    }
+  }
+
+  async function sendDiscussionControlRequest(
+    action: DiscussionControlAction,
+    summaryAgentId?: string,
+  ) {
+    const mission = latestMissionDetail;
+    if (!mission) return;
+    setDiscussionBusy(true);
+    setError(null);
+    try {
+      const updated = await sendDiscussionControl(
+        mission.mission.id,
+        { action, summaryAgentId },
+        newRequestId(action),
+      );
+      setLatestMissionDetail(updated);
+    } catch (err) {
+      setError(formatDiscussionError(err instanceof Error ? err.message : "发送讨论控制失败"));
+      await refreshConversationState();
+    } finally {
+      setDiscussionBusy(false);
+    }
+  }
+
   async function submit() {
     const rawInput = input.trim();
     const multi = parseMentionTargets(rawInput);
     const missionTargetAgentIds = collectMentionTargetIds(rawInput);
     const single = parseMentionTarget(rawInput);
     if (!multi.content) return;
+
+    const activeMission = hasRunningMission ? latestMissionDetail : undefined;
+    const roundtableActive = activeMission?.mission.room_mode === "roundtable";
+    if (!activeMission && composerMode === "roundtable" && selectedParticipantIds.length < 2) {
+      setError("多人讨论需要 2～3 位参与者，请再选择一位。");
+      return;
+    }
+    const payload: MissionCreatePayload =
+      composerMode === "roundtable"
+        ? {
+            goal: rawInput,
+            room_mode: "roundtable",
+            discussion: { participant_ids: selectedParticipantIds },
+            request_id: newRequestId("start"),
+          }
+        : { goal: rawInput, target_agent_ids: missionTargetAgentIds };
+
     setBusy(true);
     setError(null);
     try {
-      if (latestMissionDetail && hasRunningMission) {
-        // Interrupts retarget a single in-flight agent, not a discussion.
-        const updated = await interruptMission(
-          latestMissionDetail.mission.id,
-          rawInput,
-          single.targetAgentId,
-        );
+      if (activeMission) {
+        // Roundtables route the reply through the selected participant; task
+        // mode keeps the @-mention behaviour it had before roundtables.
+        const updated = await interruptMission(activeMission.mission.id, rawInput, {
+          targetAgentId: roundtableActive
+            ? interruptTargetId ?? undefined
+            : single.targetAgentId,
+          requestId: roundtableActive ? newRequestId("input") : undefined,
+        });
         setLatestMissionDetail(updated);
       } else if (selectedConvId) {
-        const detail = await createConversationMission(
-          selectedConvId,
-          rawInput,
-          missionTargetAgentIds,
-        );
+        const detail = await createConversationMission(selectedConvId, payload);
         setConvDetail(detail);
         if (detail.latest_mission_detail) {
           setLatestMissionDetail(detail.latest_mission_detail);
@@ -294,11 +380,7 @@ export default function App() {
       } else {
         const conv = await createConversation();
         setSelectedConvId(conv.id);
-        const detail = await createConversationMission(
-          conv.id,
-          rawInput,
-          missionTargetAgentIds,
-        );
+        const detail = await createConversationMission(conv.id, payload);
         setConvDetail(detail);
         if (detail.latest_mission_detail) {
           setLatestMissionDetail(detail.latest_mission_detail);
@@ -306,8 +388,11 @@ export default function App() {
         listConversations().then(setConversations).catch(() => {});
       }
       setInput("");
+      setInterruptTargetId(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "请求失败");
+      // Requests that lost the race keep the user's text and refresh the truth.
+      setError(formatDiscussionError(err instanceof Error ? err.message : "请求失败"));
+      await refreshConversationState();
     } finally {
       setBusy(false);
     }
@@ -439,6 +524,25 @@ export default function App() {
       displayMessages={displayMessages}
       hubSettings={hubSettings}
       onSaveSettings={handleSaveSettings}
+      composerMode={composerMode}
+      onComposerModeChange={handleComposerModeChange}
+      selectedParticipantIds={selectedParticipantIds}
+      onToggleParticipant={handleToggleParticipant}
+      discussionHint={
+        composerMode === "roundtable" && selectedParticipantIds.length < 2
+          ? "多人讨论至少要 2 位参与者，请再选一位。"
+          : null
+      }
+      interruptTargetId={interruptTargetId}
+      onInterruptTargetChange={setInterruptTargetId}
+      discussionBusy={discussionBusy}
+      onRequestFinish={(summaryAgentId) => {
+        void sendDiscussionControlRequest("finish", summaryAgentId);
+      }}
+      onRequestStop={() => {
+        void sendDiscussionControlRequest("stop");
+      }}
+      onContinueDiscussion={handleContinueDiscussion}
       onboarding={{
         health,
         healthLoading,

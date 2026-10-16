@@ -333,6 +333,9 @@ def test_read_context_returns_messages_and_mission(temp_settings, seeded_mission
         content="测试用户消息",
     )
     repository.add_message(msg)
+    legacy_id = repository.add_event(seeded_mission.id, "interrupt", {"content": "历史插话"})
+    inserted = repository.add_interruption(seeded_mission.id, "新插话")
+    repository.add_event(seeded_mission.id, "cli.stdout", {"content": "不应进入对话"})
 
     harness = _spawn(temp_settings, seeded_mission)
     try:
@@ -359,6 +362,8 @@ def test_read_context_returns_messages_and_mission(temp_settings, seeded_mission
     assert "messages" in payload
     assert isinstance(payload["messages"], list)
     assert any(m["id"] == "msg_ctx_test" for m in payload["messages"])
+    assert [m["id"] for m in payload["messages"]] == ["msg_ctx_test", f"interrupt:{legacy_id}", inserted.id]
+    assert [m["content"] for m in payload["messages"]] == ["测试用户消息", "历史插话", "新插话"]
 
     events = repository.list_events_after(seeded_mission.id, 0)
     tool_calls = [e for e in events if e.event_type == "tool.call" and e.payload.get("tool_name") == "read_context"]

@@ -1,9 +1,12 @@
 import json
 import sqlite3
+import threading
 from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Optional
+from uuid import uuid4
 
+from backend.app.domain.history import MessageHistory
 from backend.app.domain.maintenance import (
     EvolutionBatch,
     MaintenanceApproval,
@@ -13,12 +16,15 @@ from backend.app.domain.maintenance import (
     RegisteredRepository,
     ValidationResult,
 )
-from backend.app.domain.models import Conversation, Message, Mission, MissionEvent
+from backend.app.domain.models import (
+    Conversation, Message, MessageRole, Mission, MissionEvent, is_provider_verification_mission,
+)
 
 
 class Repository:
     def __init__(self, database_path: Path):
         self.database_path = database_path
+        self._local = threading.local()
 
     def initialize(self) -> None:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,13 +128,76 @@ class Repository:
             rows = db.execute("SELECT data FROM missions ORDER BY id DESC").fetchall()
         return [Mission.model_validate_json(row["data"]) for row in rows]
 
-    def add_message(self, message: Message) -> None:
+    def add_message(self, message: Message, db: Optional[sqlite3.Connection] = None) -> None:
+        if db is None:
+            with self._transaction() as connection:
+                self.add_message(message, db=connection)
+            return
+        db.execute(
+            "INSERT INTO messages (id, mission_id, data) VALUES (?, ?, ?)",
+            (message.id, message.mission_id, message.model_dump_json()),
+        )
+        self.add_event(message.mission_id, "message", message.model_dump(mode="json"), db=db)
+
+    def add_interruption(self, mission_id: str, content: str, target_agent_id: Optional[str] = None, *, request_id: Optional[str] = None, request: Optional[dict] = None) -> Message:
+        """Commit the visible user message and its routing event together."""
         with self._transaction() as db:
-            db.execute(
-                "INSERT INTO messages (id, mission_id, data) VALUES (?, ?, ?)",
-                (message.id, message.mission_id, message.model_dump_json()),
+            row = db.execute("SELECT data FROM missions WHERE id = ?", (mission_id,)).fetchone()
+            if row is None:
+                raise ValueError(f"Unknown mission: {mission_id}")
+            mission = Mission.model_validate_json(row["data"])
+            message = Message(
+                id=f"msg_{uuid4().hex}", mission_id=mission_id,
+                conversation_id=mission.conversation_id, role=MessageRole.USER, content=content,
             )
-            self.add_event(message.mission_id, "message", message.model_dump(mode="json"), db=db)
+            self.add_message(message, db=db)
+            self.add_event(mission_id, "interrupt", {
+                "mission_id": mission_id, "message_id": message.id,
+                "content": content, "target_agent_id": target_agent_id,
+                **({"request_id": request_id, "request": request} if request_id else {}),
+            }, db=db)
+        return message
+
+    def read_message_history(
+        self, *, conversation_id: Optional[str] = None, mission_id: Optional[str] = None,
+    ) -> MessageHistory:
+        """Read messages and events from one SQLite snapshot.
+
+        Conversation reads exclude provider verification. An explicit mission read
+        is isolated to that mission (including verification and legacy missions).
+        """
+        if mission_id:
+            scope, parameters = "m.id = ?", (mission_id,)
+        elif conversation_id:
+            scope, parameters = "json_extract(m.data, '$.conversation_id') = ?", (conversation_id,)
+        else:
+            return MessageHistory([], [], [])
+        with self._transaction() as db:
+            # SELECT alone does not start a snapshot in sqlite3's legacy mode.
+            if not db.in_transaction:
+                db.execute("BEGIN")
+            rows = db.execute(f"SELECT m.data FROM missions m WHERE {scope}", parameters).fetchall()
+            missions = [Mission.model_validate_json(row["data"]) for row in rows]
+            if not mission_id:
+                missions = [m for m in missions if not is_provider_verification_mission(m)]
+            allowed = {m.id for m in missions}
+            rows = db.execute(
+                f"SELECT x.mission_id, x.data FROM messages x JOIN missions m ON m.id = x.mission_id WHERE {scope}",
+                parameters,
+            ).fetchall()
+            messages = [Message.model_validate_json(row["data"]) for row in rows if row["mission_id"] in allowed]
+            # Full mission events are also used by HTTP/SSE; dialogue reads across
+            # missions do not need tool traces or other control events.
+            event_filter = "" if mission_id else " AND e.event_type IN ('message', 'interrupt')"
+            rows = db.execute(
+                f"SELECT e.* FROM events e JOIN missions m ON m.id = e.mission_id WHERE {scope}{event_filter} ORDER BY e.id",
+                parameters,
+            ).fetchall()
+            events = [MissionEvent(
+                id=str(row["id"]), mission_id=row["mission_id"], event_type=row["event_type"],
+                payload=json.loads(row["payload"]), created_at=row["created_at"],
+            ) for row in rows if row["mission_id"] in allowed]
+        return MessageHistory(missions, messages, events)
 
     def list_messages(self, mission_id: str) -> list[Message]:
         with self._transaction() as db:
@@ -414,10 +483,20 @@ class Repository:
         return [model.model_validate_json(row["data"]) for row in rows]
 
     @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
+    def _transaction(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
+        active = getattr(self._local, "connection", None)
+        if active is not None:
+            yield active
+            return
         with closing(self._connect()) as connection:
             with connection:
-                yield connection
+                if immediate:
+                    connection.execute("BEGIN IMMEDIATE")
+                self._local.connection = connection
+                try:
+                    yield connection
+                finally:
+                    self._local.connection = None
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path)

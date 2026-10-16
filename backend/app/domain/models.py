@@ -92,12 +92,18 @@ class Conversation(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class DiscussionConfig(BaseModel):
+    participant_ids: List[str]
+    max_turns: int
+
+
 class Mission(BaseModel):
     id: str
     title: str
     goal: str
     kind: MissionKind = MissionKind.TASK
     room_mode: RoomMode = RoomMode.TASK
+    discussion: Optional[DiscussionConfig] = None
     status: MissionStatus = MissionStatus.PENDING
     complexity: TaskComplexity = TaskComplexity.SIMPLE
     conversation_id: Optional[str] = None
