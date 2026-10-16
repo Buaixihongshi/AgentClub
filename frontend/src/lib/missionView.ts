@@ -254,7 +254,7 @@ function describeA2ATargetTurn(targetName: string, turn?: TurnRecord): string {
   return detail ? `${targetName}${label}：${detail}` : `${targetName}${label}`;
 }
 
-function formatAgentName(agentId: string): string {
+export function formatAgentName(agentId: string): string {
   return AGENT_NAME_BY_ID.get(agentId) ?? agentId;
 }
 
