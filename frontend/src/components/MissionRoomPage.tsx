@@ -9,10 +9,14 @@ import {
   type HubSettingsView,
   type MissionDetail,
   type MissionRuntimeSummary,
+  type RoomMode,
   type ThreadEvent,
   type TurnView,
 } from "../types";
+import { participantLabel } from "../lib/roundtableView";
 import { ConversationList } from "./ConversationList";
+import { DiscussionSetup } from "./DiscussionSetup";
+import { DiscussionStatus } from "./DiscussionStatus";
 import { MissionComposer } from "./MissionComposer";
 import { MissionHeader } from "./MissionHeader";
 import { MaintenanceButton } from "./MaintenanceButton";
@@ -45,9 +49,33 @@ export function MissionRoomPage(props: {
   hubSettings?: HubSettingsView | null;
   onSaveSettings?: (patch: HubSettingsPatch) => void;
   onboarding?: OnboardingCardProps;
+  composerMode: RoomMode;
+  onComposerModeChange: (mode: RoomMode) => void;
+  selectedParticipantIds: string[];
+  onToggleParticipant: (agentId: string) => void;
+  discussionHint?: string | null;
+  interruptTargetId: string | null;
+  onInterruptTargetChange: (agentId: string | null) => void;
+  discussionBusy: boolean;
+  onRequestFinish: (summaryAgentId?: string) => void;
+  onRequestStop: () => void;
+  onContinueDiscussion: () => void;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const showOnboarding = props.onboarding?.onboarding?.state !== "completed";
+  const hasActiveMission = Boolean(
+    props.detail && !isTerminalMissionStatus(props.detail.mission.status),
+  );
+  const discussion = props.detail?.discussion ?? null;
+  const interruptTargets = (discussion?.participant_ids ?? []).map((agentId) => ({
+    agentId,
+    label: participantLabel(agentId),
+  }));
+  const submitLabel = hasActiveMission
+    ? "发送插话"
+    : props.composerMode === "roundtable"
+      ? "开始讨论"
+      : "创建任务";
   const onboardingCard = props.onboarding && showOnboarding ? (
     <OnboardingCard
       {...props.onboarding}
@@ -101,16 +129,44 @@ export function MissionRoomPage(props: {
               emptyContent={onboardingCard}
               afterContent={props.turns.length > 0 ? onboardingCard : null}
             />
-            <MissionComposer
-              value={props.input}
-              busy={props.busy}
-              hasActiveMission={Boolean(
-                props.detail && !isTerminalMissionStatus(props.detail.mission.status),
-              )}
-              disabled={props.conversationScope === "archived"}
-              onChange={props.onInputChange}
-              onSubmit={props.onSubmit}
-            />
+            <div className="discussion-panels">
+              <DiscussionSetup
+                mode={props.composerMode}
+                participantIds={props.selectedParticipantIds}
+                onModeChange={props.onComposerModeChange}
+                onToggleParticipant={props.onToggleParticipant}
+                locked={hasActiveMission}
+                hint={props.discussionHint}
+              />
+              {discussion ? (
+                <DiscussionStatus
+                  discussion={discussion}
+                  missionStatus={props.detail?.mission.status ?? "pending"}
+                  busy={props.discussionBusy}
+                  onRequestFinish={props.onRequestFinish}
+                  onRequestStop={props.onRequestStop}
+                  onContinue={props.onContinueDiscussion}
+                />
+              ) : null}
+              <MissionComposer
+                value={props.input}
+                busy={props.busy}
+                hasActiveMission={hasActiveMission}
+                disabled={props.conversationScope === "archived"}
+                submitLabel={submitLabel}
+                submitDisabled={
+                  !hasActiveMission &&
+                  props.composerMode === "roundtable" &&
+                  props.selectedParticipantIds.length < 2
+                }
+                mentionsEnabled={props.composerMode === "task"}
+                interruptTargets={hasActiveMission ? interruptTargets : []}
+                interruptTargetId={props.interruptTargetId}
+                onInterruptTargetChange={props.onInterruptTargetChange}
+                onChange={props.onInputChange}
+                onSubmit={props.onSubmit}
+              />
+            </div>
           </section>
           <MissionSideRail
             detail={props.detail}

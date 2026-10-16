@@ -1,14 +1,27 @@
-# 多人讨论后端（RT-2）
+# 多人讨论（RT-2 后端 / RT-3 前端）
 
 ## 三阶段目标
 
 | 阶段 | 交付 | 当前状态 |
 | --- | --- | --- |
 | RT-1 | 每轮共享上下文、插话持久化、旧记录兼容 | [PR #7](https://github.com/Buaixihongshi/AgentClub/pull/7) 已合入 |
-| RT-2 | 圆桌创建、预算、A2A、插话与控制、并发及恢复 | 本次后端实现；通过 HTTP 可完整验收，待 PR 审查合并 |
-| RT-3 | 模式选择、参与者、运行状态、控制按钮、继续讨论与体验验收 | 待 RT-2 合入后实施 |
+| RT-2 | 圆桌创建、预算、A2A、插话与控制、并发及恢复 | [PR #8](https://github.com/Buaixihongshi/AgentClub/pull/8)；通过 HTTP 可完整验收 |
+| RT-3 | 模式选择、参与者、运行状态、控制按钮、继续讨论与体验验收 | 本次前端实现，堆叠在 RT-2 之上；待 PR 审查合并 |
 
 设计依据：[三阶段方案 PR #6](https://github.com/Buaixihongshi/AgentClub/pull/6)。三位角色沿用[人格约定](PERSONALITIES.md)，不设固定主持、执行或反对岗位。RT-1 的上下文预算沿用[共享对话说明](SHARED_CONTEXT.md)，本阶段不据未实测的字符数推算模型费用。
+
+## 前端入口与运行状态（RT-3）
+
+任务室顶部提供“任务 / 多人讨论”切换。圆桌模式下展示三位角色的姓名与性格标签（通透机敏、坦率好奇、松弛笃定），默认全选，按勾选顺序参与；界面只呈现性格差别，不出现主持、执行者或反对者等固定岗位。
+
+- 参与者 2～3 人才能开始；少于 2 人时提交按钮禁用并提示原因。默认回合预算按 `2 × 人数 + 1` 显示，最后一格留给总结。
+- 提交后模式与参与者在讨论结束前锁定，锁定原因与恢复方式写在面板中。
+- 讨论进行中，输入框提交按钮变为“发送插话”；圆桌关闭 `@` 自动补全，点名改由“点名先回应（可选）”下拉传递 `target_agent_id`。每次插话携带稳定 request_id，重试不会重复入队。
+- 状态面板完全由 `MissionDetail.discussion` 与 SSE 快照驱动：阶段、`已用 x / 最多 y 个回合（含总结）`、参与者、当前发言、未回应插话、pending_control、总结消息条数、mission 状态与 end_reason。
+- “本轮后收尾”可临时指定收尾人；“本轮后停止”结束讨论。两者都是回合边界控制，面板明确说明不会立即停止当前 CLI，`pending_control` 期间按钮禁用，避免重复提交。
+- 收到 409/422 时保留用户输入并给出可操作的中文提示，同时刷新会话状态；讨论结束后面板显示结束原因和“继续讨论”入口，点击后沿用原参与者并把议题回填到输入框。
+
+前端不显示无法推算的精确费用或完成时间，不伪造流式输出，也不把 pending 请求描述成已经停止。运行状态、控制按钮与终态文案由 `frontend/src/lib/roundtableView.ts` 统一格式化。
 
 ## 创建与继续
 
@@ -110,10 +123,16 @@ python scripts/smoke_roundtable.py --fake
 python scripts/smoke_onboarding.py --fresh --fake
 python scripts/smoke_conversation_flow.py --fake
 python scripts/smoke_real_cli_mission.py --fake
+
+cd frontend && npm test && npm run build
 ```
+
+前端用 `roundtableView.test.ts` 覆盖阶段/结束原因/控制/预算文案，`DiscussionSetup`、`DiscussionStatus` 覆盖锁定态与控制按钮，`App.roundtable.test.tsx` 覆盖三人与两人启动、参与者不足、运行中锁定、插话 request_id 与点名、收尾/停止、刷新恢复与 SSE 终态、继续讨论沿用参与者、409 保留输入、Provider 失败结束，以及任务模式兼容。
 
 `test_roundtable.py` 覆盖双方创建入口、事务回滚、并发/幂等、默认/极限预算、fallback、嵌套 wait_reply、开场机会保留、目的去重、插话批量处理、收尾/停止、终态拒绝、重启及迟到 MCP；关键边界同时运行进程内和实际 stdio 子进程用例。
 
 smoke 的 --fake 使用确定性的“观点 → 回应 → HTTP 插话 → 修正 → 总结”脚本，检查实际 prompt 中的区别性事实，并验证最终 HTTP/SSE 视图。默认不调用真实模型。
+
+前端运行状态、控制 pending 文案和终态恢复也在真实浏览器中核对过：圆桌启动后展示阶段、预算、参与者、点名下拉与两个控制按钮；请求收尾后显示“等当前回合结束后开始总结”；收尾完成后面板给出结束原因并可继续讨论。演示 Provider 每轮近乎瞬时完成，因此“插话被接纳并进入某回合”的分支由上面的前端用例覆盖，未在演示模式的实时页面里复现。
 
 `python scripts/smoke_roundtable.py --real --timeout-seconds 300` 是显式 opt-in，使用临时配置将三位角色接到已登录的 Codex CLI，经 stdio MCP 运行。真实发言的人格、质量和实际费用需另行验收；离线测试不代表已经完成这项验收。
