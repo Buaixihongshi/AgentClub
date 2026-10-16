@@ -1,4 +1,4 @@
-import type { ArtifactContent, Conversation, ConversationDetail, ConversationSummary, HealthView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository } from "../types";
+import type { ArtifactContent, Conversation, ConversationDetail, ConversationSummary, DiscussionControlAction, HealthView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository, RoomMode } from "../types";
 
 const API_ROOT = "";
 
@@ -26,17 +26,43 @@ export async function fetchMission(missionId: string): Promise<MissionDetail> {
   return parseJson<MissionDetail>(response, "加载任务详情失败");
 }
 
-export async function createMission(
-  goal: string,
-  targetAgentIds?: string[],
-): Promise<MissionDetail> {
+export interface MissionCreatePayload {
+  goal: string;
+  title?: string;
+  target_agent_ids?: string[];
+  room_mode?: RoomMode;
+  discussion?: { participant_ids: string[]; max_turns?: number };
+  request_id?: string;
+}
+
+/** Stable client-side idempotency key; the backend replays same-id requests. */
+export function newRequestId(scope: string): string {
+  const cryptoApi = globalThis.crypto as Crypto | undefined;
+  const unique =
+    cryptoApi && typeof cryptoApi.randomUUID === "function"
+      ? cryptoApi.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${scope}-${unique}`;
+}
+
+/** Task mode keeps the original body shape so older API consumers stay valid. */
+function missionCreateBody(payload: MissionCreatePayload): string {
+  const body: Record<string, unknown> = { goal: payload.goal };
+  if (payload.title) body.title = payload.title;
+  if (payload.room_mode) body.room_mode = payload.room_mode;
+  if (payload.discussion) body.discussion = payload.discussion;
+  if (payload.target_agent_ids && payload.target_agent_ids.length > 0) {
+    body.target_agent_ids = payload.target_agent_ids;
+  }
+  if (payload.request_id) body.request_id = payload.request_id;
+  return JSON.stringify(body);
+}
+
+export async function createMission(payload: MissionCreatePayload): Promise<MissionDetail> {
   const response = await fetch(`${API_ROOT}/api/missions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      goal,
-      target_agent_ids: targetAgentIds && targetAgentIds.length > 0 ? targetAgentIds : undefined,
-    }),
+    body: missionCreateBody(payload),
   });
   return parseJson<MissionDetail>(response, "创建任务失败");
 }
@@ -44,14 +70,35 @@ export async function createMission(
 export async function interruptMission(
   missionId: string,
   content: string,
-  targetAgentId?: string
+  options?: { targetAgentId?: string; requestId?: string },
 ): Promise<MissionDetail> {
   const response = await fetch(`${API_ROOT}/api/missions/${missionId}/interruptions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, target_agent_id: targetAgentId })
+    body: JSON.stringify(
+      options?.requestId
+        ? { content, target_agent_id: options?.targetAgentId, request_id: options.requestId }
+        : { content, target_agent_id: options?.targetAgentId },
+    ),
   });
   return parseJson<MissionDetail>(response, "发送插话失败");
+}
+
+export async function sendDiscussionControl(
+  missionId: string,
+  payload: { action: DiscussionControlAction; summaryAgentId?: string },
+  requestId: string,
+): Promise<MissionDetail> {
+  const response = await fetch(`${API_ROOT}/api/missions/${missionId}/discussion-controls`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: payload.action,
+      summary_agent_id: payload.summaryAgentId,
+      request_id: requestId,
+    }),
+  });
+  return parseJson<MissionDetail>(response, "发送讨论控制失败");
 }
 
 export async function fetchArtifactContent(
@@ -101,16 +148,12 @@ export async function fetchConversation(conversationId: string): Promise<Convers
 
 export async function createConversationMission(
   conversationId: string,
-  goal: string,
-  targetAgentIds?: string[],
+  payload: MissionCreatePayload,
 ): Promise<ConversationDetail> {
   const response = await fetch(`${API_ROOT}/api/conversations/${conversationId}/missions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      goal,
-      target_agent_ids: targetAgentIds && targetAgentIds.length > 0 ? targetAgentIds : undefined,
-    }),
+    body: missionCreateBody(payload),
   });
   return parseJson<ConversationDetail>(response, "在会话中创建任务失败");
 }

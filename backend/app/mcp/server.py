@@ -194,7 +194,7 @@ _TOOL_DESCRIPTORS = [
         "name": "update_status",
         "description": (
             "更新当前 mission 的状态，可选附带一条摘要说明。"
-            "status 必须是合法的 MissionStatus 枚举值。"
+            "status 必须是合法的 MissionStatus 枚举值；圆桌只允许报告 running，结束由宿主控制。"
         ),
         "inputSchema": {
             "type": "object",
@@ -217,7 +217,9 @@ _TOOL_DESCRIPTORS = [
         "name": "invoke_agent",
         "description": (
             "请求另一个 AgentClub agent 接力处理子任务。"
-            "G3 仅支持 fire_and_forget；被叫 agent 会在当前 turn 结束后顺序发言。"
+            "支持 fire_and_forget 和 wait_reply；受邀者在当前 turn 结束后顺序发言。"
+            "wait_reply 接纳后结束当前发言，宿主安排受邀者及你的续答，不会在本次工具调用中返回回复正文。"
+            "圆桌仅可邀请本场参与者，共享总回合预算；accepted/scheduled 表示已接纳或已有安排，不表示已发言。"
         ),
         "inputSchema": {
             "type": "object",
@@ -469,8 +471,18 @@ def _handle_initialize(_ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any
     }
 
 
-def _handle_tools_list(_ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any]:
-    return {"tools": list(_TOOL_DESCRIPTORS)}
+def _handle_tools_list(ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any]:
+    from copy import deepcopy
+    descriptors = deepcopy(_TOOL_DESCRIPTORS)
+    mission = ctx.tools.repository.get_mission(ctx.mission_id)
+    if mission and mission.room_mode == "roundtable" and mission.discussion:
+        for descriptor in descriptors:
+            properties = descriptor["inputSchema"]["properties"]
+            if descriptor["name"] == "invoke_agent":
+                properties["target_agent_id"]["enum"] = mission.discussion.participant_ids
+            if descriptor["name"] == "update_status":
+                properties["status"]["enum"] = ["running"]
+    return {"tools": descriptors}
 
 
 def _handle_tools_call(ctx: _Context, params: Dict[str, Any]) -> Dict[str, Any]:

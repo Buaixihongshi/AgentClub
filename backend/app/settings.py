@@ -20,6 +20,7 @@ class Settings(BaseModel):
     config_dir: Path = Path("config")
     use_fake_cli: bool = True
     max_turns: int = 6
+    roundtable_max_turns: int = Field(default=12, ge=3, le=12)
     max_a2a_invocations: int = 8
     cli_timeout: int = 120
     a2a_idle_timeout: int = Field(default=90, ge=0)
@@ -50,6 +51,7 @@ def get_settings() -> Settings:
         config_dir=_env_path("YIREN_CONFIG_DIR", default=Path("config")),
         use_fake_cli=_env_bool("YIREN_USE_FAKE_CLI", default=True),
         max_turns=_env_int("YIREN_MAX_TURNS", default=6),
+        roundtable_max_turns=_env_int("YIREN_ROUNDTABLE_MAX_TURNS", default=12),
         max_a2a_invocations=_env_int("YIREN_MAX_A2A_INVOCATIONS", default=8),
         cli_timeout=_env_int("YIREN_CLI_TIMEOUT", default=120),
         a2a_idle_timeout=_env_int("YIREN_A2A_IDLE_TIMEOUT", default=90),
@@ -117,6 +119,7 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
         "config_dir": app_settings.config_dir,
         "use_fake_cli": app_settings.use_fake_cli,
         "max_turns": app_settings.max_turns,
+        "roundtable_max_turns": app_settings.roundtable_max_turns,
         "max_a2a_invocations": app_settings.max_a2a_invocations,
         "cli_timeout": app_settings.cli_timeout,
         "a2a_idle_timeout": app_settings.a2a_idle_timeout,

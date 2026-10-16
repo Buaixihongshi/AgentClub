@@ -1953,6 +1953,264 @@ summary:focus-visible {
   line-height: 1.65;
 }
 
+/* ===== Roundtable (多人讨论) ===== */
+.discussion-panels {
+  display: grid;
+  gap: 12px;
+  padding: 0 24px 16px;
+  background: var(--paper);
+}
+
+.discussion-setup,
+.discussion-status {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: var(--hard-shadow-sm);
+}
+
+.discussion-mode-switch {
+  display: flex;
+  gap: 8px;
+}
+
+.discussion-mode-option {
+  padding: 6px 16px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.discussion-mode-option.is-active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.discussion-mode-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.discussion-participants {
+  display: grid;
+  gap: 8px;
+}
+
+.discussion-participants-hint,
+.discussion-budget-hint,
+.discussion-lock-note {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.discussion-lock-note {
+  font-style: italic;
+}
+
+.discussion-participant-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.discussion-participant-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 2px dashed var(--ink-line);
+  border-radius: 4px;
+  background: var(--paper-soft);
+  cursor: pointer;
+}
+
+.discussion-participant-card.is-selected {
+  border-style: solid;
+  background: var(--sage-soft);
+}
+
+.discussion-participant-avatar {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.discussion-participant-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.discussion-participant-copy strong {
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.discussion-participant-role {
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.discussion-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1.5px solid var(--warning);
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.discussion-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.discussion-status-head h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.discussion-phase {
+  padding: 3px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--sage-soft);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.discussion-phase-ended {
+  background: var(--paper-soft);
+  color: var(--ink-muted);
+}
+
+.discussion-budget,
+.discussion-participants-line,
+.discussion-speaker,
+.discussion-end-reason,
+.discussion-deferred,
+.discussion-mission-status {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.discussion-pending {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1.5px solid var(--sage);
+  border-radius: 4px;
+  background: var(--sage-soft);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.discussion-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.discussion-controls label {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+
+.discussion-controls select {
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.discussion-control-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.discussion-control-buttons button,
+.discussion-continue-button {
+  padding: 8px 16px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--sage);
+  color: var(--paper);
+  font-size: 0.8rem;
+  font-weight: 900;
+  box-shadow: var(--hard-shadow-sm);
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s ease;
+}
+
+.discussion-control-buttons button.discussion-stop-button {
+  background: var(--surface);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.discussion-control-buttons button:hover:not(:disabled),
+.discussion-continue-button:hover:not(:disabled) {
+  background: var(--sage-strong);
+}
+
+.discussion-control-buttons button.discussion-stop-button:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
+
+.discussion-control-buttons button:active:not(:disabled),
+.discussion-continue-button:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+.discussion-control-buttons button:disabled,
+.discussion-continue-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.composer-interrupt-target {
+  display: grid;
+  gap: 6px;
+}
+
+.composer-interrupt-target select {
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 @media (max-width: 760px) {
   .artifact-modal-backdrop {
     align-items: stretch;

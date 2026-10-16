@@ -6,6 +6,11 @@ import {
   type MentionOption,
 } from "../lib/mentions";
 
+export interface ComposerInterruptTarget {
+  agentId: string;
+  label: string;
+}
+
 export function MissionComposer(props: {
   value: string;
   busy: boolean;
@@ -13,11 +18,21 @@ export function MissionComposer(props: {
   disabled?: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  submitLabel?: string;
+  submitDisabled?: boolean;
+  /** Roundtable mode routes replies through target_agent_id, so @ autocomplete is off. */
+  mentionsEnabled?: boolean;
+  interruptTargets?: ComposerInterruptTarget[];
+  interruptTargetId?: string | null;
+  onInterruptTargetChange?: (agentId: string | null) => void;
 }) {
   const [suggestions, setSuggestions] = useState<MentionOption[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mentionsEnabled = props.mentionsEnabled !== false;
+  const interruptTargets = props.interruptTargets ?? [];
+  const showInterruptTargets = interruptTargets.length > 0 && Boolean(props.onInterruptTargetChange);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -28,6 +43,10 @@ export function MissionComposer(props: {
 
   function handleChange(newValue: string) {
     props.onChange(newValue);
+    if (!mentionsEnabled) {
+      setMenuOpen(false);
+      return;
+    }
     const cursor = textareaRef.current?.selectionStart ?? newValue.length;
     const active = findActiveMention(newValue, cursor);
     if (active) {
@@ -74,8 +93,9 @@ export function MissionComposer(props: {
       !event.shiftKey &&
       !event.nativeEvent.isComposing &&
       props.value.trim() &&
-      !props.busy
-      && !props.disabled
+      !props.busy &&
+      !props.disabled &&
+      !props.submitDisabled
     ) {
       event.preventDefault();
       props.onSubmit();
@@ -84,12 +104,35 @@ export function MissionComposer(props: {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!props.value.trim() || props.busy || props.disabled) return;
+    if (!props.value.trim() || props.busy || props.disabled || props.submitDisabled) return;
     props.onSubmit();
   }
 
+  const submitLabel =
+    props.submitLabel ?? (props.hasActiveMission ? "发送插话" : "创建任务");
+
   return (
     <form className="mission-composer" onSubmit={submit}>
+      {showInterruptTargets ? (
+        <div className="composer-interrupt-target">
+          <label htmlFor="interrupt-target">点名先回应（可选）</label>
+          <select
+            id="interrupt-target"
+            value={props.interruptTargetId ?? ""}
+            disabled={props.disabled || props.busy}
+            onChange={(event) =>
+              props.onInterruptTargetChange?.(event.target.value || null)
+            }
+          >
+            <option value="">不指定，按顺序自然回应</option>
+            {interruptTargets.map((target) => (
+              <option key={target.agentId} value={target.agentId}>
+                {target.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <label htmlFor="mission-input">任务输入</label>
       <div className="composer-input-wrapper">
         <textarea
@@ -127,8 +170,11 @@ export function MissionComposer(props: {
           </ul>
         )}
       </div>
-      <button type="submit" disabled={props.disabled || props.busy || !props.value.trim()}>
-        {props.hasActiveMission ? "发送插话" : "创建任务"}
+      <button
+        type="submit"
+        disabled={props.disabled || props.busy || props.submitDisabled || !props.value.trim()}
+      >
+        {submitLabel}
       </button>
     </form>
   );
