@@ -19,3 +19,18 @@
 Co-authored-by: Codex <noreply@openai.com>
 Squash 合并时保留实际协作者的 trailer。详见 CONTRIBUTING.md。
 -->
+
+## 修改人与职责
+
+- PR 发起人 / GitHub 账号：
+- 实际修改人 / Agent（逐人列出修改范围）：
+- 验证执行人及结果：
+- 待审批的 head commit SHA：
+
+## 用户放行
+
+- 放行人：仓库所有者 Buaixihongshi
+- 状态：待用户审批当前 head commit
+
+<!-- CI 全绿不代表获准合并。追加提交后需重新审批。
+Agent 不得自行合并或启用自动合并。不要预填未发生的批准。 -->
