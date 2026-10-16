@@ -42,6 +42,7 @@ from backend.app.adapters.antigravity_config import (
     read_agy_log_hint,
 )
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
+from backend.app.adapters.cli_diagnostics import write_cli_diagnostic
 from backend.app.adapters.stream_events import StreamEventType, UsageRecord
 from backend.app.adapters.stream_parsers import StreamLineParser
 from backend.app.adapters.subprocess_cli import (
@@ -108,7 +109,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         artifact_root: Path,
         mcp_python: Optional[str] = None,
         mcp_module: str = "backend.app.mcp.server",
-        timeout: int = 120,
+        timeout: int = 300,
         idle_timeout: int = 0,
         extra_env: Optional[dict] = None,
         on_config_written: Optional[Callable[[Path], None]] = None,
@@ -291,6 +292,8 @@ class MCPSubprocessAdapter(CLIAdapter):
                 hint = read_agy_log_hint(agy_run_start)
                 return f"{summary} | {hint}" if hint else summary
 
+            process_started = time.monotonic()
+            wait_reason = ProcessWaitReason.EXITED
             stdout_lines: list[str] = []
             stderr_lines: list[str] = []
             last_usage: list[Optional[UsageRecord]] = [None]
@@ -385,9 +388,33 @@ class MCPSubprocessAdapter(CLIAdapter):
                             stderr_snippet=stderr.strip(),
                             stdout_snippet=stdout.strip(),
                         )
+                    summary = _augment_agy_summary(summary)
+                    if (
+                        wait_reason is ProcessWaitReason.HARD_TIMEOUT
+                        and _mcp_published_message(
+                            repository, mission_id, turn_id, cursor, receipt_id,
+                            agent_id, provider_id,
+                        )
+                        and not any(
+                            event.event_type == "tool.error"
+                            and event.payload.get("turn_id") == turn_id
+                            for event in repository.list_events_after(mission_id, cursor)
+                        )
+                    ):
+                        warning = "发言已保存，CLI 退出超时；继续处理已登记的接力。 " + summary
+                        repository.add_event(mission_id, "turn.warning", {
+                            "turn_id": turn_id, "agent_id": agent_id,
+                            "provider_id": provider_id,
+                            "code": "timeout_after_publish", "summary": warning,
+                        })
+                        _emit_turn_usage(repository, mission_id, agent_id, provider_id, turn_id, last_usage[0])
+                        return TurnOutcome(
+                            status=TurnStatus.COMPLETED, summary="via MCP; " + warning,
+                            session_id=captured_session_id[0],
+                        )
                     return TurnOutcome(
                         status=TurnStatus.BLOCKED,
-                        summary=_augment_agy_summary(summary),
+                        summary=summary,
                         session_id=captured_session_id[0],
                     )
 
@@ -429,21 +456,13 @@ class MCPSubprocessAdapter(CLIAdapter):
                         session_id=captured_session_id[0],
                     )
 
-                # D6: agy can exit 0 after its own --print-timeout fires without
-                # ever calling publish_message. Give a timeout-flavoured BLOCK so
-                # the runner's fallback chain reads cleanly. The literal matches
-                # agy 1.0.2's --print-timeout output ("timed out waiting for
-                # response"); if a future release changes it, this falls through
-                # to the generic BLOCK below, which is still correct.
-                if cli_basename == "agy" and "timed out waiting for response" in stdout.lower():
+                # agy versions report their own timeout on either stream.
+                if cli_basename == "agy" and _agy_self_timed_out(stdout, stderr):
                     return TurnOutcome(
                         status=TurnStatus.BLOCKED,
-                        summary=_augment_agy_summary(build_failure_summary(
-                            provider_id,
-                            timeout=self.timeout,
-                            stdout_snippet=stdout,
-                            stderr_snippet=stderr,
-                        )),
+                        summary=_augment_agy_summary(
+                            "[antigravity] provider internal timeout before MCP publish_message"
+                        ),
                         session_id=captured_session_id[0],
                     )
 
@@ -455,6 +474,19 @@ class MCPSubprocessAdapter(CLIAdapter):
                     session_id=captured_session_id[0],
                 )
             finally:
+                write_cli_diagnostic(
+                    self.db_path.parent / "cli-diagnostics",
+                    mission_id=mission_id, turn_id=turn_id, provider_id=provider_id,
+                    timeout_seconds=self.timeout,
+                    duration_ms=int((time.monotonic() - process_started) * 1000),
+                    exit_code=proc.returncode,
+                    hard_timeout=wait_reason is ProcessWaitReason.HARD_TIMEOUT,
+                    idle_timeout=wait_reason is ProcessWaitReason.IDLE_TIMEOUT,
+                    provider_timeout=cli_basename == "agy" and _agy_self_timed_out(
+                        "\n".join(stdout_lines), "\n".join(stderr_lines)
+                    ),
+                    stdout="\n".join(stdout_lines), stderr="\n".join(stderr_lines),
+                )
                 self.live_progress.clear(mission_id, turn_id)
 
     def _setup_claude(
@@ -718,6 +750,9 @@ _MCP_PROMPT_GUIDANCE = (
     "参数为 content (中文文本)。你本回合必须调用该 MCP 工具一次来发声；"
     "只要没有成功调用 yiren_hub.publish_message，本回合会被系统判定为未完成。"
     "不要只在 stdout/普通文本中说你已经发声。"
+    "需要其他角色接力时，先调用 invoke_agent 登记接力，再调用 publish_message 说明交接；"
+    "调用失败必须如实说明，不能宣称对方会接手。publish_message 应作为本轮最后的业务工具调用。"
+    "发声前用 log_thought 记录简短的工作计划或判断摘要，供用户查看；无需记录私密的逐步推理。"
 )
 
 
@@ -941,3 +976,8 @@ def _mcp_published_message(
         ):
             return True
     return False
+
+
+def _agy_self_timed_out(stdout: str, stderr: str) -> bool:
+    output = (stdout + "\n" + stderr).lower()
+    return "timed out waiting for response" in output or "print timeout after" in output

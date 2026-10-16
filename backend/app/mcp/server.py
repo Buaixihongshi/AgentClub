@@ -168,7 +168,8 @@ _TOOL_DESCRIPTORS = [
     {
         "name": "read_artifact",
         "description": (
-            "读取本 mission artifacts 目录下的某个产物文件。relative_path 不能跳出该目录。"
+            "读取 artifacts 目录下的产物文件。relative_path 不能跳出该目录。"
+            "默认读当前 mission；同一会话跨任务时传来源 source_mission_id。"
             "默认带行号返回（方便引用『你第 N 行说…』），如需原始文本传 with_line_numbers=false。"
             "单次最多返回 20000 字符，超出会截断并在结果里告知。"
             "建议在做『断言别人写了什么』之前先调一次，避免凭印象说错。"
@@ -179,6 +180,10 @@ _TOOL_DESCRIPTORS = [
                 "relative_path": {
                     "type": "string",
                     "description": "相对于本 mission artifacts 目录的文件路径，例如 'plan.md' 或 'notes/draft.md'。",
+                },
+                "source_mission_id": {
+                    "type": "string",
+                    "description": "可选。同一会话中来源任务的 id；省略时读当前任务。",
                 },
                 "with_line_numbers": {
                     "type": "boolean",
@@ -341,6 +346,11 @@ def _handle_write_artifact(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str
 def _handle_read_artifact(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
     relative_path = arguments.get("relative_path")
     with_line_numbers = arguments.get("with_line_numbers", True)
+    source_mission_id = arguments.get("source_mission_id")
+    if source_mission_id is not None and (
+        not isinstance(source_mission_id, str) or not source_mission_id.strip()
+    ):
+        raise MCPToolError("read_artifact 'source_mission_id' must be a non-empty string")
     if not isinstance(relative_path, str) or not relative_path.strip():
         raise MCPToolError("read_artifact requires non-empty 'relative_path' string")
     if not isinstance(with_line_numbers, bool):
@@ -352,6 +362,7 @@ def _handle_read_artifact(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str,
         relative_path,
         provider_id=ctx.provider_id,
         with_line_numbers=with_line_numbers,
+        source_mission_id=source_mission_id,
     )
     return {
         "content": [

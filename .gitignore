@@ -28,3 +28,6 @@ design-qa.md
 *.key
 *.p12
 *.pfx
+
+# Private bounded CLI incident diagnostics
+data/cli-diagnostics/

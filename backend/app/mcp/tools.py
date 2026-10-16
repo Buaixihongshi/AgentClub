@@ -259,6 +259,7 @@ class MCPTools:
         *,
         provider_id: Optional[str] = None,
         with_line_numbers: bool = True,
+        source_mission_id: Optional[str] = None,
     ) -> Dict[str, object]:
         self._require_mission(mission_id)
         record_tool_call(
@@ -267,10 +268,31 @@ class MCPTools:
             turn_id,
             agent_id,
             "read_artifact",
-            {"relative_path": relative_path, "with_line_numbers": with_line_numbers},
+            {"relative_path": relative_path, "with_line_numbers": with_line_numbers,
+             "source_mission_id": source_mission_id},
             provider_id,
         )
-        mission_dir = (self.artifact_root / mission_id).resolve()
+        read_mission_id = mission_id
+        if source_mission_id is not None:
+            if not isinstance(source_mission_id, str) or not source_mission_id.strip():
+                record_tool_error(self.repository, mission_id, turn_id, agent_id,
+                                  "read_artifact", "source_mission_id must be a non-empty string", provider_id)
+                raise MCPToolError("source_mission_id must be a non-empty string")
+            read_mission_id = source_mission_id.strip()
+            source = self.repository.get_mission(read_mission_id)
+            current = self.repository.get_mission(mission_id)
+            if source is None:
+                record_tool_error(self.repository, mission_id, turn_id, agent_id,
+                                  "read_artifact", f"Unknown source mission: {read_mission_id}", provider_id)
+                raise MCPToolError(f"Unknown source mission: {read_mission_id}")
+            if read_mission_id != mission_id and (
+                current is None or not current.conversation_id
+                or current.conversation_id != source.conversation_id
+            ):
+                record_tool_error(self.repository, mission_id, turn_id, agent_id,
+                                  "read_artifact", "source mission is in a different conversation", provider_id)
+                raise MCPToolError("source mission is in a different conversation")
+        mission_dir = (self.artifact_root / read_mission_id).resolve()
         try:
             target = (mission_dir / relative_path).resolve()
             normalized = target.relative_to(mission_dir).as_posix()
@@ -309,6 +331,7 @@ class MCPTools:
         else:
             rendered = body
         result: Dict[str, object] = {
+            "mission_id": read_mission_id,
             "path": normalized,
             "content": rendered,
             "total_chars": total_chars,

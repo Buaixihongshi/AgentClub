@@ -308,15 +308,23 @@ class MissionRunner:
                 )
 
         completed_at = utc_now()
+        has_warnings = any(
+            event.event_type == "turn.warning"
+            for event in self.repository.list_events_after(mission.id, 0)
+        )
+        final_status = MissionStatus.COMPLETED_WITH_WARNINGS if has_warnings else MissionStatus.COMPLETED
         mission = mission.model_copy(
             update={
-                "status": MissionStatus.COMPLETED,
+                "status": final_status,
                 "updated_at": completed_at,
                 "completed_at": completed_at,
             }
         )
         self.repository.update_mission(mission)
-        tools.update_status(mission_id, MissionStatus.COMPLETED.value, summary="Mission completed")
+        tools.update_status(
+            mission_id, final_status.value,
+            summary="Mission completed with warnings" if has_warnings else "Mission completed",
+        )
         return mission
 
     def _run_roundtable(self, mission_id):

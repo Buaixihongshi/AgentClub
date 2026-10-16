@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { ThoughtBlock } from "../components/ThoughtBlock";
 
 describe("ThoughtBlock", () => {
-  it("renders nothing when both thoughts and tool calls are empty", () => {
-    const { container } = render(<ThoughtBlock thoughts={[]} toolCalls={[]} />);
-
-    expect(container).toBeEmptyDOMElement();
+  it("keeps the disclosure visible and explains missing summaries", () => {
+    render(<ThoughtBlock thoughts={[]} toolCalls={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "展开思考过程" }));
+    expect(screen.getByText("本轮未记录思考摘要。")).toBeInTheDocument();
   });
 
   it("defaults to collapsed and shows the thought count + preview", () => {

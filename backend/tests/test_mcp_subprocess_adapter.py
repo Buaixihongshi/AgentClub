@@ -923,8 +923,9 @@ def test_gemini_retries_without_resume_on_invalid_session_identifier(
     assert outcome.session_id == "fresh-sid"
 
 
+@pytest.mark.parametrize("timeout_stream", ["legacy_stdout", "current_stderr"])
 def test_antigravity_exit0_selftimeout_blocks_with_timeout_summary(
-    repository, temp_settings, seeded_mission, tmp_path, monkeypatch
+    repository, temp_settings, seeded_mission, tmp_path, monkeypatch, timeout_stream
 ):
     """agy may exit 0 after its own --print-timeout fires without publishing.
     We surface a timeout-flavoured BLOCK, not the generic 'did not publish'."""
@@ -935,7 +936,14 @@ def test_antigravity_exit0_selftimeout_blocks_with_timeout_summary(
     tools = MCPTools(repository, temp_settings.artifact_root)
 
     def spy_popen(cmd, **kwargs):
-        return _make_streaming_proc(["timed out waiting for response"], returncode=0)
+        import io
+        proc = _make_streaming_proc(
+            ["timed out waiting for response"] if timeout_stream == "legacy_stdout" else [],
+            returncode=0,
+        )
+        if timeout_stream == "current_stderr":
+            proc.stderr = io.StringIO("[agy] print timeout after 3m50s with turn in progress; returning partial output\n")
+        return proc
 
     adapter = MCPSubprocessAdapter(
         command="agy", args=[],
@@ -974,3 +982,42 @@ def test_adapter_emits_turn_usage_event_when_parser_returns_usage(
     assert usage["cached_input_tokens"] == 10
     assert usage["output_tokens"] == 50
     assert usage["reasoning_output_tokens"] == 5
+
+
+@pytest.mark.parametrize("published,tool_error,recovered", [
+    (True, False, True), (False, False, False), (True, True, False),
+])
+def test_host_timeout_preserves_published_message_only_after_successful_tools(
+    repository, temp_settings, seeded_mission, monkeypatch,
+    published, tool_error, recovered,
+):
+    tools = MCPTools(repository, temp_settings.artifact_root)
+    proc = _make_streaming_proc([], returncode=-15)
+    turn_id = "t_timeout_publish"
+
+    def wait_for_timeout(*args, **kwargs):
+        if published:
+            tools.publish_message(seeded_mission.id, "baobao", turn_id, "已完成", "codex")
+        if tool_error:
+            repository.add_event(seeded_mission.id, "tool.error", {
+                "turn_id": turn_id, "tool_name": "invoke_agent", "error": "handoff failed",
+            })
+        return ProcessWaitReason.HARD_TIMEOUT
+
+    monkeypatch.setattr("backend.app.adapters.mcp_subprocess.subprocess.Popen", lambda *a, **kw: proc)
+    monkeypatch.setattr("backend.app.adapters.mcp_subprocess._wait_for_process_with_activity", wait_for_timeout)
+    monkeypatch.setattr("backend.app.adapters.mcp_subprocess._mcp_published_message", lambda *a: published)
+    monkeypatch.setattr("backend.app.adapters.mcp_subprocess.kill_process_tree", lambda proc: None)
+    outcome = _adapter(temp_settings).run_turn(
+        seeded_mission.id, "baobao", turn_id, "codex", "请发声", tools,
+    )
+    assert outcome.status == (TurnStatus.COMPLETED if recovered else TurnStatus.BLOCKED)
+    warnings = [e for e in repository.list_events_after(seeded_mission.id, 0)
+                if e.event_type == "turn.warning"]
+    assert len(warnings) == int(recovered)
+    if recovered:
+        assert warnings[0].payload["code"] == "timeout_after_publish"
+    records = list((temp_settings.database_path.parent / "cli-diagnostics").glob("*.json"))
+    assert len(records) == 1
+    import json
+    assert json.loads(records[0].read_text())["hard_timeout"] is True

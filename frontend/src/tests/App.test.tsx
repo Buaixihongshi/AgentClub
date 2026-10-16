@@ -101,6 +101,45 @@ describe("AgentClub app", () => {
     expect(screen.getByRole("complementary", { name: "任务侧栏" })).toBeInTheDocument();
   });
 
+  it("keeps historical thoughts and tools after a follow-up without duplicating the live mission", async () => {
+    const stamp = "2026-05-05T00:00:00Z";
+    const details: MissionDetail[] = [1, 2].map((n) => ({
+      mission: { id: `m${n}`, goal: "讨论", status: "completed", created_at: stamp, updated_at: stamp },
+      messages: [{ id: `msg${n}`, mission_id: `m${n}`, turn_id: `turn${n}`, agent_id: "chulan", role: "agent", event_type: "message", content: `回复${n}`, created_at: stamp }],
+      thoughts: [{ id: `thought${n}`, mission_id: `m${n}`, turn_id: `turn${n}`, content: `摘要${n}`, created_at: stamp }],
+      tool_events: [{ id: `tool${n}`, mission_id: `m${n}`, turn_id: `turn${n}`, agent_id: "chulan", event_type: "tool.call", tool_name: "publish_message", created_at: stamp }],
+    }));
+    let count = 0;
+    const conversation = () => makeConvDetail({
+      messages: details.slice(0, count).flatMap((detail) => detail.messages ?? []),
+      thoughts: details.slice(0, count).flatMap((detail) => detail.thoughts ?? []),
+      tool_events: details.slice(0, count).flatMap((detail) => detail.tool_events ?? []),
+      latest_mission_detail: details[count - 1],
+    });
+    vi.stubGlobal("fetch", stubFetch((url, init) => {
+      if (url === "/api/conversations/c_1/missions" && init?.method === "POST") {
+        count += 1;
+        return new Response(JSON.stringify(conversation()));
+      }
+      if (url === "/api/conversations/c_1" && (!init || init.method === "GET")) {
+        return new Response(JSON.stringify(conversation()));
+      }
+      return null;
+    }));
+    render(<App />);
+    for (const n of [1, 2]) {
+      await userEvent.type(screen.getByLabelText("任务输入"), `问题${n}`);
+      await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+      expect(await screen.findByText(`回复${n}`)).toBeInTheDocument();
+    }
+    const toggles = screen.getAllByRole("button", { name: "展开思考过程" });
+    expect(toggles).toHaveLength(2);
+    for (const toggle of toggles) expect(toggle).toHaveTextContent("· 1 条");
+    expect(screen.getByText("摘要1")).toBeInTheDocument();
+    expect(screen.getByText("摘要2")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "含工具 · 1" })).toHaveLength(2);
+  });
+
   it("starts the first Fake conversation from the onboarding card", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const onboardingReady = {

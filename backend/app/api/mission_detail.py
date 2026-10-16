@@ -44,10 +44,9 @@ PROVIDER_LABELS = {
 
 STATUS_MAP = {
     "pending": "queued",
-    "completed_with_warnings": "completed",
 }
 
-TERMINAL_STATUSES = {"completed", "failed", "blocked"}
+TERMINAL_STATUSES = {"completed", "completed_with_warnings", "failed", "blocked"}
 
 
 def _mission_payload(mission: Mission) -> dict[str, object]:

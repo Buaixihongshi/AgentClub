@@ -1058,3 +1058,65 @@ def test_archive_and_restore_conversation(temp_settings):
     assert restored.status_code == 200
     assert restored.json()["conversation"]["status"] == "active"
     assert any(item["id"] == conv_id for item in client.get("/api/conversations").json())
+
+
+def test_conversation_detail_keeps_thoughts_and_tools_from_previous_mission(temp_settings):
+    from backend.app.domain.models import Conversation, Mission
+    from backend.app.mcp.tools import MCPTools
+
+    repo = Repository(temp_settings.database_path)
+    repo.initialize()
+    repo.create_conversation(Conversation(id="c_history", title="history"))
+    tools = MCPTools(repo, temp_settings.artifact_root)
+    for mid in ("m_history_1", "m_history_2"):
+        repo.create_mission(Mission(id=mid, title=mid, goal=mid, conversation_id="c_history"))
+        tools.log_thought(mid, "chulan", mid + "_turn", "计划" + mid, "fake")
+        tools.publish_message(mid, "chulan", mid + "_turn", "回复" + mid, "fake")
+    response = make_client(temp_settings).get("/api/conversations/c_history")
+    assert response.status_code == 200
+    detail = response.json()
+    assert {x["mission_id"] for x in detail["thoughts"]} == {"m_history_1", "m_history_2"}
+    assert {x["mission_id"] for x in detail["tool_events"]} == {"m_history_1", "m_history_2"}
+    assert len({x["id"] for x in detail["thoughts"]}) == len(detail["thoughts"])
+
+
+def test_completed_with_warnings_status_is_preserved_in_api_and_stream(temp_settings):
+    from backend.app.domain.models import Mission, MissionStatus
+    repo = Repository(temp_settings.database_path)
+    repo.initialize()
+    repo.create_mission(Mission(
+        id="m_warning", title="warning", goal="test",
+        status=MissionStatus.COMPLETED_WITH_WARNINGS,
+    ))
+    client = make_client(temp_settings)
+    assert client.get("/api/missions/m_warning").json()["mission"]["status"] == "completed_with_warnings"
+    stream = client.get("/api/missions/m_warning/stream")
+    assert stream.status_code == 200
+    assert stream.text.count("event: snapshot") == 1
+
+
+def test_runner_finishes_with_warning_after_persisted_timeout_response(temp_settings):
+    from backend.app.adapters.base import TurnOutcome
+    from backend.app.domain.models import Mission, MissionStatus, TurnStatus
+    from backend.app.orchestration.runner import MissionRunner
+
+    repo = Repository(temp_settings.database_path)
+    repo.initialize()
+    mission = Mission(
+        id="m_warning_runner", title="handoff", goal="回应用户",
+        target_agent_id="chulan",
+    )
+    repo.create_mission(mission)
+
+    class PublishedTimeoutAdapter:
+        def run_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):
+            tools.publish_message(mission_id, agent_id, turn_id, "已回复", provider_id)
+            repo.add_event(mission_id, "turn.warning", {
+                "turn_id": turn_id, "code": "timeout_after_publish",
+                "summary": "CLI 在发言后退出超时",
+            })
+            return TurnOutcome(status=TurnStatus.COMPLETED, summary="via MCP; timeout")
+
+    result = MissionRunner(repo, temp_settings, adapter=PublishedTimeoutAdapter()).run(mission.id)
+    assert result.status == MissionStatus.COMPLETED_WITH_WARNINGS
+    assert make_client(temp_settings).get(f"/api/missions/{mission.id}").json()["mission"]["status"] == "completed_with_warnings"

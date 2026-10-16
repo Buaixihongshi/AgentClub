@@ -51,7 +51,7 @@ def test_get_settings_reads_cli_timeout(monkeypatch):
 def test_get_settings_defaults_cli_timeout(monkeypatch):
     monkeypatch.delenv("YIREN_CLI_TIMEOUT", raising=False)
     settings = get_settings()
-    assert settings.cli_timeout == 120
+    assert settings.cli_timeout == 300
 
 
 def test_max_a2a_invocations_defaults_to_8(monkeypatch):

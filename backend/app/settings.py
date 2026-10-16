@@ -22,7 +22,7 @@ class Settings(BaseModel):
     max_turns: int = 6
     roundtable_max_turns: int = Field(default=12, ge=3, le=12)
     max_a2a_invocations: int = 8
-    cli_timeout: int = 120
+    cli_timeout: int = 300
     a2a_idle_timeout: int = Field(default=90, ge=0)
     maintenance_enabled: bool = True
     maintenance_worktree_root: Path = Path("data/maintenance-worktrees")
@@ -53,7 +53,7 @@ def get_settings() -> Settings:
         max_turns=_env_int("YIREN_MAX_TURNS", default=6),
         roundtable_max_turns=_env_int("YIREN_ROUNDTABLE_MAX_TURNS", default=12),
         max_a2a_invocations=_env_int("YIREN_MAX_A2A_INVOCATIONS", default=8),
-        cli_timeout=_env_int("YIREN_CLI_TIMEOUT", default=120),
+        cli_timeout=_env_int("YIREN_CLI_TIMEOUT", default=300),
         a2a_idle_timeout=_env_int("YIREN_A2A_IDLE_TIMEOUT", default=90),
         maintenance_enabled=_env_bool("YIREN_MAINTENANCE_ENABLED", default=True),
         maintenance_worktree_root=_env_path(

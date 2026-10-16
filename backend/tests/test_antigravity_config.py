@@ -187,3 +187,24 @@ def test_log_hint_picks_latest_file(fake_home):
     assert hint is not None
     # Latest file wins -> quota, not auth.
     assert "quota exhausted" in hint
+
+
+@pytest.mark.parametrize("success", [
+    "ChainedAuth: authenticated via keyring",
+    "OAuth: authenticated successfully",
+    "silent auth succeeded",
+])
+def test_auth_probe_failure_before_success_is_not_a_login_failure(fake_home, success):
+    import time
+    now = time.time()
+    _write_log(fake_home, "cli-recovered.log",
+               "not logged into Antigravity\n" + success + "\nprint timeout after 3m50s", mtime=now)
+    assert agc.read_agy_log_hint(now) is None
+
+
+def test_new_login_failure_after_success_is_reported(fake_home):
+    import time
+    now = time.time()
+    _write_log(fake_home, "cli-expired.log",
+               "authenticated via keyring\nnot logged into Antigravity", mtime=now)
+    assert "not authenticated" in agc.read_agy_log_hint(now)
