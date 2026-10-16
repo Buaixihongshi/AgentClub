@@ -30,8 +30,12 @@ Do not reuse a branch whose pull request has already been merged.
 - Add tests for behavior changes and keep the pull request focused.
 - Push review fixes to the same branch; the existing pull request updates
   automatically.
-- Merge only after the required CI checks pass and all review conversations
-  are resolved.
+- Merge only after the required CI checks pass, all review conversations
+  are resolved, and repository owner Buaixihongshi explicitly approves the
+  current PR head commit. Only the owner may authorize merge; agents must
+  not merge or enable auto-merge on their own.
+- Any additional commit invalidates the previous approval. Request owner
+  approval again for the new head commit.
 - Prefer squash merging so each pull request becomes one coherent commit on
   `main`.
 - Delete the topic branch after merge.
@@ -86,3 +90,21 @@ npm run build
 
 CI also runs the offline smoke suite, dependency consistency check, and
 privacy check.
+
+## Development, testing, and production
+
+Use one shared remote, `https://github.com/Buaixihongshi/AgentClub`, with
+separate development, test, and production checkouts. Create task branches in
+an isolated checkout; never edit the running production checkout. Keep test
+and production databases, configuration, ports, and artifact directories separate.
+
+Validate the proposed head commit in the test environment and record its SHA
+and results in the PR. `main` contains reviewed, releasable code; the production
+deployment must record the exact deployed SHA. A merge does not authorize an
+immediate restart: switch deployments only after active missions finish and
+the service is idle, retaining the previous version for rollback.
+
+The owner controls PR release. CI success is a prerequisite, not approval.
+Repository administrators should enforce PR review, stale approval dismissal,
+required CI checks, and no direct or force pushes to `main` in GitHub settings.
+These written rules do not themselves configure server-side protection.
