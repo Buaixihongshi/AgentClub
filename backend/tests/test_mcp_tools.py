@@ -803,3 +803,39 @@ def test_invoke_agent_wait_reply_no_cycle_when_target_not_in_chain(repository, t
         mode="wait_reply",
     )
     assert result["reply_pending"] is True
+
+
+@pytest.mark.parametrize("current_conv,source_conv,allowed", [
+    ("shared", "shared", True), ("shared", "other", False),
+    (None, "shared", False), ("shared", None, False), (None, None, False),
+])
+def test_read_artifact_cross_mission_requires_same_nonempty_conversation(
+    repository, temp_settings, current_conv, source_conv, allowed
+):
+    for cid in {current_conv, source_conv} - {None}:
+        repository.create_conversation(Conversation(id=cid, title=cid))
+    for mid, cid in (("current", current_conv), ("source", source_conv)):
+        repository.create_mission(Mission(id=mid, title=mid, goal="g", conversation_id=cid))
+    tools = MCPTools(repository, temp_settings.artifact_root)
+    tools.write_artifact("source", "chulan", "t1", "spec.md", "source spec")
+    if allowed:
+        result = tools.read_artifact("current", "baobao", "t2", "spec.md", source_mission_id="source")
+        assert result["mission_id"] == "source"
+        assert "source spec" in result["content"]
+    else:
+        with pytest.raises(MCPToolError, match="different conversation"):
+            tools.read_artifact("current", "baobao", "t2", "spec.md", source_mission_id="source")
+
+
+@pytest.mark.parametrize("path", ["../outside.txt", "link.txt"])
+def test_cross_mission_read_still_rejects_path_and_symlink_escape(repository, temp_settings, path):
+    repository.create_conversation(Conversation(id="shared", title="shared"))
+    for mid in ("source", "current"):
+        repository.create_mission(Mission(id=mid, title=mid, goal="g", conversation_id="shared"))
+    tools = MCPTools(repository, temp_settings.artifact_root)
+    tools.write_artifact("source", "chulan", "t1", "spec.md", "spec")
+    outside = temp_settings.artifact_root / "outside.txt"
+    outside.write_text("private")
+    (temp_settings.artifact_root / "source/link.txt").symlink_to(outside)
+    with pytest.raises(MCPToolError, match="outside artifact directory"):
+        tools.read_artifact("current", "baobao", "t2", path, source_mission_id="source")

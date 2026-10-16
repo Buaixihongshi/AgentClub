@@ -94,10 +94,6 @@ export function ThoughtBlock({
     return items;
   }, [thoughts, toolCalls, includeTools]);
 
-  if (thoughts.length === 0 && toolCalls.length === 0) {
-    return null;
-  }
-
   const firstContent = thoughts[0]?.content ?? "";
   const preview =
     firstContent.length > PREVIEW_LEN
@@ -139,6 +135,9 @@ export function ThoughtBlock({
       </div>
       {open && (
         <ul className="thought-list">
+          {thoughts.length === 0 && (
+            <li className="thought-item">本轮未记录思考摘要。</li>
+          )}
           {mergedItems.map((item, index) => {
             if (item.kind === "thought") {
               const thought = item.entry;

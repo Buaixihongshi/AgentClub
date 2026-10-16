@@ -372,6 +372,8 @@ export interface ConversationDetail {
   missions: Mission[];
   messages: ThreadEvent[];
   latest_mission_detail?: MissionDetail | null;
+  thoughts?: MissionThoughtRecord[];
+  tool_events?: ToolEventRecord[];
 }
 
 export interface MissionRuntimeSummary {

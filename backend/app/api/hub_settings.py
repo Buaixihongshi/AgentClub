@@ -60,7 +60,7 @@ def build_router(settings: Settings) -> APIRouter:
             "use_fake_cli": True,
             "max_turns": 6,
             "max_a2a_invocations": 8,
-            "cli_timeout": 120,
+            "cli_timeout": 300,
             "a2a_idle_timeout": 90,
         }
         for key, default in _RUNTIME_DEFAULTS.items():

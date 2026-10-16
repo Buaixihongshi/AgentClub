@@ -91,7 +91,7 @@ class SubprocessCLIAdapter(CLIAdapter):
         args: Optional[List[str]] = None,
         output_parser: Optional[Callable[[str], str]] = None,
         *,
-        timeout: int = 120,
+        timeout: int = 300,
     ):
         self.command = command
         self.args = args or []

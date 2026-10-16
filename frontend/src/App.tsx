@@ -188,11 +188,21 @@ export default function App() {
         livePartial: latestMissionDetail?.mission.kind === "provider_verification" ? undefined : latestMissionDetail?.live_partial,
         turns: latestMissionDetail?.mission.kind === "provider_verification" ? undefined : latestMissionDetail?.turns,
         usageByTurn: latestMissionDetail?.mission.kind === "provider_verification" ? undefined : latestMissionDetail?.usage_summary?.by_turn,
-        thoughts: latestMissionDetail?.mission.kind === "provider_verification" ? undefined : latestMissionDetail?.thoughts,
-        toolEvents: latestMissionDetail?.mission.kind === "provider_verification" ? undefined : latestMissionDetail?.tool_events,
+        thoughts: latestMissionDetail?.mission.kind === "provider_verification"
+          ? convDetail?.thoughts
+          : [
+              ...(convDetail?.thoughts ?? []).filter((record) => record.mission_id !== latestMissionDetail?.mission.id),
+              ...(latestMissionDetail?.thoughts ?? []),
+            ],
+        toolEvents: latestMissionDetail?.mission.kind === "provider_verification"
+          ? convDetail?.tool_events
+          : [
+              ...(convDetail?.tool_events ?? []).filter((record) => record.mission_id !== latestMissionDetail?.mission.id),
+              ...(latestMissionDetail?.tool_events ?? []),
+            ],
       },
     ),
-    [displayMessages, latestMissionDetail?.mission.kind, latestMissionDetail?.a2a_invocations, latestMissionDetail?.live_partial, latestMissionDetail?.turns, latestMissionDetail?.usage_summary, latestMissionDetail?.thoughts, latestMissionDetail?.tool_events],
+    [displayMessages, convDetail?.thoughts, convDetail?.tool_events, latestMissionDetail?.mission.kind, latestMissionDetail?.mission.id, latestMissionDetail?.a2a_invocations, latestMissionDetail?.live_partial, latestMissionDetail?.turns, latestMissionDetail?.usage_summary, latestMissionDetail?.thoughts, latestMissionDetail?.tool_events],
   );
   const agentParticipants = useMemo(
     () => buildAgentParticipants(turns),

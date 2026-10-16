@@ -19,7 +19,7 @@ class ProviderRouterAdapter(CLIAdapter):
         self,
         config_dir: Path,
         *,
-        cli_timeout: int = 120,
+        cli_timeout: int = 300,
         a2a_idle_timeout: int = 90,
         database_path: Optional[Path] = None,
         artifact_root: Optional[Path] = None,

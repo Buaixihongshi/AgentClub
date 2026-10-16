@@ -201,7 +201,15 @@ def read_agy_log_hint(run_start: float) -> Optional[str]:
         m = _QUOTA_PATTERN.search(text)
         if m:
             return f"agy quota exhausted: {m.group(0).strip()[:240]}"
-        if "not logged into Antigravity" in text:
+        # Authentication probes can fail before keyring/silent OAuth succeeds.
+        # The last observed auth event decides the diagnostic.
+        lower = text.lower()
+        last_failure = lower.rfind("not logged into antigravity")
+        last_success = max(lower.rfind(marker) for marker in (
+            "authenticated via keyring", "oauth: authenticated successfully",
+            "silent auth succeeded",
+        ))
+        if last_failure >= 0 and last_failure > last_success:
             return "agy not authenticated — run `agy` interactively to OAuth login"
         m = _EXECUTOR_PATTERN.search(text)
         if m:

@@ -207,3 +207,17 @@ def test_artifact_index_respects_limit(repository, temp_settings):
 
     listed = [line for line in index.splitlines() if line.startswith("- ")]
     assert len(listed) == 3
+
+
+def test_artifact_index_discovers_previous_missions_without_merging_same_names(repository, temp_settings):
+    tools = MCPTools(repository, temp_settings.artifact_root)
+    for cid in ("shared", "other"):
+        repository.create_conversation(Conversation(id=cid, title=cid))
+    for mid, cid in (("old", "shared"), ("new", "shared"), ("outsider", "other")):
+        repository.create_mission(Mission(id=mid, title=mid, goal="g", conversation_id=cid))
+        tools.write_artifact(mid, "chulan", "t", "spec.md", mid)
+    index = build_artifact_index(repository, "new")
+    assert "source_mission_id=old" in index
+    assert "source_mission_id=new" in index
+    assert "source_mission_id=outsider" not in index
+    assert len([line for line in index.splitlines() if line.startswith("- ")]) == 2

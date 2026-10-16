@@ -84,3 +84,25 @@ def test_unknown_runtime_key_ignored(tmp_path, monkeypatch):
     save(settings_file, {"schema_version": 1, "runtime": {"frobnicate": 42}})
     s = get_settings()
     assert s.max_turns == 6  # default, not affected by unknown key
+
+
+def test_timeout_api_updates_next_mission_adapter_despite_stale_app_settings(temp_settings):
+    from fastapi.testclient import TestClient
+    from backend.app.main import create_app
+    from backend.app.settings import snapshot_settings
+    from backend.app.api.missions import _build_mission_adapter
+    from backend.app.storage.hub_settings import default_path
+
+    # Existing user override wins over the newer 300s code default.
+    app_settings = temp_settings.model_copy(update={"cli_timeout": 300, "use_fake_cli": False})
+    save(default_path(app_settings), {"runtime": {"cli_timeout": 240, "max_turns": 9}})
+    client = TestClient(create_app(app_settings))
+    assert client.get("/api/hub/settings").json()["runtime"]["cli_timeout"]["value"] == 240
+    before = _build_mission_adapter(snapshot_settings(app_settings))
+    assert before.cli_timeout == 240
+    response = client.put("/api/hub/settings", json={"runtime": {"cli_timeout": 300}})
+    assert response.status_code == 200
+    snapshot = snapshot_settings(app_settings)
+    assert snapshot.max_turns == 9
+    assert _build_mission_adapter(snapshot).cli_timeout == 300
+    assert response.json()["runtime"]["cli_timeout"] == {"value": 300, "source": "user"}

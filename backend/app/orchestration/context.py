@@ -3,7 +3,7 @@ from typing import Dict, Optional
 
 from backend.app.domain.agent_registry import AgentRegistry, get_agent_registry
 from backend.app.domain.history import prioritize_messages
-from backend.app.domain.models import MessageRole
+from backend.app.domain.models import MessageRole, is_provider_verification_mission
 from backend.app.storage.repository import Repository
 
 _WHITESPACE_RUN = re.compile(r"\s+")
@@ -64,32 +64,42 @@ def build_artifact_index(
     *,
     limit: int = 12,
 ) -> str:
-    events = repository.list_events_after(mission_id, 0)
-    latest: Dict[str, dict] = {}
-    for ev in events:
-        if ev.event_type != "artifact":
-            continue
-        path = ev.payload.get("path")
-        if not isinstance(path, str) or not path:
-            continue
-        latest[path] = {
-            "path": path,
-            "agent_id": ev.payload.get("agent_id") or "?",
-            "title": ev.payload.get("title") or path,
-            "created_at": ev.created_at,
-        }
+    current = repository.get_mission(mission_id)
+    mission_ids = [mission_id]
+    if current and current.conversation_id:
+        mission_ids = [
+            mission.id
+            for mission in repository.list_missions_for_conversation(current.conversation_id)
+            if not is_provider_verification_mission(mission)
+        ]
+    latest: Dict[tuple[str, str], dict] = {}
+    for source_id in mission_ids:
+        for ev in repository.list_events_after(source_id, 0):
+            if ev.event_type != "artifact":
+                continue
+            path = ev.payload.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            latest[(source_id, path)] = {
+                "path": path,
+                "source_mission_id": source_id,
+                "agent_id": ev.payload.get("agent_id") or "?",
+                "title": ev.payload.get("title") or path,
+                "created_at": ev.created_at,
+            }
     if not latest:
         return ""
     entries = sorted(
         latest.values(), key=lambda e: e["created_at"], reverse=True
     )[:limit]
     lines = [
-        "【产物清单】（要引用别人写的内容时，先用 read_artifact 读取，不要凭印象引述）：",
+        "【产物清单】（要引用别人写的内容时，先用 read_artifact 读取；跨任务时传 source_mission_id，不要凭印象引述）：",
     ]
     for entry in entries:
         lines.append(
-            "- {path}  by {agent}（{title}）".format(
+            "- {path}  by {agent}（{title}） source_mission_id={source}".format(
                 path=entry["path"],
+                source=entry["source_mission_id"],
                 agent=entry["agent_id"],
                 title=entry["title"],
             )

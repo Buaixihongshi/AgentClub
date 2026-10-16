@@ -743,3 +743,27 @@ def test_invoke_agent_enforces_budget_in_subprocess_path(temp_settings, seeded_m
     events = repo.list_events_after(seeded_mission.id, 0)
     a2a_requests = [e for e in events if e.event_type == "a2a.request"]
     assert len(a2a_requests) == 1, "only first invoke should be persisted"
+
+
+def test_read_previous_mission_artifact_via_stdio(temp_settings, seeded_mission, repository):
+    source = Mission(id="m_previous", title="spec", goal="spec", conversation_id=seeded_mission.conversation_id)
+    repository.create_mission(source)
+    directory = temp_settings.artifact_root / source.id
+    directory.mkdir(parents=True)
+    (directory / "spec.md").write_text("previous mission specification", encoding="utf-8")
+    harness = _spawn(temp_settings, seeded_mission)
+    try:
+        harness.request("initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}})
+        harness.notify("notifications/initialized")
+        response = harness.request("tools/call", {"name": "read_artifact", "arguments": {
+            "relative_path": "spec.md", "source_mission_id": source.id,
+        }}, request_id=2)
+    finally:
+        harness.close()
+    result = response["result"]
+    assert result["isError"] is False
+    payload = json.loads(result["content"][0]["text"])
+    assert payload["mission_id"] == source.id
+    assert "previous mission specification" in payload["content"]
+    events = repository.list_events_after(seeded_mission.id, 0)
+    assert any(e.event_type == "tool.result" and e.payload.get("tool_name") == "read_artifact" for e in events)
