@@ -1,0 +1,71 @@
+"""Real pipe/stdio-MCP peer for worker supervision and fencing tests."""
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+
+
+spec = json.loads(Path(os.environ['AGY_TEST_CONFIG']).read_text())['mcpServers']['yiren_hub']
+env = os.environ.copy(); env.update(spec['env'])
+mcp = subprocess.Popen([spec['command'], *spec['args']], env=env,
+                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def rpc(method, params):
+    mcp.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}) + '\n')
+    mcp.stdin.flush()
+    return json.loads(mcp.stdout.readline())
+
+
+def emit(value):
+    print(json.dumps(value), flush=True)
+
+
+record = Path(os.environ['AGY_TEST_RECORD'])
+mode = os.environ.get('AGY_TEST_MODE', 'normal')
+old_token = None
+turn_number = 0
+emit({'event': 'init', 'conversation_id': 'native-' + str(os.getpid()), 'init': {'tools': ['call_mcp_tool']}})
+try:
+    for line in sys.stdin:
+        turn_number += 1
+        prompt = json.loads(line)['message']['content']
+        token = re.search(r'context_token=([A-Za-z0-9_-]+)', prompt).group(1)
+        with record.open('a') as stream:
+            stream.write(json.dumps({'pid': os.getpid(), 'recovery': '【中断恢复】' in prompt}) + '\n')
+        if old_token:
+            stale = rpc('tools/call', {'name': 'publish_message', 'arguments': {
+                'context_token': old_token, 'operation_id': 'late', 'content': 'stale'}})
+            if not stale['result'].get('isError'):
+                sys.exit(9)
+        if mode == 'crash_before':
+            sys.exit(3)
+        if mode == 'hang':
+            time.sleep(60)
+        for state in ['ACTIVE', 'DONE']:
+            emit({'event': 'step_update', 'step_update': {
+                'step_type': 'tool', 'step_index': 1, 'state': state, 'tool_name': 'view_file',
+                'tool_info': {'parameters': {'AbsolutePath': '/workspace/test.txt'}}}})
+        result = rpc('tools/call', {'name': 'publish_message', 'arguments': {
+            'context_token': token, 'operation_id': 'final', 'content': 'verified reply'}})
+        if result.get('result', {}).get('isError'):
+            sys.stderr.write(json.dumps(result)); sys.exit(5)
+        if mode == 'publish_then_crash':
+            sys.exit(4)
+        repeat = rpc('tools/call', {'name': 'publish_message', 'arguments': {
+            'context_token': token, 'operation_id': 'another-id', 'content': 'verified reply'}})
+        if repeat != result:
+            sys.exit(8)
+        old_token = token
+        emit({'event': 'result', 'result': {'status': 'SUCCESS', 'usage': {
+            'input_tokens': turn_number * 100, 'cache_read_tokens': turn_number * 50,
+            'output_tokens': turn_number * 10, 'thinking_tokens': turn_number * 5}}})
+finally:
+    mcp.stdin.close()
+    try:
+        mcp.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        mcp.kill()

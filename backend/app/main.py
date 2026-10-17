@@ -1,4 +1,5 @@
 from typing import Optional
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -27,11 +28,22 @@ def create_app(
     app_settings = settings or get_settings()
     repository = Repository(app_settings.database_path)
     repository.initialize()
+    from backend.app.storage.execution import ExecutionLedger
+    ExecutionLedger(repository).recover()
     Roundtable(repository).recover()
     MaintenanceService(repository, app_settings).recover_interrupted_runs()
     app_settings.artifact_root.mkdir(parents=True, exist_ok=True)
 
-    app = FastAPI(title="AgentClub")
+    @asynccontextmanager
+    async def lifespan(_app):
+        try:
+            yield
+        finally:
+            if app_settings.antigravity_persistent:
+                from backend.app.adapters.antigravity_session import SESSION_POOL
+                SESSION_POOL.close(app_settings.database_path)
+
+    app = FastAPI(title="AgentClub", lifespan=lifespan)
 
     @app.exception_handler(DiscussionError)
     async def discussion_error_handler(request, exc):
