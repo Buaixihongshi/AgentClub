@@ -313,16 +313,23 @@ function buildToolCallsByTurn(
 ): Map<string, TurnToolCall[]> {
   const byTurn = new Map<string, TurnToolCall[]>();
   for (const event of events) {
-    if (event.event_type !== "tool.call") continue;
+    if (event.event_type !== "tool.call" && event.event_type !== "provider.activity") continue;
     if (!event.turn_id) continue;
     const bucket = byTurn.get(event.turn_id) ?? [];
-    bucket.push({
+    const toolCall: TurnToolCall = {
       toolName: event.tool_name,
       summary: event.summary,
       toolInput: event.tool_input,
       createdAt: event.created_at,
       eventType: event.event_type,
-    });
+      activityId: event.activity_id,
+      phase: event.phase,
+    };
+    const existing = event.activity_id
+      ? bucket.findIndex((call) => call.activityId === event.activity_id)
+      : -1;
+    if (existing >= 0) bucket[existing] = toolCall;
+    else bucket.push(toolCall);
     byTurn.set(event.turn_id, bucket);
   }
   for (const bucket of byTurn.values()) {

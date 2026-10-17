@@ -1,0 +1,20 @@
+.native-activity {
+  margin: 10px 0;
+  font-size: 0.78rem;
+  color: var(--ink, #1a1a1a);
+  overflow-wrap: anywhere;
+}
+.native-activity summary { cursor: pointer; }
+.native-activity ol { margin: 10px 0; padding-left: 22px; }
+.native-activity li { padding: 3px 0; }
+.native-activity-count, .native-activity-phase { opacity: 0.75; }
+.native-activity-phase { margin-left: 10px; font-size: 0.72rem; }
+.turn-failure {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--warning, #b15300);
+  background: var(--paper-soft, #f5f3ee);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.turn-failure p { margin: 0; }
