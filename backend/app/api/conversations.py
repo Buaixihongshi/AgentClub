@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from backend.app.adapters.base import CLIAdapter
 from backend.app.api.mission_detail import (
-    build_mission_detail, _mission_payload, _derive_thoughts, _derive_tool_events,
+    build_mission_detail, _mission_payload, _derive_thoughts, _derive_tool_events, _derive_failure_events,
 )
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.models import (
@@ -128,6 +128,9 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
         "conversation": conversation.model_dump(mode="json"),
         "missions": [_mission_payload(m) for m in missions],
         "messages": message_events,
+        "failure_events": [failure for mission in missions for failure in _derive_failure_events(
+            mission, [event for event in history_events if event.mission_id == mission.id],
+        )],
         "latest_mission_detail": latest_detail,
         "thoughts": _derive_thoughts(history_events),
         "tool_events": _derive_tool_events(history_events),
