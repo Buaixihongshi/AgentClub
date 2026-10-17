@@ -24,6 +24,7 @@ class Settings(BaseModel):
     max_a2a_invocations: int = 8
     cli_timeout: int = 300
     a2a_idle_timeout: int = Field(default=90, ge=0)
+    antigravity_persistent: bool = False
     maintenance_enabled: bool = True
     maintenance_worktree_root: Path = Path("data/maintenance-worktrees")
     maintenance_command_timeout: int = Field(default=900, ge=1)
@@ -55,6 +56,7 @@ def get_settings() -> Settings:
         max_a2a_invocations=_env_int("YIREN_MAX_A2A_INVOCATIONS", default=8),
         cli_timeout=_env_int("YIREN_CLI_TIMEOUT", default=300),
         a2a_idle_timeout=_env_int("YIREN_A2A_IDLE_TIMEOUT", default=90),
+        antigravity_persistent=_env_bool("YIREN_ANTIGRAVITY_PERSISTENT", default=False),
         maintenance_enabled=_env_bool("YIREN_MAINTENANCE_ENABLED", default=True),
         maintenance_worktree_root=_env_path(
             "YIREN_MAINTENANCE_WORKTREE_ROOT",
@@ -123,6 +125,7 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
         "max_a2a_invocations": app_settings.max_a2a_invocations,
         "cli_timeout": app_settings.cli_timeout,
         "a2a_idle_timeout": app_settings.a2a_idle_timeout,
+        "antigravity_persistent": app_settings.antigravity_persistent,
         "maintenance_enabled": app_settings.maintenance_enabled,
         "maintenance_worktree_root": app_settings.maintenance_worktree_root,
         "maintenance_command_timeout": app_settings.maintenance_command_timeout,

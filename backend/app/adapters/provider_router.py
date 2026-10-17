@@ -21,6 +21,7 @@ class ProviderRouterAdapter(CLIAdapter):
         *,
         cli_timeout: int = 300,
         a2a_idle_timeout: int = 90,
+        antigravity_persistent: bool = False,
         database_path: Optional[Path] = None,
         artifact_root: Optional[Path] = None,
         provider_overrides: Optional[dict[str, ProviderOverride]] = None,
@@ -28,6 +29,7 @@ class ProviderRouterAdapter(CLIAdapter):
         self.config_dir = config_dir
         self.cli_timeout = cli_timeout
         self.a2a_idle_timeout = max(0, a2a_idle_timeout)
+        self.antigravity_persistent = antigravity_persistent
         self.database_path = database_path
         self.artifact_root = artifact_root
         self.provider_overrides = provider_overrides or {}
@@ -97,6 +99,17 @@ class ProviderRouterAdapter(CLIAdapter):
             )
 
         if provider.mcp_enabled and self.database_path is not None and self.artifact_root is not None:
+            if provider.id == 'antigravity' and self.antigravity_persistent:
+                from backend.app.adapters.antigravity_session import run_persistent_turn
+                from backend.app.domain.models import is_provider_verification_mission
+                mission = tools.repository.get_mission(mission_id)
+                if mission and not is_provider_verification_mission(mission):
+                    return run_persistent_turn(
+                        provider, database_path=self.database_path, artifact_root=self.artifact_root,
+                        timeout=self.cli_timeout,
+                        idle_timeout=self.a2a_idle_timeout if tools.current_step_origin in {'a2a', 'a2a_resume'} else 0,
+                        mission_id=mission_id, agent_id=agent_id, turn_id=turn_id, prompt=prompt, tools=tools,
+                    )
             gemini_home: Optional[Path] = None
             resume_sid: Optional[str] = None
             if provider.id == "gemini":
