@@ -185,6 +185,20 @@ def test_dead_idle_worker_is_rebuilt_and_global_config_restored(pool, repository
     assert not (tmp_path/'home/.gemini/config/mcp_config.json').exists()
 
 
+def test_waiting_bubble_is_active_while_cli_is_initializing(pool, repository, temp_settings, tmp_path):
+    cli = adapter(temp_settings, tmp_path)
+    cli.extra_env['AGY_TEST_INIT_DELAY'] = '0.5'
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run, pool, cli, repository, temp_settings)
+        deadline = time.monotonic() + 2
+        while 't1' not in cli.live_progress.snapshot_for_mission('m1') and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert cli.live_progress.snapshot_for_mission('m1') == {'t1': ''}
+        assert pool.worker is None  # still waiting for init, before a request is delivered
+        assert future.result(timeout=8).status == TurnStatus.COMPLETED
+    assert cli.live_progress.snapshot_for_mission('m1') == {}
+
+
 def test_hung_worker_times_out_fences_tools_and_releases_config(pool, repository, temp_settings, tmp_path):
     outcome = run(pool, adapter(temp_settings, tmp_path, 'hang', timeout=0.5), repository, temp_settings)
     assert outcome.status == TurnStatus.BLOCKED

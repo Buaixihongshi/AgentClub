@@ -280,6 +280,8 @@ class AntigravitySessionPool:
         token = None
         initializing = False
         try:
+            # Surface the waiting bubble during cold initialization as well.
+            adapter.live_progress.mark_active(mission_id, turn_id)
             repo = tools.repository
             ledger = ExecutionLedger(repo)
             mission = repo.get_mission(mission_id)
@@ -323,7 +325,6 @@ class AntigravitySessionPool:
             recovery = ledger.recovery_hint(mission.conversation_id, agent_id)
             message = {'event': 'user', 'message': {'content': _augment_prompt_for_mcp(prompt) + recovery + instruction}}
             tools.repository.add_event(mission_id, 'execution.delivery_started', {'turn_id': turn_id, 'worker_id': worker.id})
-            adapter.live_progress.mark_active(mission_id, turn_id)
             worker.proc.stdin.write(json.dumps(message, ensure_ascii=False) + '\n')
             worker.proc.stdin.flush()
             parser = StreamLineParser('antigravity')

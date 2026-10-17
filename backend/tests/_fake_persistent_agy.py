@@ -28,6 +28,7 @@ record = Path(os.environ['AGY_TEST_RECORD'])
 mode = os.environ.get('AGY_TEST_MODE', 'normal')
 old_token = None
 turn_number = 0
+time.sleep(float(os.environ.get('AGY_TEST_INIT_DELAY', '0')))
 emit({'event': 'init', 'conversation_id': 'native-' + str(os.getpid()), 'init': {'tools': ['call_mcp_tool']}})
 try:
     for line in sys.stdin:
