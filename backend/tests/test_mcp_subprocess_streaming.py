@@ -1,5 +1,6 @@
 """MCPSubprocessAdapter streams partial_text into LiveProgressRegistry."""
 import sys
+import json
 import textwrap
 import threading
 import time
@@ -11,6 +12,52 @@ from backend.app.adapters.mcp_subprocess import MCPSubprocessAdapter
 from backend.app.domain.models import Conversation, Mission
 from backend.app.mcp.tools import MCPTools
 from backend.app.orchestration.live_progress import LiveProgressRegistry
+
+
+def test_native_activity_is_persisted_and_visible_before_cli_exits(repository, temp_settings, seeded_mission, tmp_path):
+    from backend.app.api.mission_detail import build_mission_detail
+    from backend.app.domain.models import TurnStatus
+
+    records = [
+        {"event": "init", "conversation_id": "native_probe"},
+        {"event": "step_update", "step_update": {
+            "step_index": 2, "step_type": "tool", "state": "ACTIVE", "tool_name": "view_file",
+            "tool_info": {"parameters": {"AbsolutePath": "/private/project/example.ts"}, "output": "hidden output"},
+        }},
+        {"event": "step_update", "step_update": {
+            "step_index": 2, "step_type": "tool", "state": "DONE", "tool_name": "view_file",
+            "tool_info": {"parameters": {"AbsolutePath": "/private/project/example.ts"}},
+        }},
+    ]
+    script = tmp_path / "native_cli.py"
+    script.write_text("import time\n" + "\n".join(
+        f"print({json.dumps(record)!r}, flush=True)\ntime.sleep(0.15)" for record in records
+    ))
+    adapter = MCPSubprocessAdapter(command=sys.executable, args=[str(script)],
+        db_path=temp_settings.database_path, artifact_root=temp_settings.artifact_root, timeout=10)
+    result = []
+    thread = threading.Thread(target=lambda: result.append(adapter.run_turn(
+        seeded_mission.id, "wangye", "t_native", "antigravity", "probe", MCPTools(repository, temp_settings.artifact_root))))
+    thread.start()
+    observed = []
+    try:
+        for _ in range(100):
+            observed = build_mission_detail(repository, temp_settings, seeded_mission.id)["tool_events"]
+            if observed:
+                assert thread.is_alive()
+                break
+            time.sleep(0.01)
+        assert observed and observed[0]["event_type"] == "provider.activity"
+        assert observed[0]["summary"] == "读取文件 · example.ts"
+    finally:
+        thread.join(timeout=10)
+    assert not thread.is_alive()
+    # Native progress is never promoted into a formal chat reply.
+    assert result[0].status == TurnStatus.BLOCKED
+    assert repository.list_messages(seeded_mission.id) == []
+    persisted = build_mission_detail(repository, temp_settings, seeded_mission.id)["tool_events"]
+    assert [item["phase"] for item in persisted] == ["started", "completed"]
+    assert "hidden output" not in json.dumps(persisted)
 
 
 def _make_fake_gemini_script(tmp: Path, sleep_s: float = 0.05) -> Path:

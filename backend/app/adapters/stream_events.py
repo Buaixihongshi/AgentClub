@@ -29,5 +29,8 @@ class StreamEvent:
     text: Optional[str] = None
     session_id: Optional[str] = None
     tool_name: Optional[str] = None
+    activity_id: Optional[str] = None
+    tool_phase: Optional[str] = None
+    tool_summary: Optional[str] = None
     error: Optional[str] = None
     usage: Optional[UsageRecord] = None

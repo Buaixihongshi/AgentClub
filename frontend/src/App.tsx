@@ -23,6 +23,7 @@ import {
   type MissionCreatePayload,
 } from "./lib/api";
 import { allParticipantIds, formatDiscussionError } from "./lib/roundtableView";
+import { buildConversationTimeline } from "./lib/conversationTimeline";
 import { buildAgentParticipants, buildMissionRuntimeSummary, buildTurnViews } from "./lib/missionView";
 import {
   collectMentionTargetIds,
@@ -41,7 +42,6 @@ import {
   type MissionDetail,
   type OnboardingView,
   type RoomMode,
-  type ThreadEvent,
 } from "./types";
 import "./styles.css";
 
@@ -166,17 +166,10 @@ export default function App() {
     }
   }, [latestMissionDetail?.mission.status, latestMissionDetail?.mission.id, selectedConvId, onboarding?.mission_id, onboarding?.verification_mission_id, onboarding?.team_intro_mission_id]);
 
-  const displayMessages = useMemo((): ThreadEvent[] => {
-    const convMessages = convDetail?.messages ?? [];
-    if (!latestMissionDetail) return convMessages;
-    if (latestMissionDetail.mission.kind === "provider_verification") {
-      return convMessages;
-    }
-    const snapshotMsgs = latestMissionDetail.messages ?? latestMissionDetail.events ?? [];
-    const existingIds = new Set(convMessages.map((m) => m.id));
-    const newMsgs = snapshotMsgs.filter((m) => !existingIds.has(m.id));
-    return [...convMessages, ...newMsgs];
-  }, [convDetail, latestMissionDetail]);
+  const displayMessages = useMemo(
+    () => buildConversationTimeline(convDetail, latestMissionDetail),
+    [convDetail, latestMissionDetail],
+  );
 
   const turns = useMemo(
     () => buildTurnViews(

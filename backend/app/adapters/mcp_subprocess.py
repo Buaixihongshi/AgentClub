@@ -319,6 +319,13 @@ class MCPSubprocessAdapter(CLIAdapter):
                             self.live_progress.append_text(mission_id, turn_id, ev.text)
                         if ev.type is StreamEventType.SESSION_STARTED and ev.session_id:
                             captured_session_id[0] = ev.session_id
+                        if ev.activity_id and ev.tool_name and ev.tool_name != "call_mcp_tool":
+                            repository.add_event(mission_id, "provider.activity", {
+                                "turn_id": turn_id, "agent_id": agent_id,
+                                "provider_id": provider_id, "activity_id": ev.activity_id,
+                                "tool_name": ev.tool_name, "phase": ev.tool_phase,
+                                "summary": ev.tool_summary,
+                            })
                         if ev.type is StreamEventType.ERROR:
                             stream_ended_with_error[0] = True
                         if ev.type is StreamEventType.FINISHED:
@@ -588,6 +595,13 @@ class MCPSubprocessAdapter(CLIAdapter):
         )
 
         cmd_args = list(self.args)
+        # Explicit text/json output would hide native tool progress. This
+        # transport consumes newline-delimited activity events from stdout.
+        cmd_args = [arg for i, arg in enumerate(cmd_args)
+                    if arg != "--output-format"
+                    and not arg.startswith("--output-format=")
+                    and not (i > 0 and cmd_args[i - 1] == "--output-format")]
+        cmd_args[0:0] = ["--output-format", "stream-json"]
         if "--dangerously-skip-permissions" not in cmd_args:
             cmd_args.insert(0, "--dangerously-skip-permissions")
         if not any(arg in ("-p", "--print", "--prompt") for arg in cmd_args):

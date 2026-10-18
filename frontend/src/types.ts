@@ -225,7 +225,9 @@ export interface TurnRecord {
 export interface ToolEventRecord {
   id: number | string;
   mission_id: string;
-  event_type: "tool.call" | "tool.result" | "tool.error";
+  event_type: "tool.call" | "tool.result" | "tool.error" | "provider.activity";
+  activity_id?: string;
+  phase?: "started" | "completed" | "failed";
   tool_name: string;
   agent_id: string;
   turn_id: string;
@@ -294,7 +296,9 @@ export interface TurnToolCall {
   summary?: string;
   toolInput?: Record<string, unknown>;
   createdAt: string;
-  eventType: "tool.call" | "tool.result" | "tool.error";
+  eventType: "tool.call" | "tool.result" | "tool.error" | "provider.activity";
+  activityId?: string;
+  phase?: "started" | "completed" | "failed";
 }
 
 export interface MissionThoughtRecord {
@@ -314,6 +318,7 @@ export interface MissionDetail {
   discussion?: DiscussionView | null;
   events?: ThreadEvent[];
   messages?: ThreadEvent[];
+  failure_events?: ThreadEvent[];
   artifacts?: Artifact[];
   turns?: TurnRecord[];
   tool_events?: ToolEventRecord[];
@@ -371,6 +376,7 @@ export interface ConversationDetail {
   conversation: Conversation;
   missions: Mission[];
   messages: ThreadEvent[];
+  failure_events?: ThreadEvent[];
   latest_mission_detail?: MissionDetail | null;
   thoughts?: MissionThoughtRecord[];
   tool_events?: ToolEventRecord[];

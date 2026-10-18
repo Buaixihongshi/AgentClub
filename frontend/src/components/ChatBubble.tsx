@@ -6,6 +6,7 @@ import { compactPersonaProviderLabel } from "../lib/providerLabels";
 import type { TurnView } from "../types";
 import { ThoughtBlock } from "./ThoughtBlock";
 import { TurnMetadataDisclosure } from "./TurnMetadataDisclosure";
+import { NativeActivity } from "./NativeActivity";
 
 function MessageMarkdown({ content }: { content: string }) {
   return (
@@ -52,7 +53,8 @@ export function ChatBubble({ turn }: { turn: TurnView }) {
           {identity}
         </span>
       </div>
-      <ThoughtBlock thoughts={turn.thoughts} toolCalls={turn.toolCalls} />
+      <NativeActivity calls={turn.toolCalls} live={isStreaming} />
+      <ThoughtBlock thoughts={turn.thoughts} toolCalls={turn.toolCalls?.filter((call) => call.eventType !== "provider.activity")} />
       {displayContent && <MessageMarkdown content={displayContent} />}
       {showStreamingStatus && (
         <div className="streaming-status" aria-live="polite">
