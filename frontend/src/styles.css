@@ -1961,7 +1961,6 @@ summary:focus-visible {
   background: var(--paper);
 }
 
-.discussion-setup,
 .discussion-status {
   display: grid;
   gap: 10px;
@@ -1972,26 +1971,53 @@ summary:focus-visible {
   box-shadow: var(--hard-shadow-sm);
 }
 
-.discussion-mode-switch {
+.discussion-setup {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--ink-line);
+  border-radius: 6px;
+  background: var(--paper-soft);
+  box-shadow: none;
+}
+
+.discussion-setup-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.discussion-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  background: var(--paper-warm);
+  border: 1px solid var(--ink-line);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
 }
 
 .discussion-mode-option {
-  padding: 6px 16px;
-  border: 2px solid var(--ink);
+  padding: 2px 12px;
+  height: 26px;
+  line-height: 22px;
+  border: none;
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 0.8rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .discussion-mode-option.is-active {
   background: var(--ink);
   color: var(--paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .discussion-mode-option:disabled {
@@ -2000,17 +2026,23 @@ summary:focus-visible {
 }
 
 .discussion-participants {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
 }
 
-.discussion-participants-hint,
+.discussion-participants-hint {
+  display: none;
+}
+
 .discussion-budget-hint,
 .discussion-lock-note {
   margin: 0;
   color: var(--ink-muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .discussion-lock-note {
@@ -2018,51 +2050,91 @@ summary:focus-visible {
 }
 
 .discussion-participant-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .discussion-participant-card {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 2px dashed var(--ink-line);
-  border-radius: 4px;
-  background: var(--paper-soft);
+  gap: 5px;
+  padding: 2px 8px 2px 4px;
+  height: 26px;
+  border: 1px solid var(--ink-line);
+  border-radius: 999px;
+  background: var(--surface);
   cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.discussion-participant-card input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.discussion-participant-card:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
 }
 
 .discussion-participant-card.is-selected {
-  border-style: solid;
-  background: var(--sage-soft);
+  background: var(--ink);
+  border-color: var(--ink) !important;
+  color: var(--paper);
 }
 
 .discussion-participant-avatar {
-  font-size: 1.15rem;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--ink);
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
   line-height: 1;
 }
 
+.discussion-participant-card.is-selected .discussion-participant-avatar {
+  background: var(--paper);
+  color: var(--ink);
+}
+
 .discussion-participant-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .discussion-participant-copy strong {
-  font-size: 0.88rem;
-  font-weight: 900;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.discussion-participant-card.is-selected .discussion-participant-copy strong {
+  color: #fff !important;
 }
 
 .discussion-participant-role {
   color: var(--ink-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.discussion-participant-card.is-selected .discussion-participant-role {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .discussion-hint {
