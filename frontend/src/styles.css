@@ -3530,3 +3530,19 @@ summary:focus-visible {
 
 
 .artifact-modal-backdrop { z-index: 110; }
+
+/* Compact chat dock. */
+.discussion-panels.composer-layout-compact { gap:0; margin:0 24px 16px; padding:0; border:1px solid var(--ink-line); border-radius:12px; background:var(--surface); overflow:auto; box-shadow:0 4px 18px #1a1a1a0a; }
+.discussion-panels.composer-layout-compact .discussion-setup { padding:10px 12px; border:0; border-radius:0; background:transparent; }
+.discussion-panels.composer-layout-compact .discussion-setup-inner { gap:6px 10px; }
+.discussion-panels.composer-layout-compact .discussion-budget-hint,
+.discussion-panels.composer-layout-compact .discussion-participant-role { display:none; }
+.discussion-panels.composer-layout-compact .mission-composer { padding:0 12px 10px; gap:8px; border:0; border-radius:0 0 12px 12px; background:transparent; }
+.discussion-panels.composer-layout-compact .mission-composer > label { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.discussion-panels.composer-layout-compact .mission-composer textarea { display:block; min-height:66px; max-height:180px; padding:10px 12px; border:0; border-radius:6px; background:var(--paper); box-shadow:none; transform:none; font-size:.88rem; }
+.discussion-panels.composer-layout-compact .mission-composer textarea:focus-visible { outline:2px solid var(--sage); outline-offset:-2px; }
+.discussion-panels.composer-layout-compact .mission-composer > button { position:static; justify-self:end; min-width:auto; padding:6px 14px; border-width:1px; border-radius:6px; box-shadow:none; }
+.discussion-panels.composer-layout-compact .discussion-status { margin:0 12px 8px; }
+@media(max-width:640px) {
+ .discussion-panels.composer-layout-compact { margin:0 10px 10px; }
+}

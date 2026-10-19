@@ -19,7 +19,6 @@ import { DiscussionSetup } from "./DiscussionSetup";
 import { DiscussionStatus } from "./DiscussionStatus";
 import { MissionComposer } from "./MissionComposer";
 import { MissionHeader } from "./MissionHeader";
-import { MaintenanceButton } from "./MaintenanceButton";
 import { MissionSideRail } from "./MissionSideRail";
 import { OnboardingCard, type OnboardingCardProps } from "./OnboardingCard";
 import { SettingsButton } from "./SettingsButton";
@@ -92,7 +91,6 @@ export function MissionRoomPage(props: {
           runtimeSummary={props.runtimeSummary}
           streamState={props.streamState}
         />
-        <MaintenanceButton />
         <SettingsButton
           view={props.hubSettings ?? null}
           providerStatus={props.providerStatus}
@@ -129,7 +127,7 @@ export function MissionRoomPage(props: {
               emptyContent={onboardingCard}
               afterContent={props.turns.length > 0 ? onboardingCard : null}
             />
-            <div className="discussion-panels">
+            <div className="discussion-panels composer-layout-compact">
               <DiscussionSetup
                 mode={props.composerMode}
                 participantIds={props.selectedParticipantIds}
