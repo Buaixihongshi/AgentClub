@@ -58,6 +58,7 @@ def _build_mission_adapter(settings: Settings) -> CLIAdapter:
         settings.config_dir,
         cli_timeout=settings.cli_timeout,
         a2a_idle_timeout=settings.a2a_idle_timeout,
+        antigravity_persistent=settings.antigravity_persistent,
         database_path=settings.database_path,
         artifact_root=settings.artifact_root,
         provider_overrides=settings.provider_overrides,
