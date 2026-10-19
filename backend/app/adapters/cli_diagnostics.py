@@ -13,7 +13,7 @@ MAX_STREAM_CHARS = 32_768
 MAX_RECORDS = 100
 _LOGGER = logging.getLogger(__name__)
 _CREDENTIAL = re.compile(
-    r'''(?i)(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret)["']?\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,}]+)'''
+    r'''(?i)(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|context[_-]?token|authorization|password|secret)["']?\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,}]+)'''
 )
 
 
