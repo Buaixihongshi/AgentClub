@@ -19,7 +19,7 @@ const RUNTIME_LABELS: Record<string, string> = {
   use_fake_cli: "使用演示模式",
   max_turns: "最大 Turn 数",
   max_a2a_invocations: "最大 A2A 调用数",
-  cli_timeout: "CLI 超时（秒）",
+  cli_timeout: "执行窗口（秒，有工具返回可续时）",
   a2a_idle_timeout: "A2A 无进展超时（秒，0=关闭）",
 };
 
@@ -521,7 +521,7 @@ export function SettingsModal({
           {activeSection === "runtime" ? (
           <section className="settings-section" aria-labelledby="settings-runtime-title">
             <h3 id="settings-runtime-title">运行参数</h3>
-            <p className="settings-section-hint">控制任务轮次、Agent 接力预算与 CLI 超时。保存后对新任务生效。</p>
+            <p className="settings-section-hint">控制任务轮次、Agent 接力预算与执行窗口。每 5 分钟检查一次工具返回，有新结果就续一个执行窗口。保存后对新任务生效。</p>
             {(Object.keys(RUNTIME_LABELS) as (keyof typeof RUNTIME_LABELS)[]).map((key) => {
               const rtMap = view.runtime as unknown as Record<string, { value: unknown; source: string }>;
               const field = rtMap[key];

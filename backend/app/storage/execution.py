@@ -66,7 +66,7 @@ class ExecutionLedger:
             })
         return token, receipt
 
-    def _grant(self, db, worker_id, token):
+    def _grant(self, db, worker_id, token, *, host_renewal=False):
         if not isinstance(token, str) or not token:
             raise MCPToolError('Missing context_token; use the host-issued token for this turn')
         grant = db.execute('SELECT g.*, w.state AS worker_state, w.active_hash, w.generation AS worker_generation '
@@ -75,12 +75,25 @@ class ExecutionLedger:
         if (not grant or grant['state'] != 'active' or grant['worker_state'] != 'busy'
                 or grant['active_hash'] != grant['token_hash']
                 or grant['worker_generation'] != grant['generation']
-                or grant['expires_at'] <= time.time()):
+                or (not host_renewal and grant['expires_at'] <= time.time())):
             raise MCPToolError('Execution grant expired; stale worker/turn is not authorized')
         mission = self.repo.get_mission(grant['mission_id'])
         if not mission or mission.status not in {MissionStatus.PENDING, MissionStatus.RUNNING}:
             raise MCPToolError('Mission is no longer active')
         return dict(grant)
+
+    def renew(self, worker_id, token, *, timeout):
+        """Host-only renewal after a progress check; never revives a fenced generation.
+
+        A scheduled check may be polled just after the previous expiry. Model
+        tool calls still enforce expiry; only this host API can extend it.
+        """
+        if timeout <= 0:
+            raise MCPToolError('Cannot renew an expired turn deadline')
+        with self.repo._transaction(immediate=True) as db:
+            grant = self._grant(db, worker_id, token, host_renewal=True)
+            db.execute('UPDATE execution_grants SET expires_at=? WHERE token_hash=?',
+                       (time.time() + timeout, grant['token_hash']))
 
     def call(self, worker_id, token, tool, arguments, operation_id, handler: Callable):
         with self.repo._transaction(immediate=True) as db:

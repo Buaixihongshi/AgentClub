@@ -149,6 +149,7 @@ export function buildTurnViews(
       role: event.role,
       eventType: event.event_type,
       missionId: event.mission_id,
+      artifact: event.artifact,
       content: event.content,
       capability,
       providerLabel,
@@ -310,6 +311,17 @@ function buildThoughtsByTurn(
   return thoughts;
 }
 
+function nativeActivityPhase(event: ToolEventRecord): TurnToolCall["phase"] {
+  if (event.phase === "failed" || event.ok === false) return "failed";
+  if (event.phase === "result") return event.ok === true ? "completed" : "started";
+  // Claude's content_block_stop only finishes generating the tool arguments.
+  // Execution is confirmed by the subsequent tool_result, including in history.
+  if (event.provider_id === "claude" && event.phase === "completed" && event.ok !== true) {
+    return "started";
+  }
+  return event.phase;
+}
+
 function buildToolCallsByTurn(
   events: ToolEventRecord[] = [],
 ): Map<string, TurnToolCall[]> {
@@ -318,18 +330,19 @@ function buildToolCallsByTurn(
     if (event.event_type !== "tool.call" && event.event_type !== "provider.activity") continue;
     if (!event.turn_id) continue;
     const bucket = byTurn.get(event.turn_id) ?? [];
-    const toolCall: TurnToolCall = {
-      toolName: event.tool_name,
-      summary: event.summary,
-      toolInput: event.tool_input,
-      createdAt: event.created_at,
-      eventType: event.event_type,
-      activityId: event.activity_id,
-      phase: event.phase,
-    };
     const existing = event.activity_id
       ? bucket.findIndex((call) => call.activityId === event.activity_id)
       : -1;
+    const previous = existing >= 0 ? bucket[existing] : undefined;
+    const toolCall: TurnToolCall = {
+      toolName: event.tool_name === "tool" && previous ? previous.toolName : event.tool_name,
+      summary: event.summary?.trim() || previous?.summary,
+      toolInput: event.tool_input ?? event.args ?? previous?.toolInput,
+      createdAt: previous?.createdAt ?? event.created_at,
+      eventType: event.event_type,
+      activityId: event.activity_id,
+      phase: nativeActivityPhase(event),
+    };
     if (existing >= 0) bucket[existing] = toolCall;
     else bucket.push(toolCall);
     byTurn.set(event.turn_id, bucket);

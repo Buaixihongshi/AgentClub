@@ -95,6 +95,7 @@ def _load_context() -> _Context:
         max_a2a_invocations=max_a2a_invocations,
         receipt_id=receipt_id,
         lease_token=os.environ.get('YIREN_MCP_LEASE_TOKEN'),
+        workspace_root=Path(os.environ.get('YIREN_MCP_WORKSPACE_ROOT', os.getcwd())),
     )
     return _Context(
         mission_id=mission_id,
@@ -148,7 +149,10 @@ _TOOL_DESCRIPTORS = [
         "name": "write_artifact",
         "description": (
             "向 artifacts 目录写入一个文件。relative_path 是相对于本 mission "
-            "artifacts 目录的路径（不能以 ../ 跳出），content 为文件内容字符串。"
+            "artifacts 目录的路径（不能以 ../ 跳出）。content 与 source_path 二选一。"
+            "已有本地文件时优先传 source_path，宿主直接复制并登记，无需读取或重新输出全文。"
+            "source_path 相对宿主工作区解析，也可传工作区内绝对路径，上限 10 MiB。"
+            "保存后用户立即看到文件卡片；仍需 publish_message 说明结果。"
         ),
         "inputSchema": {
             "type": "object",
@@ -161,8 +165,13 @@ _TOOL_DESCRIPTORS = [
                     "type": "string",
                     "description": "写入文件的文本内容。",
                 },
+                "source_path": {
+                    "type": "string",
+                    "description": "已有文件的本地路径；相对路径基于宿主工作区，不是 CLI 临时目录。与 content 二选一。",
+                },
             },
-            "required": ["relative_path", "content"],
+            "required": ["relative_path"],
+            "oneOf": [{"required": ["content"]}, {"required": ["source_path"]}],
             "additionalProperties": False,
         },
     },
@@ -327,8 +336,13 @@ def _handle_write_artifact(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str
     content = arguments.get("content")
     if not isinstance(relative_path, str) or not relative_path.strip():
         raise MCPToolError("write_artifact requires non-empty 'relative_path' string")
-    if not isinstance(content, str):
+    source_path = arguments.get("source_path")
+    if ("content" in arguments) == ("source_path" in arguments):
+        raise MCPToolError("write_artifact requires exactly one of content or source_path")
+    if "content" in arguments and not isinstance(content, str):
         raise MCPToolError("write_artifact requires 'content' string")
+    if "source_path" in arguments and (not isinstance(source_path, str) or not source_path.strip()):
+        raise MCPToolError("write_artifact requires non-empty 'source_path' string")
     target = ctx.tools.write_artifact(
         ctx.mission_id,
         ctx.agent_id,
@@ -336,6 +350,7 @@ def _handle_write_artifact(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str
         relative_path,
         content,
         provider_id=ctx.provider_id,
+        source_path=source_path,
     )
     return {
         "content": [

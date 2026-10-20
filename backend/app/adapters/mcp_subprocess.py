@@ -44,6 +44,9 @@ from backend.app.adapters.antigravity_config import (
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
 from backend.app.adapters.cli_diagnostics import write_cli_diagnostic
 from backend.app.adapters.stream_events import StreamEventType, UsageRecord
+from backend.app.adapters.turn_deadline import (
+    PROGRESS_CHECK_SECONDS, ToolResultDeadline, is_hub_work_result, is_tool_return,
+)
 from backend.app.orchestration.events import sanitize_tool_args, sanitize_tool_output
 from backend.app.adapters.stream_parsers import StreamLineParser
 from backend.app.adapters.subprocess_cli import (
@@ -117,6 +120,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         live_progress: Optional[LiveProgressRegistry] = None,
         gemini_home_override: Optional[Path] = None,
         gemini_resume_session_id: Optional[str] = None,
+        progress_check_interval: float = PROGRESS_CHECK_SECONDS,
     ) -> None:
         self.command = command
         self.args = list(args or [])
@@ -131,6 +135,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         self.live_progress = live_progress or get_live_progress_registry()
         self.gemini_home_override = Path(gemini_home_override) if gemini_home_override else None
         self.gemini_resume_session_id = gemini_resume_session_id
+        self.progress_check_interval = progress_check_interval
 
     def run_turn(
         self,
@@ -176,10 +181,18 @@ class MCPSubprocessAdapter(CLIAdapter):
         activity_cursor = [cursor]
         activity = TurnActivityLease()
 
+        def _record_extension(extension) -> None:
+            repository.add_event(mission_id, "turn.deadline_extended", {
+                "turn_id": turn_id, "agent_id": agent_id, "provider_id": provider_id,
+                **extension,
+            })
+
         def _refresh_mcp_activity() -> None:
             events = repository.list_events_after(mission_id, activity_cursor[0])
             for event in events:
                 activity_cursor[0] = max(activity_cursor[0], int(event.id))
+                if is_hub_work_result(event, turn_id):
+                    progress.record_result(("hub", event.id))
                 if (
                     event.event_type in _MEANINGFUL_TURN_EVENT_TYPES
                     and event.payload.get("turn_id") == turn_id
@@ -294,6 +307,8 @@ class MCPSubprocessAdapter(CLIAdapter):
                 return f"{summary} | {hint}" if hint else summary
 
             process_started = time.monotonic()
+            # Initialization/configuration time is not part of the CLI execution budget.
+            progress = ToolResultDeadline(self.timeout, check_interval=self.progress_check_interval)
             wait_reason = ProcessWaitReason.EXITED
             stdout_lines: list[str] = []
             stderr_lines: list[str] = []
@@ -318,6 +333,8 @@ class MCPSubprocessAdapter(CLIAdapter):
                             continue
                         if ev.type in _MEANINGFUL_STREAM_EVENT_TYPES:
                             activity.touch()
+                        if is_tool_return(ev):
+                            progress.record_result(("native", ev.activity_id) if ev.activity_id else None)
                         if ev.type is StreamEventType.PARTIAL_TEXT and ev.text:
                             self.live_progress.append_text(mission_id, turn_id, ev.text)
                         if ev.type is StreamEventType.SESSION_STARTED and ev.session_id:
@@ -385,6 +402,8 @@ class MCPSubprocessAdapter(CLIAdapter):
                         idle_timeout=self.idle_timeout,
                         last_activity_at=activity.last_activity_at,
                         refresh_activity=_refresh_mcp_activity,
+                        progress_deadline=progress,
+                        on_extension=_record_extension,
                     )
                 except subprocess.TimeoutExpired:
                     wait_reason = ProcessWaitReason.HARD_TIMEOUT
@@ -417,7 +436,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                     else:
                         summary = build_failure_summary(
                             provider_id,
-                            timeout=self.timeout,
+                            timeout=round(progress.deadline - progress.started_at),
                             stderr_snippet=stderr.strip(),
                             stdout_snippet=stdout.strip(),
                         )
@@ -521,6 +540,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                         "\n".join(stdout_lines), "\n".join(stderr_lines)
                     ),
                     stdout="\n".join(stdout_lines), stderr="\n".join(stderr_lines),
+                    **progress.diagnostic(),
                 )
                 self.live_progress.clear(mission_id, turn_id)
 
@@ -602,8 +622,8 @@ class MCPSubprocessAdapter(CLIAdapter):
         ``guarded_global_mcp_config`` for the agy subprocess lifetime. We run
         from a throwaway workspace so agy's ``.antigravitycli/`` project
         registration lands in tmp, not the repo. ``--add-dir <repo>`` gives agy
-        the repo as read-only context; ``--print-timeout`` aligns agy's own
-        timeout just under our hard kill so it self-terminates gracefully.
+        the repo as read-only context. The host owns the renewable deadline;
+        agy's fixed ``--print-timeout`` is disabled.
 
         Returns ``(cmd, debug_config_path, workspace_cwd, server_spec)``.
         """
@@ -639,10 +659,12 @@ class MCPSubprocessAdapter(CLIAdapter):
             and not any(a == "--add-dir" or a.startswith("--add-dir=") for a in cmd_args)
         ):
             cmd_args[0:0] = ["--add-dir", os.getcwd()]
-        # D6: let agy self-timeout ~10s before our hard kill (cli_timeout).
-        if not any(a == "--print-timeout" or a.startswith("--print-timeout=") for a in cmd_args):
-            agy_timeout = max(30, self.timeout - 10)
-            cmd_args[0:0] = ["--print-timeout", "{n}s".format(n=agy_timeout)]
+        # The host owns the renewable deadline; a fixed native timer would kill
+        # valid work after the host has already granted an extension.
+        cmd_args = [arg for i, arg in enumerate(cmd_args)
+                    if arg != "--print-timeout" and not arg.startswith("--print-timeout=")
+                    and not (i > 0 and cmd_args[i - 1] == "--print-timeout")]
+        cmd_args[0:0] = ["--print-timeout", "0"]
 
         cmd = [self.command, *cmd_args, mcp_prompt]
         return cmd, debug_config_path, workspace, server_spec
@@ -659,6 +681,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         env: dict = {
             "YIREN_MCP_DB_PATH": str(self.db_path),
             "YIREN_MCP_ARTIFACT_ROOT": str(self.artifact_root),
+            "YIREN_MCP_WORKSPACE_ROOT": str(Path.cwd().resolve()),
             "YIREN_MCP_MISSION_ID": mission_id,
             "YIREN_MCP_AGENT_ID": agent_id,
             "YIREN_MCP_TURN_ID": turn_id,
@@ -792,6 +815,8 @@ _MCP_PROMPT_GUIDANCE = (
     "参数为 content (中文文本)。你本回合必须调用该 MCP 工具一次来发声；"
     "只要没有成功调用 yiren_hub.publish_message，本回合会被系统判定为未完成。"
     "不要只在 stdout/普通文本中说你已经发声。"
+    "交付已有本地文件时，用 write_artifact(relative_path=交付文件名, source_path=本地文件路径)，"
+    "不要为了登记产物重新输出整份文件，也无需反复读取文件或检查 JSON。"
     "需要其他角色接力时，先调用 invoke_agent 登记接力，再调用 publish_message 说明交接；"
     "调用失败必须如实说明，不能宣称对方会接手。publish_message 应作为本轮最后的业务工具调用。"
     "发声前用 log_thought 记录简短的工作计划或判断摘要，供用户查看；无需记录私密的逐步推理。"
@@ -932,12 +957,19 @@ def _wait_for_process_with_activity(
     idle_timeout: int,
     last_activity_at: Callable[[], float],
     refresh_activity: Callable[[], None],
+    progress_deadline: Optional[ToolResultDeadline] = None,
+    on_extension: Optional[Callable[[dict], None]] = None,
 ) -> ProcessWaitReason:
     """Wait until exit, hard deadline, or an optional inactivity deadline."""
     hard_deadline = time.time() + max(0, hard_timeout)
     while True:
-        if idle_timeout > 0:
+        if idle_timeout > 0 or progress_deadline is not None:
             refresh_activity()
+        if progress_deadline is not None:
+            extension = progress_deadline.check()
+            if extension and on_extension:
+                on_extension(extension)
+            hard_deadline = progress_deadline.deadline
         now = time.time()
         if now >= hard_deadline:
             return ProcessWaitReason.HARD_TIMEOUT

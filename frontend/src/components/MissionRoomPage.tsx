@@ -15,6 +15,7 @@ import {
 import { ConversationList } from "./ConversationList";
 import { DiscussionSkillStatus } from "./DiscussionSkillStatus";
 import { MissionComposer } from "./MissionComposer";
+import type { ConfirmedMention } from "../lib/inputConfirmations";
 import { MissionHeader } from "./MissionHeader";
 import { OnboardingCard, type OnboardingCardProps } from "./OnboardingCard";
 import { SettingsButton } from "./SettingsButton";
@@ -31,6 +32,8 @@ export function MissionRoomPage(props: {
   busy: boolean;
   error?: string | null;
   onInputChange: (value: string) => void;
+  confirmations?: ConfirmedMention[];
+  onConfirmationsChange?: (mentions: ConfirmedMention[]) => void;
   onSubmit: () => void;
   conversations: ConversationSummary[];
   selectedConversationId?: string;
@@ -114,7 +117,9 @@ export function MissionRoomPage(props: {
           <section className="conversation-main" aria-label="任务对话">
             {timeline}
             <div className="discussion-panels composer-layout-compact">
-              {discussionPanel}
+              {discussionPanel ? (
+                <div className="composer-discussion-status">{discussionPanel}</div>
+              ) : null}
               <MissionComposer
                 value={props.input}
                 busy={props.busy}
@@ -122,8 +127,9 @@ export function MissionRoomPage(props: {
                 disabled={props.conversationScope === "archived"}
                 submitLabel={submitLabel}
                 mentionsEnabled={!(hasActiveMission && discussion)}
-                placeholder="输入消息，/discuss 发起团队讨论，@ 选择 Agent"
                 onChange={props.onInputChange}
+                confirmations={props.confirmations}
+                onConfirmationsChange={props.onConfirmationsChange}
                 onSubmit={props.onSubmit}
               />
             </div>

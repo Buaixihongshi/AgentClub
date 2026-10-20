@@ -5,7 +5,7 @@ import threading
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend.app.adapters.base import CLIAdapter
@@ -17,6 +17,7 @@ from backend.app.api.mission_detail import (
     _mission_payload,
     build_mission_detail,
     read_artifact_content,
+    artifact_file_path,
 )
 from backend.app.domain.models import MissionStatus, utc_now
 from backend.app.orchestration.runner import MissionRunner
@@ -179,6 +180,14 @@ def build_router(
         if repo.get_mission(mission_id) is None:
             raise HTTPException(status_code=404, detail="Mission not found")
         return read_artifact_content(settings, mission_id, path)
+
+    @router.get("/{mission_id}/artifacts/file")
+    def download_artifact(mission_id: str, path: str, repo: Repository = Depends(get_repo)):
+        if repo.get_mission(mission_id) is None:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        target = artifact_file_path(settings, mission_id, path)
+        return FileResponse(target, filename=target.name, media_type="application/octet-stream",
+                            headers={"X-Content-Type-Options": "nosniff"})
 
     @router.get("/{mission_id}/stream")
     def stream_mission(mission_id: str, repo: Repository = Depends(get_repo)):

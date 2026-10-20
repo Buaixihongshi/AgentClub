@@ -405,6 +405,26 @@ def test_write_artifact_creates_file_and_records_event(temp_settings, seeded_mis
     assert len(tool_results) >= 1
 
 
+def test_write_artifact_imports_from_host_workspace_via_stdio(temp_settings, seeded_mission, repository, tmp_path):
+    workspace = tmp_path / "host-workspace"
+    workspace.mkdir()
+    original = workspace / "demo.html"
+    original.write_bytes("<h1>文件导入</h1>\r\n".encode())
+    harness = MCPServerHarness(
+        db_path=temp_settings.database_path, artifact_root=temp_settings.artifact_root,
+        mission_id=seeded_mission.id, agent_id="wangye", turn_id="t_import", provider_id="antigravity",
+        extra_env={"YIREN_MCP_WORKSPACE_ROOT": str(workspace)},
+    )
+    try:
+        response = harness.request("tools/call", {"name": "write_artifact", "arguments": {
+            "relative_path": "demo.html", "source_path": "demo.html",
+        }}, request_id=1)
+        assert not response["result"]["isError"]
+    finally:
+        harness.close()
+    assert (temp_settings.artifact_root / seeded_mission.id / "demo.html").read_bytes() == original.read_bytes()
+
+
 def test_read_artifact_returns_content_via_jsonrpc(temp_settings, seeded_mission, repository):
     artifact_dir = temp_settings.artifact_root / seeded_mission.id
     artifact_dir.mkdir(parents=True, exist_ok=True)

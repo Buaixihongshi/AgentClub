@@ -8,8 +8,10 @@ export function buildConversationTimeline(
   const current = latest?.mission.kind === "provider_verification" ? undefined : latest;
   const events = [
     ...(conversation?.messages ?? []),
+    ...(conversation?.artifact_events ?? []).filter((event) => event.mission_id !== current?.mission.id),
     ...(conversation?.failure_events ?? []).filter((event) => event.mission_id !== current?.mission.id),
     ...(current?.messages ?? current?.events ?? []),
+    ...(current?.artifact_events ?? []),
     ...(current?.failure_events ?? []),
   ];
   const byId = new Map(events.map((event) => [event.id, event]));

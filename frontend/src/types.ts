@@ -167,6 +167,7 @@ export interface ThreadEventMetadata {
 }
 
 export interface ThreadEvent {
+  artifact?: Artifact;
   id: number | string;
   mission_id: string;
   event_type: string;
@@ -300,7 +301,7 @@ export interface ToolEventRecord {
   mission_id: string;
   event_type: "tool.call" | "tool.result" | "tool.error" | "provider.activity";
   activity_id?: string;
-  phase?: "started" | "completed" | "failed";
+  phase?: "started" | "completed" | "result" | "failed";
   tool_name: string;
   agent_id: string;
   turn_id: string;
@@ -392,6 +393,7 @@ export interface MissionThoughtRecord {
 }
 
 export interface MissionDetail {
+  artifact_events?: ThreadEvent[];
   mission: Mission;
   discussion?: DiscussionView | null;
   events?: ThreadEvent[];
@@ -408,6 +410,7 @@ export interface MissionDetail {
 }
 
 export interface TurnView {
+  artifact?: Artifact;
   id: string;
   missionId?: string;
   turnIndex: number;
@@ -452,6 +455,7 @@ export interface ConversationSummary extends Conversation {
 }
 
 export interface ConversationDetail {
+  artifact_events?: ThreadEvent[];
   conversation: Conversation;
   missions: Mission[];
   messages: ThreadEvent[];
