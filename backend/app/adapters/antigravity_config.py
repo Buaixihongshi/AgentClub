@@ -26,6 +26,7 @@ import fcntl
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -101,13 +102,26 @@ def _recover_if_crashed() -> None:
 
 
 @contextlib.contextmanager
-def _flock() -> Iterator[None]:
+def _flock(*, wait_timeout=None, cancelled=None) -> Iterator[None]:
     """Cross-process exclusive lock on ~/.gemini/config/.yiren-mcp.lock."""
     cfg_dir = _config_dir()
     cfg_dir.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(_lock_path()), os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        if wait_timeout is None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        else:
+            deadline = time.monotonic() + wait_timeout
+            while True:
+                if cancelled and cancelled():
+                    raise RuntimeError('Discussion stopped while waiting for provider')
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError('Provider configuration lock wait timed out')
+                    time.sleep(.1)
         yield
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
@@ -115,14 +129,14 @@ def _flock() -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def guarded_global_mcp_config(server_spec: dict[str, Any]) -> Iterator[Path]:
+def guarded_global_mcp_config(server_spec: dict[str, Any], *, wait_timeout=None, cancelled=None) -> Iterator[Path]:
     """Temporarily replace the global MCP config with only our yiren_hub server.
 
     Holds the lock for the entire ``with`` body (the caller runs and waits on
     the agy subprocess inside it). Restores the original on exit, even on
     exception / kill-then-finally.
     """
-    with _flock():
+    with _flock(wait_timeout=wait_timeout, cancelled=cancelled):
         _recover_if_crashed()
         target = global_mcp_config_path()
         target.parent.mkdir(parents=True, exist_ok=True)

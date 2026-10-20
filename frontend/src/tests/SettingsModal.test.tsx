@@ -1,6 +1,23 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SettingsModal } from "../components/SettingsModal";
+
+vi.mock("../lib/api", () => ({
+  fetchObservabilityOverview: vi.fn().mockResolvedValue({
+    generated_at: "2026-10-20T10:00:00+00:00",
+    window: "all",
+    totals: { conversations: 0, missions: 0, turns: 0, tool_calls: 0, native_calls: 0, tokens: 0, cost: 0 },
+    checks: [],
+    turns_passed: 0,
+    coverage: { turns: 0, native_calls: 0, native_rate: null, tool_calls: 0, output_rate: null, cost_known_rate: null },
+    spend: { total: 0, reported: 0, estimated: 0, unknown_turns: 0, by_provider: [] },
+    by_agent: [],
+    by_provider: [],
+    daily: [],
+    recent_turns: [],
+    failures: [],
+  }),
+}));
 import type { HubSettingsView, HubSettingsPatch } from "../types";
 
 const baseView: HubSettingsView = {
@@ -31,6 +48,14 @@ const baseView: HubSettingsView = {
 };
 
 describe("SettingsModal", () => {
+  it("opens the global observability tab without a save bar", async () => {
+    render(<SettingsModal view={baseView} onSave={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "观测" }));
+    expect(await screen.findByRole("heading", { name: "观测" })).toBeInTheDocument();
+    expect(screen.getByText(/全部会话/)).toBeInTheDocument();
+    expect(screen.queryByTestId("settings-save")).not.toBeInTheDocument();
+  });
+
   it("hides internal and retired providers from the provider list", () => {
     render(<SettingsModal view={baseView} onSave={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getAllByText("Claude").length).toBeGreaterThanOrEqual(1);

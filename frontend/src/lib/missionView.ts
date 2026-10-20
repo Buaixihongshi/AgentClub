@@ -36,6 +36,7 @@ const STATUS_LABEL: Record<string, string> = {
   queued: "排队中",
   pending: "待启动",
   running: "运行中",
+  awaiting_input: "等待你的选择",
   blocked: "已阻塞",
   completed: "已完成",
   completed_with_warnings: "已完成（有警告）",
@@ -147,6 +148,7 @@ export function buildTurnViews(
       turnIndex: isStatus ? 0 : event.role === "agent" ? agentTurnCount : 0,
       role: event.role,
       eventType: event.event_type,
+      missionId: event.mission_id,
       content: event.content,
       capability,
       providerLabel,
@@ -313,16 +315,23 @@ function buildToolCallsByTurn(
 ): Map<string, TurnToolCall[]> {
   const byTurn = new Map<string, TurnToolCall[]>();
   for (const event of events) {
-    if (event.event_type !== "tool.call") continue;
+    if (event.event_type !== "tool.call" && event.event_type !== "provider.activity") continue;
     if (!event.turn_id) continue;
     const bucket = byTurn.get(event.turn_id) ?? [];
-    bucket.push({
+    const toolCall: TurnToolCall = {
       toolName: event.tool_name,
       summary: event.summary,
       toolInput: event.tool_input,
       createdAt: event.created_at,
       eventType: event.event_type,
-    });
+      activityId: event.activity_id,
+      phase: event.phase,
+    };
+    const existing = event.activity_id
+      ? bucket.findIndex((call) => call.activityId === event.activity_id)
+      : -1;
+    if (existing >= 0) bucket[existing] = toolCall;
+    else bucket.push(toolCall);
     byTurn.set(event.turn_id, bucket);
   }
   for (const bucket of byTurn.values()) {

@@ -7,9 +7,10 @@ cd "$ROOT"
 NO_INSTALL=false
 NO_OPEN=false
 RESET_ONBOARDING=false
+RELOAD_BACKEND=false
 
 usage() {
-  echo "Usage: ./scripts/start.sh [--no-install] [--no-open] [--reset-onboarding]"
+  echo "Usage: ./scripts/start.sh [--no-install] [--no-open] [--reset-onboarding] [--reload]"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -17,6 +18,7 @@ while [ "$#" -gt 0 ]; do
     --no-install) NO_INSTALL=true ;;
     --no-open) NO_OPEN=true ;;
     --reset-onboarding) RESET_ONBOARDING=true ;;
+    --reload) RELOAD_BACKEND=true ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -129,8 +131,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "Starting AgentClub backend…"
-PYTHONPATH="$ROOT" "$PY" -m uvicorn backend.app.main:app \
-  --host "$BOOT_HOST" --port "$BACKEND_PORT" \
+BACKEND_ARGS=(--host "$BOOT_HOST" --port "$BACKEND_PORT")
+if [ "$RELOAD_BACKEND" = true ]; then
+  BACKEND_ARGS+=(--reload)
+fi
+PYTHONPATH="$ROOT" "$PY" -m uvicorn backend.app.main:app "${BACKEND_ARGS[@]}" \
   >"$RUNTIME_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 

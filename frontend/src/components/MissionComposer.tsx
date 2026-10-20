@@ -20,6 +20,7 @@ export function MissionComposer(props: {
   onSubmit: () => void;
   submitLabel?: string;
   submitDisabled?: boolean;
+  placeholder?: string;
   /** Roundtable mode routes replies through target_agent_id, so @ autocomplete is off. */
   mentionsEnabled?: boolean;
   interruptTargets?: ComposerInterruptTarget[];
@@ -142,8 +143,8 @@ export function MissionComposer(props: {
           disabled={props.disabled}
           onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={props.disabled ? "归档会话只读；恢复后可继续对话" : "输入任务；@ 可选择 Agent 定向对话"}
-          rows={3}
+          placeholder={props.disabled ? "归档会话只读；恢复后可继续对话" : props.placeholder ?? (mentionsEnabled ? "输入任务，@ 选择 Agent · Enter 发送" : "聊点什么，Enter 发送 · Shift + Enter 换行")}
+          rows={2}
           role="combobox"
           aria-expanded={menuOpen}
           aria-controls="mention-listbox"

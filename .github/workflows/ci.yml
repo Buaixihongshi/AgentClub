@@ -51,6 +51,9 @@ jobs:
       - name: Run privacy check
         run: python scripts/privacy-check.py
 
+      - name: Run offline eval harness smoke
+        run: python scripts/run_eval.py --mode fixture --quiet --output "${RUNNER_TEMP:-/tmp}/agentclub-eval-ci"
+
   frontend:
     name: Frontend tests and build
     runs-on: ubuntu-latest

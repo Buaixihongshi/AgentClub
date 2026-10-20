@@ -11,7 +11,7 @@ except ImportError:  # pragma: no cover - compatibility for Python < 3.11
     class StrEnum(str, Enum):
         __str__ = str.__str__
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def utc_now() -> datetime:
@@ -30,9 +30,49 @@ class TaskComplexity(StrEnum):
     COMPLEX = "complex"
 
 
+class OrchestrationMode(StrEnum):
+    """How a task mission is staffed.
+
+    ``AUTO`` is the shipped product behaviour.  The other modes are explicit
+    experiment arms: they let one task be run with a single agent, a
+    self-reflection loop, a fixed multi-agent workflow, or dynamic A2A routing
+    without changing personas or providers.
+    """
+
+    AUTO = "auto"
+    SINGLE = "single"
+    REFLECTION = "reflection"
+    FIXED = "fixed"
+    DYNAMIC = "dynamic"
+
+
+class OrchestrationConfig(BaseModel):
+    """Optional per-mission orchestration override used by evaluation runs."""
+
+    mode: OrchestrationMode = OrchestrationMode.AUTO
+    participant_ids: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_participants(self):
+        if len(set(self.participant_ids)) != len(self.participant_ids):
+            raise ValueError("orchestration participant_ids must be unique")
+        if self.mode in (OrchestrationMode.SINGLE, OrchestrationMode.REFLECTION):
+            if len(self.participant_ids) > 1:
+                raise ValueError(
+                    "single/reflection orchestration accepts at most one participant"
+                )
+        if self.mode in (OrchestrationMode.FIXED, OrchestrationMode.DYNAMIC):
+            if self.participant_ids and len(self.participant_ids) < 2:
+                raise ValueError(
+                    "fixed/dynamic orchestration needs at least two participants"
+                )
+        return self
+
+
 class MissionStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
+    AWAITING_INPUT = "awaiting_input"
     BLOCKED = "blocked"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -95,12 +135,19 @@ class Conversation(BaseModel):
 class DiscussionConfig(BaseModel):
     participant_ids: List[str]
     max_turns: int
+    protocol: str = "roundtable_v1"
+    max_exchange_rounds: int = 2
+    provider_routes: dict[str, list[str]] = Field(default_factory=dict)
+    profiles: list[dict[str, Any]] = Field(default_factory=list)
+    skill_instructions: Optional[str] = None
+    skill_hash: Optional[str] = None
 
 
 class Mission(BaseModel):
     id: str
     title: str
     goal: str
+    skill: Optional[str] = None
     kind: MissionKind = MissionKind.TASK
     room_mode: RoomMode = RoomMode.TASK
     discussion: Optional[DiscussionConfig] = None
@@ -109,6 +156,7 @@ class Mission(BaseModel):
     conversation_id: Optional[str] = None
     target_agent_id: Optional[str] = None
     target_agent_ids: List[str] = Field(default_factory=list)
+    orchestration: Optional[OrchestrationConfig] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     completed_at: Optional[datetime] = None

@@ -1,6 +1,5 @@
 import { getPersonaColor } from "../lib/personaColors";
 import {
-  defaultDiscussionTurnLimit,
   discussionParticipantOptions,
 } from "../lib/roundtableView";
 import type { RoomMode } from "../types";
@@ -24,7 +23,8 @@ export function DiscussionSetup(props: {
   const roundtable = props.mode === "roundtable";
   const locked = Boolean(props.locked);
   return (
-    <section className="discussion-setup" aria-label="对话模式">
+    <section className={`discussion-setup ${locked ? "is-locked" : ""}`} aria-label="对话模式">
+      <div className="discussion-setup-inner">
       <div className="discussion-mode-switch" role="radiogroup" aria-label="对话模式">
         <button
           type="button"
@@ -48,10 +48,16 @@ export function DiscussionSetup(props: {
         </button>
       </div>
 
-      {roundtable ? (
+      {locked ? (
+        <p className="discussion-lock-note" role="status">
+          讨论进行中：模式和参与者已锁定，结束后点“继续讨论”可以调整。
+        </p>
+      ) : null}
+
+      {roundtable && !locked ? (
         <div className="discussion-participants">
           <p className="discussion-participants-hint">
-            选 2～3 位伙伴，按选择顺序开场。角色只有性格差别，没有固定岗位。
+            选 2～3 位伙伴，先各自独立判断，再讨论实质分歧；由你选择综合者。
           </p>
           <ul className="discussion-participant-list" aria-label="参与者">
             {options.map((option) => {
@@ -83,17 +89,13 @@ export function DiscussionSetup(props: {
               );
             })}
           </ul>
-          {locked ? (
-            <p className="discussion-lock-note" role="status">
-              讨论进行中：模式和参与者已锁定，结束后点“继续讨论”可以调整。
-            </p>
-          ) : (
-            <p className="discussion-budget-hint">
-              最后一格留给总结：默认最多 {defaultDiscussionTurnLimit(props.participantIds.length)} 个回合（含总结）。
-            </p>
-          )}
+          <p className="discussion-budget-hint discussion-v2-flow">
+            独立思考 → 分歧讨论（最多 2 轮）→ 你选综合者 → 综合 → 原参与者复核 → 收束。
+          </p>
         </div>
       ) : null}
+
+      </div>
 
       {props.hint && !locked ? (
         <p role="alert" className="discussion-hint">

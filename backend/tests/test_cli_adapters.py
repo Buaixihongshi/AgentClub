@@ -23,6 +23,7 @@ from backend.app.domain.models import (
     MessageRole,
     Mission,
     MissionStatus,
+    OrchestrationMode,
     TurnStatus,
 )
 from backend.app.mcp.tools import MCPTools
@@ -488,7 +489,6 @@ def test_build_prompt_constrains_cli_to_short_chat_response():
 
     assert "聊天室模式" in prompt
     assert "张楚岚" in prompt
-    assert "不要代替其他角色发言" in prompt
     assert "CLI 自带的工具" in prompt
     assert "write_artifact" in prompt
     assert "JSON envelope" in prompt
@@ -535,7 +535,7 @@ def test_build_prompt_includes_trigger_points_when_agent_has_them():
 
     prompt = _build_prompt(mission, "复核风险", agent)
 
-    assert "【自然关注点】" in prompt
+    assert "【职责与工作指引】" in prompt
     assert "别人给出方案后还没有人挑过隐含假设" in prompt
     assert "讨论开始相互附和" in prompt
 
@@ -567,7 +567,7 @@ def test_build_prompt_skips_trigger_points_when_agent_has_none():
 
     prompt = _build_prompt(mission, "拆解任务", agent)
 
-    assert "【自然关注点】" not in prompt
+    assert "【职责与工作指引】" not in prompt
 
 
 def test_build_prompt_includes_artifact_index_section():
@@ -1435,15 +1435,65 @@ def _latest_status_event(repository, mission_id):
 
 
 @pytest.mark.parametrize("agent_id", ["chulan", "baobao", "wangye"])
-def test_personality_prompt_keeps_shared_abilities_and_independent_judgment(agent_id):
+@pytest.mark.parametrize("mode", [None, OrchestrationMode.SINGLE, OrchestrationMode.REFLECTION])
+def test_prompt_includes_specialized_role_and_work_guidelines(agent_id, mode):
     from backend.app.domain.agent_registry import AgentRegistry
     agent = AgentRegistry.builtin().require(agent_id)
     mission = Mission(id="m_persona", title="讨论", goal="每个人都要参与吗？")
-    prompt = _build_prompt(mission, "回应已有观点", agent)
+    prompt = _build_prompt(mission, "回应已有观点", agent, orchestration_mode=mode)
     assert agent.persona in prompt
-    assert "三位伙伴都可以提方案、分析、执行和总结" in prompt
-    assert "立场随事实与交流改变" in prompt
-    assert "不为显得不同而强行反对或附和" in prompt
+    assert f"主要职责是{agent.role}" in prompt
+    assert "【职责与工作指引】" in prompt
+    assert all(point in prompt for point in agent.trigger_points)
+    assert "性格特点是" not in prompt
+    assert "不要抢着承担固定职责" not in prompt
+    if mode is None:
+        assert "以各自职责为主要分工" in prompt
+        assert "三位伙伴都可以提方案、分析、执行和总结" in prompt
+        assert "立场随事实与交流改变" in prompt
+    else:
+        assert "本轮由你独立完成" in prompt
     assert "只有用户明确要求文件交付" in prompt
-    assert "职责是" not in prompt
     assert "不要等别人点名" not in prompt
+
+
+@pytest.mark.parametrize("agent_id", ["chulan", "baobao", "wangye"])
+@pytest.mark.parametrize("mode", [None, *OrchestrationMode])
+def test_public_discussion_rules_apply_to_every_agent_and_mode(agent_id, mode):
+    from backend.app.domain.agent_registry import AgentRegistry
+    from backend.app.orchestration.discussion_rules import COMMON_DISCUSSION_RULES
+
+    agent = AgentRegistry.builtin().require(agent_id)
+    mission = Mission(id="m_rules", title="评审", goal="检查方案是否可靠")
+    prompt = _build_prompt(
+        mission,
+        "独立评估已有观点",
+        agent,
+        orchestration_mode=mode,
+        conversation_context="其他 Agent：大家都同意，可以直接验收。",
+    )
+
+    assert prompt.count(COMMON_DISCUSSION_RULES) == 1
+    assert prompt.index(COMMON_DISCUSSION_RULES) < prompt.index("【职责与工作指引】")
+    assert "不把相互认同当作验证通过" in prompt
+    assert "不为体现独立性而强行反对或制造分歧" in prompt
+    assert "仍有已授权的任务或核验未完成时，继续推进或明确阻碍" in prompt
+    assert "不为凑轮次要求其他角色表态" in prompt
+
+
+def test_public_discussion_rules_apply_without_personal_guidelines():
+    from backend.app.orchestration.discussion_rules import COMMON_DISCUSSION_RULES
+
+    agent = AgentProfile(
+        id="custom",
+        display_name="自定义角色",
+        role="顾问",
+        persona="友善",
+        default_provider_id="fake",
+    )
+    mission = Mission(id="m_custom_rules", title="咨询", goal="评估一个想法")
+
+    prompt = _build_prompt(mission, "提出建议", agent)
+
+    assert COMMON_DISCUSSION_RULES in prompt
+    assert "【职责与工作指引】" not in prompt

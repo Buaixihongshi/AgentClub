@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from backend.app.adapters.base import CLIAdapter
 from backend.app.api.mission_detail import (
-    build_mission_detail, _mission_payload, _derive_thoughts, _derive_tool_events,
+    build_mission_detail, _mission_payload, _derive_thoughts, _derive_tool_events, _derive_failure_events, _message_event,
 )
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.models import (
@@ -24,6 +24,7 @@ from backend.app.storage.repository import Repository
 
 from backend.app.api.mission_requests import MissionRequest as CreateConversationMissionRequest, create_requested_mission
 from backend.app.orchestration.roundtable import Roundtable, DiscussionError, ACTIVE
+from backend.app.api.discussion_projection import annotate_discussion_messages
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,12 @@ def _conversation_summary(repo: Repository, conversation: Conversation) -> dict:
     history = repo.read_message_history(conversation_id=conversation.id)
     messages = [entry.message for entry in history.project()]
     latest_mission_id = missions[-1].id if missions else None
-    preview = messages[-1].content[:80] if messages else None
+    from backend.app.orchestration.deliberation import is_v2
+    discussion_events = [event for mission in missions if is_v2(mission)
+                         for event in repo.list_events_after(mission.id, 0)]
+    projected = annotate_discussion_messages([_message_event(m) for m in messages], missions, discussion_events)
+    visible = [message for message in projected if message['metadata'].get('discussion_visibility') != 'internal']
+    preview = visible[-1]['content'][:80] if visible else None
     payload = conversation.model_dump(mode="json")
     payload["latest_mission_id"] = latest_mission_id
     payload["latest_message_preview"] = preview
@@ -100,7 +106,6 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
     missions = [mission for mission in all_missions if mission.id not in verification_ids]
     history = repo.read_message_history(conversation_id=conversation.id)
     messages = [entry.message for entry in history.project()]
-    from backend.app.api.mission_detail import _message_event
     message_events = [_message_event(m) for m in messages]
     latest_detail = None
     active_verification = next(
@@ -124,10 +129,14 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
         for mission in missions
         for event in repo.list_events_after(mission.id, 0)
     ]
+    annotate_discussion_messages(message_events, missions, history_events, repo)
     return {
         "conversation": conversation.model_dump(mode="json"),
         "missions": [_mission_payload(m) for m in missions],
         "messages": message_events,
+        "failure_events": [failure for mission in missions for failure in _derive_failure_events(
+            mission, [event for event in history_events if event.mission_id == mission.id],
+        )],
         "latest_mission_detail": latest_detail,
         "thoughts": _derive_thoughts(history_events),
         "tool_events": _derive_tool_events(history_events),
@@ -213,7 +222,8 @@ def build_router(settings: Settings, repository: Repository, adapter_override: O
         with repo._transaction(immediate=True):
             conversation = repo.get_conversation(conversation_id)
             if update_data.get('status') == ConversationStatus.ARCHIVED:
-                if any(m.status in ACTIVE for m in repo.list_missions_for_conversation(conversation_id)):
+                from backend.app.orchestration.deliberation import occupies_conversation
+                if any(occupies_conversation(m) for m in repo.list_missions_for_conversation(conversation_id)):
                     raise DiscussionError('Stop the active mission before archiving')
             updated = conversation.model_copy(update={**update_data, 'updated_at': utc_now()})
             repo.update_conversation(updated)

@@ -52,4 +52,14 @@ it("renders without A2A arrow when no invocation", () => {
 
   expect(screen.queryByText(/→/)).not.toBeInTheDocument();
 });
+
+it("keeps V2 raw speech in a closed disclosure instead of duplicating the structured board", () => {
+  render(<TurnTimeline turns={[
+    agentTurn({ id: "old", missionId: "previous", content: "以前的讨论" }),
+    agentTurn({ id: "new", missionId: "current", content: "本场原文" }),
+  ]} collapsedAgentMissionId="current" />);
+  expect(screen.getByText("以前的讨论")).toBeVisible();
+  expect(screen.getByText("本场原文")).not.toBeVisible();
+  expect(screen.getByText("查看本场原始发言（1 条）")).toBeVisible();
+});
 });

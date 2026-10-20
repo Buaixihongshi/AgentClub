@@ -1,5 +1,6 @@
 """One creation contract for the standalone and conversation endpoints."""
 import json
+import re
 from typing import Literal, Optional
 from uuid import uuid4
 
@@ -11,20 +12,28 @@ from backend.app.orchestration.roundtable import ACTIVE, DiscussionError
 
 
 class DiscussionRequest(BaseModel):
-    participant_ids: list[str] = Field(min_length=2, max_length=3)
+    protocol: Literal['roundtable_v1', 'deliberation_v2'] = 'roundtable_v1'
+    participant_ids: Optional[list[str]] = Field(default=None, min_length=2, max_length=3)
     max_turns: Optional[StrictInt] = Field(default=None, ge=3, le=12)
+    # V2 enforces 2–3 in the validator; V1 keeps the legacy 1–3 range.
+    max_exchange_rounds: StrictInt = Field(default=2, ge=1, le=3)
 
     @model_validator(mode='after')
     def validate_participants(self):
-        if len(set(self.participant_ids)) != len(self.participant_ids):
+        if self.participant_ids is not None and len(set(self.participant_ids)) != len(self.participant_ids):
             raise ValueError('Discussion participants must be unique')
-        if self.max_turns is not None and self.max_turns < len(self.participant_ids) + 1:
+        if self.protocol == 'deliberation_v2' and self.max_turns is not None:
+            raise ValueError('V2 does not accept max_turns; use max_exchange_rounds')
+        if self.protocol == 'deliberation_v2' and self.max_exchange_rounds < 2:
+            raise ValueError('V2 requires 2–3 exchange rounds')
+        if self.max_turns is not None and self.participant_ids is not None and self.max_turns < len(self.participant_ids) + 1:
             raise ValueError('Reserve an opening turn for everyone and a summary turn')
         return self
 
 
 class MissionRequest(BaseModel):
     goal: str
+    skill: Optional[Literal['discuss']] = None
     title: Optional[str] = None
     target_agent_id: Optional[str] = None
     target_agent_ids: Optional[list[str]] = None
@@ -32,15 +41,51 @@ class MissionRequest(BaseModel):
     discussion: Optional[DiscussionRequest] = None
     request_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
+    @model_validator(mode='before')
+    @classmethod
+    def normalize_skill(cls, value):
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        goal = data.get('goal')
+        if isinstance(goal, str):
+            command = re.match(r'^/discuss(?:\s|$)', goal.lstrip())
+            if command:
+                if data.get('skill') not in (None, 'discuss'):
+                    raise ValueError('Unknown project skill')
+                data['skill'] = 'discuss'
+                data['goal'] = goal.lstrip()[command.end():].strip()
+        if data.get('skill') == 'discuss':
+            if data.get('target_agent_id') is not None or data.get('target_agent_ids') is not None:
+                raise ValueError('Discuss skill uses discussion.participant_ids, not target agents')
+            if data.get('room_mode') not in (None, 'task', 'roundtable'):
+                raise ValueError('Discuss skill requires roundtable mode')
+            discussion = data.get('discussion')
+            if isinstance(discussion, DiscussionRequest):
+                discussion = discussion.model_dump()
+            if discussion is None:
+                discussion = {}
+            if isinstance(discussion, dict):
+                discussion = dict(discussion)
+                if discussion.get('protocol', 'deliberation_v2') != 'deliberation_v2':
+                    raise ValueError('Discuss skill requires deliberation_v2, not roundtable_v1')
+                discussion['protocol'] = 'deliberation_v2'
+            data.update(room_mode='roundtable', discussion=discussion)
+        return data
+
     @model_validator(mode='after')
     def validate_mode(self):
         if self.room_mode == 'roundtable':
             if self.discussion is None:
                 raise ValueError('Roundtable requires discussion configuration')
+            if self.discussion.participant_ids is None and self.skill != 'discuss':
+                raise ValueError('Roundtable requires discussion.participant_ids')
             if self.target_agent_id is not None or self.target_agent_ids is not None:
                 raise ValueError('Use discussion.participant_ids for roundtables')
             if not self.goal.strip():
                 raise ValueError('Discussion goal must not be empty')
+            if self.discussion.protocol == 'deliberation_v2' and len(self.goal) > 8000:
+                raise ValueError('V2 goal exceeds 8000 characters; provide supporting material separately')
         elif self.discussion is not None:
             raise ValueError('Task mode does not accept discussion configuration')
         return self
@@ -51,42 +96,106 @@ class CreateMissionRequest(MissionRequest):
 
 
 class DiscussionControlRequest(BaseModel):
-    action: Literal['finish', 'stop']
+    action: Literal['finish', 'stop', 'select_synthesizer', 'retry', 'record_decision', 'restart_with_input', 'defer_input', 'save_knowledge_candidate']
     request_id: str = Field(min_length=1, max_length=128)
     summary_agent_id: Optional[str] = None
+    expected_revision: Optional[StrictInt] = None
+    agent_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    decision_id: Optional[str] = None
+    option_id: Optional[str] = None
+    input_ids: Optional[list[str]] = None
+    goal: Optional[str] = None
 
 
 def ensure_available(repo, conversation):
+    from backend.app.orchestration.deliberation import occupies_conversation
     if conversation.status == 'archived':
         raise DiscussionError('Conversation is archived; restore it before creating a mission')
-    if any(m.status in ACTIVE for m in repo.list_missions_for_conversation(conversation.id)):
+    if any(occupies_conversation(m) for m in repo.list_missions_for_conversation(conversation.id)):
         raise DiscussionError('Conversation already has an active mission')
+
+
+def _normalize_legacy_fingerprint(fingerprint):
+    """Only V1 records predate these two discussion default fields."""
+    discussion = fingerprint.get('discussion')
+    if (fingerprint.get('room_mode') != 'roundtable' or fingerprint.get('skill') is not None
+            or not isinstance(discussion, dict) or discussion.get('protocol', 'roundtable_v1') != 'roundtable_v1'):
+        return fingerprint
+    normalized = {**fingerprint, 'discussion': dict(discussion)}
+    normalized['discussion'].setdefault('protocol', 'roundtable_v1')
+    normalized['discussion'].setdefault('max_exchange_rounds', 2)
+    return normalized
 
 
 def create_requested_mission(repo, settings, payload, conversation_id=None):
     scope = f'conversation:{conversation_id}' if conversation_id else 'new_conversation'
-    fingerprint = payload.model_dump(exclude={'conversation_id'})
+    # Existing idempotency records predate the optional skill field.
+    excluded = {'conversation_id', 'skill'} if payload.skill is None else {'conversation_id'}
+    fingerprint = payload.model_dump(exclude=excluded)
     with repo._transaction(immediate=True) as db:
         if payload.request_id:
             row = db.execute("SELECT mission_id, payload FROM events WHERE event_type = 'mission.request_accepted' AND json_extract(payload, '$.scope') = ? AND json_extract(payload, '$.request_id') = ?", (scope, payload.request_id)).fetchone()
             if row:
-                if json.loads(row['payload'])['request'] != fingerprint:
+                original = json.loads(row['payload'])['request']
+                if _normalize_legacy_fingerprint(original) != _normalize_legacy_fingerprint(fingerprint):
                     raise DiscussionError('request_id was already used with different input')
                 mission = repo.get_mission(row['mission_id'])
                 return mission, repo.get_conversation(mission.conversation_id), False
-        valid_ids = set(get_agent_registry(settings.config_dir).ids())
+        registry = get_agent_registry(settings.config_dir)
+        valid_ids = set(registry.ids())
         targets = payload.target_agent_ids or ([payload.target_agent_id] if payload.target_agent_id else [])
         if any(t not in valid_ids for t in targets):
             raise DiscussionError('Invalid target_agent_id(s): ' + ', '.join(t for t in targets if t not in valid_ids), 400)
         config = None
         if payload.discussion:
             participants = payload.discussion.participant_ids
+            if participants is None and payload.skill == 'discuss':
+                participants = registry.ids()
+                if not 2 <= len(participants) <= 3:
+                    raise DiscussionError('Discuss skill requires 2–3 project agents or explicit participant_ids', 422)
             if any(p not in valid_ids for p in participants):
                 raise DiscussionError('Unknown discussion participant', 422)
             limit = payload.discussion.max_turns or len(participants) * 2 + 1
-            if limit > settings.roundtable_max_turns:
+            if payload.discussion.protocol == 'roundtable_v1' and limit > settings.roundtable_max_turns:
                 raise DiscussionError('Discussion exceeds server roundtable_max_turns', 422)
             config = DiscussionConfig(participant_ids=participants, max_turns=limit)
+            if payload.discussion.protocol == 'deliberation_v2':
+                from backend.app.orchestration.runner import _apply_agent_overrides
+                profiles = _apply_agent_overrides(registry.all(), settings.agent_overrides)
+                routes = {a.id: [a.default_provider_id, *a.fallback_provider_ids] for a in profiles if a.id in participants}
+                if settings.use_fake_cli:
+                    routes = {agent: ['fake'] for agent in participants}
+                limit = 2 * len(participants) + len(participants) * payload.discussion.max_exchange_rounds + 1
+                if limit > settings.deliberation_max_turns:
+                    raise DiscussionError('Discussion exceeds deliberation_max_turns', 422)
+                if not settings.use_fake_cli:
+                    from backend.app.adapters.deliberation_cli import isolation_supported
+                    from backend.app.config.providers import get_cli_provider, ProviderNotFoundError
+                    from pathlib import Path
+                    for agent, candidates in routes.items():
+                        eligible = []
+                        for pid in dict.fromkeys(candidates):
+                            try:
+                                provider = get_cli_provider(settings.config_dir, pid, overrides=settings.provider_overrides)
+                            except ProviderNotFoundError:
+                                continue
+                            if provider.enabled and (pid == 'fake' or (provider.mcp_enabled and Path(provider.command).name in {'codex', 'claude', 'agy'})):
+                                eligible.append(pid)
+                        if not eligible:
+                            raise DiscussionError(f'isolation_not_supported: no enabled isolated provider for {agent}', 422)
+                        routes[agent] = eligible
+                    if any(pid != 'fake' for route in routes.values() for pid in route) and not isolation_supported():
+                        raise DiscussionError('isolation_not_supported: V2 requires macOS sandbox-exec', 422)
+                config = DiscussionConfig(participant_ids=participants, max_turns=limit, protocol='deliberation_v2',
+                    max_exchange_rounds=payload.discussion.max_exchange_rounds, provider_routes=routes,
+                    profiles=[a.model_dump(mode='json') for a in profiles if a.id in participants])
+                if payload.skill == 'discuss':
+                    from backend.app.domain.project_skills import load_discuss_skill
+                    try:
+                        config.skill_instructions, config.skill_hash = load_discuss_skill()
+                    except (OSError, ValueError) as exc:
+                        raise DiscussionError('Project skill discuss is unavailable; check skills/discuss/SKILL.md', 503) from exc
         if conversation_id:
             conversation = repo.get_conversation(conversation_id)
             if conversation is None:
@@ -97,6 +206,7 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
             repo.create_conversation(conversation)
         mission = Mission(id=f'm_{uuid4().hex}', title=payload.title or payload.goal, goal=payload.goal,
                           conversation_id=conversation.id, room_mode=payload.room_mode, discussion=config,
+                          skill=payload.skill,
                           target_agent_id=targets[0] if targets else None, target_agent_ids=targets)
         repo.create_mission(mission)
         repo.add_message(Message(id=f'msg_{uuid4().hex}', mission_id=mission.id, conversation_id=conversation.id,

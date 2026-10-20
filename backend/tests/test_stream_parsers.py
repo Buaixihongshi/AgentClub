@@ -194,3 +194,183 @@ def test_claude_result_error_emits_error():
     assert ev is not None
     assert ev.type is StreamEventType.ERROR
     assert ev.error == "boom"
+
+
+def test_codex_tool_item_carries_activity_id_and_phase():
+    """The id is what lets provider.activity record a native tool at all."""
+    started = parse_stream_line(
+        "codex", '{"type":"item.started","item":{"id":"i_2","type":"command_execution","command":"pytest"}}')
+    finished = parse_stream_line(
+        "codex", '{"type":"item.completed","item":{"id":"i_2","type":"command_execution","command":"pytest"}}')
+
+    assert started is not None and finished is not None
+    assert started.activity_id == "i_2" and started.tool_name == "shell"
+    assert started.tool_phase == "started"
+    assert "pytest" in (started.tool_summary or "")
+    assert finished.activity_id == "i_2" and finished.tool_phase == "completed"
+
+
+def test_claude_tool_block_carries_activity_id_and_completes():
+    parser = ClaudeStreamParser()
+    parser.parse('{"type":"system","subtype":"init","session_id":"s_abc"}')
+    started = parser.parse(
+        '{"type":"stream_event","event":{"type":"content_block_start","index":2,'
+        '"content_block":{"type":"tool_use","id":"toolu_9","name":"Read","input":{}}}}')
+    finished = parser.parse(
+        '{"type":"stream_event","event":{"type":"content_block_stop","index":2}}')
+
+    assert started is not None and started.activity_id == "toolu_9"
+    assert started.tool_phase == "started"
+    assert finished is not None and finished.activity_id == "toolu_9"
+    assert finished.tool_phase == "completed" and finished.tool_name == "Read"
+
+
+def test_claude_tool_block_without_id_falls_back_to_session_and_index():
+    parser = ClaudeStreamParser()
+    parser.parse('{"type":"system","subtype":"init","session_id":"s_abc"}')
+    ev = parser.parse(
+        '{"type":"stream_event","event":{"type":"content_block_start","index":3,'
+        '"content_block":{"type":"tool_use","name":"Bash","input":{}}}}')
+    assert ev is not None and ev.activity_id == "s_abc:3"
+
+
+def test_codex_command_completion_summarizes_exit_and_output_size():
+    ev = parse_stream_line(
+        "codex", '{"type":"item.completed","item":{"id":"i_7","type":"command_execution",'
+                 '"command":"git status","aggregated_output":" M a.py\\n M b.py","exit_code":0}}')
+    assert ev is not None
+    assert ev.tool_name == "shell"
+    assert ev.tool_summary == "git status → exit 0 · 15 chars"
+
+
+def test_codex_web_search_summary_names_the_query_and_first_result():
+    ev = parse_stream_line(
+        "codex", '{"type":"item.completed","item":{"id":"i_8","type":"web_search",'
+                 '"query":"https://arxiv.org/html/1","results":[{"title":"Do More Agents Help?","url":"u"}]}}')
+    assert ev is not None
+    assert ev.tool_name == "web_search"
+    assert "Do More Agents Help?" in (ev.tool_summary or "")
+    assert "1 条结果" in (ev.tool_summary or "")
+
+
+def test_codex_mcp_tool_call_is_named_so_the_duplicate_can_be_filtered():
+    ev = parse_stream_line(
+        "codex", '{"type":"item.started","item":{"id":"i_9","type":"mcp_tool_call",'
+                 '"server":"yiren_hub","tool":"log_thought","arguments":{"kind":"plan"}}}')
+    assert ev is not None
+    assert ev.tool_name == "mcp:yiren_hub:log_thought"
+    assert "plan" in (ev.tool_summary or "")
+
+
+def test_mcp_tool_names_are_filtered_from_provider_activity():
+    from backend.app.adapters.mcp_subprocess import _is_mcp_tool
+
+    assert _is_mcp_tool("mcp__yiren_hub__publish_message")
+    assert _is_mcp_tool("mcp:yiren_hub:log_thought")
+    assert _is_mcp_tool("mcp_tool_call")
+    assert not _is_mcp_tool("shell")
+
+
+def _claude_tool_call(parser, index, block_id, name, argument_json):
+    import json as _json
+
+    def line(event):
+        return _json.dumps({"type": "stream_event", "event": event})
+
+    parser.parse(line({"type": "content_block_start", "index": index,
+                       "content_block": {"type": "tool_use", "id": block_id, "name": name, "input": {}}}))
+    parser.parse(line({"type": "content_block_delta", "index": index,
+                       "delta": {"type": "input_json_delta", "partial_json": argument_json}}))
+    return parser.parse(line({"type": "content_block_stop", "index": index}))
+
+
+def test_claude_read_summary_names_the_file():
+    import json
+
+    parser = ClaudeStreamParser()
+    ev = _claude_tool_call(parser, 0, "toolu_1", "Read", '{"file_path": "/tmp/a.py"}')
+    assert ev is not None and ev.tool_phase == "completed"
+    assert ev.tool_summary == "Read · /tmp/a.py"
+
+
+def test_claude_bash_summary_names_the_command():
+    import json
+
+    parser = ClaudeStreamParser()
+    ev = _claude_tool_call(parser, 1, "toolu_2", "Bash", '{"command": "pytest -q", "description": "run tests"}')
+    assert ev.tool_summary == "Bash · pytest -q"
+
+
+def test_claude_summary_falls_back_to_raw_json_when_unparsable():
+    parser = ClaudeStreamParser()
+    parser.parse('{"type":"stream_event","event":{"type":"content_block_start","index":2,'
+                 '"content_block":{"type":"tool_use","id":"toolu_3","name":"Grep","input":{}}}}')
+    parser.parse('{"type":"stream_event","event":{"type":"content_block_delta","index":2,'
+                 '"delta":{"type":"input_json_delta","partial_json":"{\\"pattern\\": \\"def "}}}')
+    ev = parser.parse('{"type":"stream_event","event":{"type":"content_block_stop","index":2}}')
+    assert ev is not None and ev.tool_summary is not None
+    assert ev.tool_summary.startswith("Grep · ")
+
+
+def test_claude_tool_result_carries_output_and_ok():
+    import json
+
+    parser = ClaudeStreamParser()
+    parser.parse('{"type":"system","subtype":"init","session_id":"s_1"}')
+    parser.parse(json.dumps({"type": "stream_event", "event": {
+        "type": "content_block_start", "index": 2,
+        "content_block": {"type": "tool_use", "id": "toolu_1", "name": "Read", "input": {}}}}))
+    parser.parse(json.dumps({"type": "stream_event", "event": {
+        "type": "content_block_delta", "index": 2,
+        "delta": {"type": "input_json_delta", "partial_json": '{"file_path": "/tmp/a.py"}'}}}))
+    completed = parser.parse(json.dumps({"type": "stream_event", "event": {
+        "type": "content_block_stop", "index": 2}}))
+    assert completed.tool_args == {"file_path": "/tmp/a.py"}
+
+    result = parser.parse(json.dumps({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "toolu_1", "content": "file body", "is_error": False}]}}))
+    assert result is not None
+    assert result.tool_phase == "result"
+    assert result.tool_name == "Read"
+    assert result.tool_output == "file body"
+    assert result.tool_ok is True
+
+
+def test_claude_tool_result_error_is_marked_failed():
+    import json
+
+    parser = ClaudeStreamParser()
+    parser.parse(json.dumps({"type": "stream_event", "event": {
+        "type": "content_block_start", "index": 0,
+        "content_block": {"type": "tool_use", "id": "toolu_2", "name": "Bash", "input": {}}}}))
+    result = parser.parse(json.dumps({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "toolu_2", "content": "denied", "is_error": True}]}}))
+    assert result.tool_phase == "failed"
+    assert result.tool_ok is False
+    assert result.tool_error == "denied"
+
+
+def test_codex_command_records_args_output_and_exit_status():
+    started = parse_stream_line(
+        "codex", '{"type":"item.started","item":{"id":"i_1","type":"command_execution","command":"git status"}}')
+    done = parse_stream_line(
+        "codex", '{"type":"item.completed","item":{"id":"i_1","type":"command_execution",'
+                 '"command":"git status","aggregated_output":" M a.py","exit_code":0,"status":"completed"}}')
+    assert started.tool_args == {"command": "git status"}
+    assert done.tool_output == " M a.py"
+    assert done.tool_ok is True
+
+
+def test_codex_command_failure_marks_ok_false():
+    done = parse_stream_line(
+        "codex", '{"type":"item.completed","item":{"id":"i_2","type":"command_execution",'
+                 '"command":"pytest","aggregated_output":"1 failed","exit_code":1,"status":"completed"}}')
+    assert done.tool_ok is False
+
+
+def test_claude_usage_records_model_and_stop_reason():
+    line = ('{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":1,"output_tokens":2},'
+            '"modelUsage":{"claude-haiku-4-5":{"inputTokens":1}},"stop_reason":"end_turn"}')
+    ev = parse_stream_line("claude", line)
+    assert ev.usage.model == "claude-haiku-4-5"
+    assert ev.usage.stop_reason == "end_turn"

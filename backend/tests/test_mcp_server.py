@@ -593,7 +593,7 @@ def test_tools_list_includes_invoke_agent(temp_settings, seeded_mission):
     assert invoke is not None, tools
     schema = invoke["inputSchema"]
     assert schema["properties"]["target_agent_id"]["type"] == "string"
-    assert schema["properties"]["mode"]["enum"] == ["fire_and_forget"]
+    assert schema["properties"]["mode"]["enum"] == ["fire_and_forget", "wait_reply"]
     assert set(schema["required"]) == {"target_agent_id", "purpose"}
 
 

@@ -25,13 +25,15 @@ def test_health_reports_local_bootstrap_dependencies(temp_settings):
     response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert {key: response.json()[key] for key in ('status', 'version', 'database', 'config', 'fake_provider')} == {
         "status": "ok",
         "version": "0.1.0",
         "database": "ready",
         "config": "ready",
         "fake_provider": "ready",
     }
+    assert 'deliberation_v2' in response.json()['discussion_protocols']
+    assert len(response.json()['discussion_rules_hash']) == 64
 
 
 def test_first_chat_is_idempotent_and_uses_fake_chulan(temp_settings):

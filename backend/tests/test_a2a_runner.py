@@ -192,6 +192,19 @@ def test_extract_reply_text_returns_not_found_when_empty(repository):
     assert result.message_id is None
 
 
+def test_extract_reply_text_links_real_published_message(repository, temp_settings):
+    from backend.app.mcp.tools import MCPTools
+
+    mission = Mission(id="m_real_reply", title="reply", goal="probe")
+    repository.create_mission(mission)
+    message = MCPTools(repository, temp_settings.artifact_root).publish_message(
+        mission.id, "baobao", "callee", "verified", "codex")
+    result = _extract_reply_text(repository, mission.id, "callee")
+    assert result.found
+    assert result.text == message.content
+    assert result.message_id == message.id
+
+
 def test_extract_reply_text_truncates_long_content(repository):
     repository.create_mission(Mission(id="m_extract3", title="t", goal="g"))
     long = "好" * 2000

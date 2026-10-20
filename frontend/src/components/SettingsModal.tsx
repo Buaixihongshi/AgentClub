@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
-import { Cable, SlidersHorizontal, UsersRound, X } from "lucide-react";
+import { Activity, Cable, SlidersHorizontal, UsersRound, X } from "lucide-react";
 import type { ProviderStatusState } from "../hooks/useProviderStatus";
+import { ObservabilityOverview } from "./ObservabilityOverview";
 import type {
   AgentOverridePatch,
   HubSettingsAgentView,
@@ -28,7 +29,7 @@ interface AgentDraft {
   clear?: boolean;
 }
 
-type SettingsSectionId = "providers" | "team" | "runtime";
+type SettingsSectionId = "providers" | "team" | "runtime" | "observability";
 
 interface Props {
   view: HubSettingsView;
@@ -285,7 +286,7 @@ export function SettingsModal({
         <div className="settings-modal-header">
           <div>
             <h2>设置</h2>
-            <p>管理 CLI、角色配置和运行参数</p>
+            <p>管理 CLI、角色配置、运行参数与全局观测</p>
           </div>
           <button
             type="button"
@@ -326,6 +327,15 @@ export function SettingsModal({
             >
               <SlidersHorizontal size={17} aria-hidden="true" />
               <span>运行参数</span>
+            </button>
+            <button
+              type="button"
+              className={activeSection === "observability" ? "is-active" : ""}
+              aria-pressed={activeSection === "observability"}
+              onClick={() => setActiveSection("observability")}
+            >
+              <Activity size={17} aria-hidden="true" />
+              <span>观测</span>
             </button>
           </nav>
 
@@ -565,8 +575,10 @@ export function SettingsModal({
             })}
           </section>
           ) : null}
+          {activeSection === "observability" ? <ObservabilityOverview /> : null}
             </div>
 
+            {activeSection === "observability" ? null : (
             <div className="settings-modal-footer">
               <span>{hasDiff ? "有尚未保存的更改" : "所有更改已保存"}</span>
               <div>
@@ -581,6 +593,7 @@ export function SettingsModal({
                 </button>
               </div>
             </div>
+            )}
           </div>
         </div>
       </div>

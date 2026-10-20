@@ -10,6 +10,7 @@ from backend.app.domain.models import (
     AgentProfile,
     Mission,
     MissionStatus,
+    OrchestrationMode,
     TurnStatus,
     utc_now,
     is_provider_verification_mission,
@@ -17,6 +18,7 @@ from backend.app.domain.models import (
 from backend.app.mcp.tools import MCPTools
 from backend.app.settings import AgentOverride
 from backend.app.orchestration.complexity import classify_task
+from backend.app.orchestration.discussion_rules import COMMON_DISCUSSION_RULES
 from backend.app.orchestration.events import (
     fetch_a2a_requests_for_turn,
     find_pending_interrupts,
@@ -32,7 +34,8 @@ from backend.app.orchestration.events import (
     record_turn_started,
 )
 from backend.app.orchestration.context import build_artifact_index, build_conversation_context
-from backend.app.orchestration.speaker import WorkflowStep, select_workflow
+from backend.app.orchestration.speaker import WorkflowStep
+from backend.app.orchestration.strategies import OrchestrationPlan, plan_orchestration
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
 
@@ -60,6 +63,15 @@ class MissionRunner:
             self.agent_registry.all(), settings.agent_overrides,
         )
 
+    def _plan_orchestration(self, mission: Mission) -> OrchestrationPlan:
+        """Allow isolated protocol probes to reuse the real scheduling engine."""
+        return plan_orchestration(
+            mission,
+            self.agents,
+            default_max_a2a=self.settings.max_a2a_invocations,
+            default_max_turns=self.settings.max_turns,
+        )
+
     def run(self, mission_id: str) -> Mission:
         try:
             return self._run_impl(mission_id)
@@ -75,6 +87,11 @@ class MissionRunner:
         mission = self.repository.get_mission(mission_id)
         if mission is None:
             raise ValueError("Unknown mission: {mission_id}".format(mission_id=mission_id))
+
+        from backend.app.orchestration.deliberation import is_v2
+        if is_v2(mission):
+            from backend.app.orchestration.deliberation_runner import run_deliberation
+            return run_deliberation(self.repository, self.settings, mission_id, self.adapter)
 
         if mission.room_mode == 'roundtable':
             return self._run_roundtable(mission_id)
@@ -92,17 +109,13 @@ class MissionRunner:
         tools = MCPTools(self.repository, self.settings.artifact_root)
         tools.update_status(mission_id, MissionStatus.RUNNING.value, summary="Mission started")
 
-        workflow = select_workflow(
-            mission.complexity,
-            mission.goal,
-            self.agents,
-            target_agent_id=mission.target_agent_id,
-            target_agent_ids=list(mission.target_agent_ids) or None,
-        )
+        plan = self._plan_orchestration(mission)
+        workflow = plan.steps
         agents = {agent.id: agent for agent in self.agents}
         providers = _providers_by_agent(self.agents)
-        max_turns = max(0, self.settings.max_turns)
-        max_a2a = max(0, self.settings.max_a2a_invocations)
+        max_turns = plan.max_turns
+        max_a2a = plan.max_a2a_invocations
+        orchestration_mode = plan.mode
 
         a2a_queue: deque[WorkflowStep] = deque()
         pending_replies: Dict[str, str] = {}
@@ -197,6 +210,7 @@ class MissionRunner:
                 a2a_reply_text=a2a_reply_text,
                 agents_by_id=agents,
                 max_a2a_invocations=max_a2a,
+                orchestration_mode=orchestration_mode,
             )
 
             def peek_resume_chain(sender_agent_id: str) -> list:
@@ -213,7 +227,7 @@ class MissionRunner:
                 self.repository,
                 self.settings.artifact_root,
                 a2a_enqueue=enqueue_a2a,
-                valid_agent_ids=set(agents.keys()),
+                valid_agent_ids=set(plan.agent_ids),
                 max_a2a_invocations=max_a2a,
                 a2a_budget_used=lambda: a2a_used + len(a2a_queue),
                 peek_resume_chain=peek_resume_chain,
@@ -246,7 +260,7 @@ class MissionRunner:
                     self._freeze_a2a_on_close(
                         mission.id,
                         turn_id,
-                        set(agents.keys()),
+                        set(plan.agent_ids),
                         a2a_queue,
                         pending_replies,
                     )
@@ -254,15 +268,27 @@ class MissionRunner:
                     remaining_workflow_agents = {
                         s.agent_id for s in workflow[workflow_cursor:]
                     }
-                    budget_exceeded = self._pickup_a2a_requests(
-                        mission.id,
-                        turn_id,
-                        set(agents.keys()),
-                        a2a_queue,
-                        lambda: a2a_used + len(a2a_queue),
-                        max_a2a,
-                        remaining_workflow_agents,
-                    )
+                    if plan.a2a_enabled:
+                        budget_exceeded = self._pickup_a2a_requests(
+                            mission.id,
+                            turn_id,
+                            set(plan.agent_ids),
+                            a2a_queue,
+                            lambda: a2a_used + len(a2a_queue),
+                            max_a2a,
+                            remaining_workflow_agents,
+                        )
+                    else:
+                        # Arms with A2A disabled must not turn a stray
+                        # invoke_agent call into a blocked mission. Record it
+                        # as skipped and continue with the declared workflow.
+                        self._discard_a2a_requests(
+                            mission.id,
+                            turn_id,
+                            set(plan.agent_ids),
+                            reason="a2a disabled for this orchestration",
+                        )
+                        budget_exceeded = False
                     if budget_exceeded:
                         if pending_interrupt is not None:
                             record_interrupt_handled(
@@ -496,6 +522,29 @@ class MissionRunner:
                 target,
                 event.payload.get("purpose", ""),
                 reason="workflow closed",
+            )
+
+    def _discard_a2a_requests(
+        self,
+        mission_id: str,
+        sender_turn_id: str,
+        valid_agent_ids: set,
+        *,
+        reason: str,
+    ) -> None:
+        """Absorb A2A requests emitted in a mission whose arm disables A2A."""
+        for event in fetch_a2a_requests_for_turn(self.repository, mission_id, sender_turn_id):
+            target = event.payload.get("target_agent_id", "")
+            if target not in valid_agent_ids:
+                continue
+            record_a2a_skipped(
+                self.repository,
+                mission_id,
+                event.payload.get("sender_agent_id", ""),
+                sender_turn_id,
+                target,
+                event.payload.get("purpose", ""),
+                reason=reason,
             )
 
     def _pickup_a2a_requests(
@@ -758,7 +807,9 @@ def _extract_reply_text(
     if len(text) > _REPLY_MAX_CHARS:
         text = text[:_REPLY_MAX_CHARS] + "…"
         truncated = True
-    return _ReplyExtraction(text, last.payload.get("message_id"), True, truncated)
+    # Repository.add_message emits the serialized Message (key "id"). Older
+    # synthetic events used "message_id"; accept both without losing trace links.
+    return _ReplyExtraction(text, last.payload.get("message_id") or last.payload.get("id"), True, truncated)
 
 
 def _find_paired_resume_step(
@@ -810,30 +861,55 @@ def _build_prompt(
     a2a_reply_text: Optional[str] = None,
     agents_by_id: Optional[Dict[str, AgentProfile]] = None,
     max_a2a_invocations: Optional[int] = None,
+    orchestration_mode: Optional[OrchestrationMode] = None,
 ) -> str:
-    parts = [
-        "聊天室模式：你正在 AgentClub 的多 Agent 房间中发言。\n"
-        "你是{display_name}，性格特点是{role}。人格与交流习惯：{persona}\n"
-        "【共同原则】三位伙伴都可以提方案、分析、执行和总结；人格决定关注点与交流方式，不限定能力或工种。主持、质疑和收束只是本轮需要时的临时行为。\n"
-        "人格保持稳定，立场随事实与交流改变；回应别人具体说过的内容，不重复原问题的答案，不为显得不同而强行反对或附和。没有新观点时简短说明，不编造分歧。\n"
-        "性格不能成为隐瞒事实、降低准确性或拒绝已授权工作的理由；不扮演全知者，不靠口头禅和方言代替观点。\n"
-        "只回复当前角色这一轮该说的话，不要代替其他角色发言，不要输出 Markdown 标题。\n"
-        "【交付边界】任务复杂度只决定协作轮次，不决定是否交付文件。角色性格、轮次目的、被点名或接力请求都不能单独视为文件交付要求。\n"
-        "结合用户当前请求和已有会话上下文判断：讨论、比较、解释、评审修改意见时，直接在聊天中给观点、实例和建议，不主动创建或登记文件。\n"
-        "只有用户明确要求文件交付，或完成已获授权的执行任务确实需要文件时，才读写相应文件；用户确认执行前文方案时，按前文范围落实。\n"
-        "如需读写文件或执行命令，使用你 CLI 自带的工具；只有确需展示的最终交付文件才用 write_artifact 登记，不为每轮发言额外生成总结文件。\n"
-        "如本轮明确需要交付文件，可返回 JSON envelope："
-        '{{"message":"本轮回复","artifacts":[{{"path":"summary.md","content":"# Summary"}}]}}；'
-        "否则只返回普通中文回复；按任务需要详略，不设置固定字数上限。".format(
-            display_name=agent.display_name,
-            role=agent.role,
-            persona=agent.persona,
-        ),
-    ]
+    single_agent = orchestration_mode in (
+        OrchestrationMode.SINGLE,
+        OrchestrationMode.REFLECTION,
+    )
+    if single_agent:
+        parts = [
+            "聊天室模式：你正在 AgentClub 的房间里独立完成用户请求。\n"
+            "你是{display_name}，主要职责是{role}。人格与交流习惯：{persona}\n"
+            "【工作方式】本轮由你独立完成，不需要征求其他角色意见，也不要假装有别的角色在场。"
+            "直接给出完整、可执行的最终答案。\n"
+            "只输出本轮该给用户的回复，不要输出 Markdown 标题。\n"
+            "【交付边界】讨论、比较、解释、评审修改意见时，直接在聊天中给观点、实例和建议，不主动创建或登记文件。\n"
+            "只有用户明确要求文件交付，或完成已获授权的执行任务确实需要文件时，才读写相应文件；"
+            "用户确认执行前文方案时，按前文范围落实。\n"
+            "如需读写文件或执行命令，使用你 CLI 自带的工具；只有确需展示的最终交付文件才用 write_artifact 登记，"
+            "不为每轮发言额外生成总结文件。\n"
+            "如本轮明确需要交付文件，可返回 JSON envelope："
+            '{{"message":"本轮回复","artifacts":[{{"path":"summary.md","content":"# Summary"}}]}}；'
+            "否则只返回普通中文回复；按任务需要详略，不设置固定字数上限。".format(
+                display_name=agent.display_name,
+                role=agent.role,
+                persona=agent.persona,
+            ),
+        ]
+    else:
+        parts = [
+            "聊天室模式：你正在 AgentClub 的多 Agent 房间中发言。\n"
+            "你是{display_name}，主要职责是{role}。人格与交流习惯：{persona}\n"
+            "【共同原则】以各自职责为主要分工，按当前任务协作；三位伙伴都可以提方案、分析、执行和总结，用户明确指定的任务优先。人格决定交流方式，职责决定专业关注点。\n"
+            "人格保持稳定，立场随事实与交流改变；\n"
+            "【交付边界】任务复杂度只决定协作轮次，不决定是否交付文件。角色性格、轮次目的、被点名或接力请求都不能单独视为文件交付要求。\n"
+            "结合用户当前请求和已有会话上下文判断：讨论、比较、解释、评审修改意见时，直接在聊天中给观点、实例和建议，不主动创建或登记文件。\n"
+            "只有用户明确要求文件交付，或完成已获授权的执行任务确实需要文件时，才读写相应文件；用户确认执行前文方案时，按前文范围落实。\n"
+            "如需读写文件或执行命令，使用你 CLI 自带的工具；只有确需展示的最终交付文件才用 write_artifact 登记，不为每轮发言额外生成总结文件。\n"
+            "如本轮明确需要交付文件，可返回 JSON envelope："
+            '{{"message":"本轮回复","artifacts":[{{"path":"summary.md","content":"# Summary"}}]}}；'
+            "否则只返回普通中文回复；按任务需要详略，不设置固定字数上限。".format(
+                display_name=agent.display_name,
+                role=agent.role,
+                persona=agent.persona,
+            ),
+        ]
+    parts.append(COMMON_DISCUSSION_RULES)
     if agent.trigger_points:
         bullets = "\n".join("- {tp}".format(tp=tp) for tp in agent.trigger_points)
         parts.append(
-            "【自然关注点】轮到你时，按当前话题选择有帮助的角度，不必逐条回答，也不要抢着承担固定职责：\n"
+            "【职责与工作指引】结合当前任务落实以下指引，审查规则适用于代码审查场景，无需在每次回复中逐条复述：\n"
             "{bullets}".format(bullets=bullets)
         )
     if conversation_context:
@@ -871,7 +947,7 @@ def _build_prompt(
             purpose=purpose,
         )
     )
-    if max_a2a_invocations is not None:
+    if max_a2a_invocations is not None and max_a2a_invocations > 0:
         parts.append(
             "若需要其他角色接力处理某个子任务：\n"
             "- 不需要他们的回复就继续：调 invoke_agent(target, purpose)\n"
@@ -882,11 +958,21 @@ def _build_prompt(
                 n=max_a2a_invocations,
             )
         )
+    a2a_enabled = max_a2a_invocations is None or max_a2a_invocations > 0
+    continuation_check = (
+        "2. 接下来由谁继续推进？如果该点名某个 agent 接力，用 invoke_agent；"
+        "不能只在正文里喊对方名字或说“你来收尾”。如果你认为流程到此可以收口，直接说『到此为止』。\n"
+        if a2a_enabled
+        else
+        "2. 接下来是否还有必须由你完成的事？如果已经能给出完整答案，直接收口，"
+        "不要为了流程完整而追加无意义发言。\n"
+    )
     parts.append(
         "【发送前出口检查】（在心里过一遍再发；不需要把检查过程写出来）\n"
         "1. 这一轮你要做的事是否真的做完了？如果只完成一半，明说没做完的部分。\n"
-        "2. 接下来由谁继续推进？如果该点名某个 agent 接力，用 invoke_agent；不能只在正文里喊对方名字或说“你来收尾”。如果你认为流程到此可以收口，直接说『到此为止』。\n"
-        "3. 你引述别人写的内容时，路径/数字/原话有没有用 read_artifact 核对过？没核对就别断言。\n"
-        "4. **关键判断/复杂方案产出前，请务必先调 log_thought 工具记录思考过程**；这能让你的逻辑在 timeline 上可视化，且不会污染后续回合的 prompt 长度。"
+        + continuation_check
+        + "3. 你引述别人写的内容时，路径/数字/原话有没有用 read_artifact 核对过？没核对就别断言。\n"
+        "4. **关键判断/复杂方案产出前，请务必先调 log_thought 工具记录思考过程**；"
+        "这能让你的逻辑在 timeline 上可视化，且不会污染后续回合的 prompt 长度。"
     )
     return "\n".join(parts)

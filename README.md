@@ -45,7 +45,7 @@ AgentClub 会根据任务复杂度安排角色轮次，也支持定向选择某�
 
 ### 看清 Agent 的执行过程
 
-页面会持续展示任务状态、Agent 轮次、实际 Provider、fallback 尝试、MCP 工具调用、A2A 路由、产物归属和阻塞原因。用户不仅能看到最终回答，也能判断任务是如何完成或为什么失败的。
+页面会持续展示任务状态、Agent 轮次、实际 Provider、fallback 尝试、MCP 工具调用、A2A 路由、产物归属和阻塞原因。设置里的「观测」页签汇总全部会话的回合、工具调用、协作与产物，并给出三项检查、成本与覆盖率，可下钻到单个回合，见[回合观测](docs/OBSERVABILITY.md)。用户不仅能看到最终回答，也能判断任务是如何完成或为什么失败的。
 
 ### 保留连续上下文和本地产物
 
@@ -85,6 +85,20 @@ AgentClub 将会话、设置和产物保存在本地，但没有因此牺牲运�
 ### 5. 从单次回答升级为团队工作过程
 
 产品关注的不只是生成一段文本，而是围绕目标形成“拆解—执行—检查—收口”的过程。不同人格、连续会话、Agent 接力和产物归属，为后续扩展团队模板、任务工作流和模型路由策略提供了基础。
+
+### 6. 可评测：用对比实验回答“Multi-Agent 什么时候更好”
+
+多 Agent 不应该只靠体验描述来证明。项目内置 A/B/C/D 对比评测：同一批任务、同一个 lead、同一套 rubric，B/C 共享 4 回合检查骨架，默认使用中性人格，分别运行 Single Agent、Self Reflection、固定多 Agent 工作流和动态 A2A，并输出质量、成本、延迟、冗余和回退报告。
+
+```bash
+# 不调用模型，验证评测链路
+.venv/bin/python scripts/run_eval.py --mode fixture
+
+# 真实对比：固定 Provider、12 个任务、3 次重复
+.venv/bin/python scripts/run_eval.py --mode real --provider codex --repeats 3
+```
+
+报告会直接标出“Multi-Agent 在哪些类别/任务上低于 Single Agent”“哪些场景多花了 2 倍以上 token 却没有质量收益”。任务集、指标口径、有效性边界和扩展方式见 [多 Agent 评测文档](docs/EVALUATION.md)。
 
 ## 项目演示
 

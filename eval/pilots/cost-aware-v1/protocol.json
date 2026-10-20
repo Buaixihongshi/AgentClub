@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "cost-aware-v1",
+  "status": "development_pilot_not_locked_benchmark",
+  "tasks": "tasks.json",
+  "repeats": 1,
+  "seed": 20261018,
+  "lead": "chulan",
+  "persona_mode": "neutral",
+  "models": {
+    "economy": {
+      "model_id": "gemini-3.8-flash", "provider": "antigravity", "cli_model_id": "gemini-3.8-flash-low", "reasoning_effort": "low", "observed_cli_version": "1.4.2",
+      "input_usd_per_million": 0.75, "cached_input_usd_per_million": null, "output_usd_per_million": 3.75,
+      "pricing_source": "https://ai.google.dev/gemini-api/docs/whats-new-gemini-3.8", "pricing_checked_on": "2026-10-18", "price_type": "standard_api_equivalent_not_cli_invoice"
+    },
+    "strong": {
+      "model_id": "gpt-6.1-sol", "provider": "codex", "cli_model_id": "gpt-6.1-sol", "reasoning_effort": "low", "observed_cli_version": "0.162.1",
+      "input_usd_per_million": 2, "cached_input_usd_per_million": 0.1, "cache_write_usd_per_million": 2.5, "output_usd_per_million": 10,
+      "pricing_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol", "pricing_checked_on": "2026-10-18", "price_type": "standard_api_equivalent_not_cli_invoice"
+    }
+  },
+  "conditions": [
+    {"id": "A-economy", "arm": "A", "mapping": {"chulan": "economy", "baobao": "economy", "wangye": "economy"}},
+    {"id": "A-strong", "arm": "A", "mapping": {"chulan": "strong", "baobao": "strong", "wangye": "strong"}},
+    {"id": "B-economy", "arm": "B", "mapping": {"chulan": "economy", "baobao": "economy", "wangye": "economy"}},
+    {"id": "B-strong", "arm": "B", "mapping": {"chulan": "strong", "baobao": "strong", "wangye": "strong"}},
+    {"id": "C-mixed", "arm": "C", "mapping": {"chulan": "economy", "baobao": "strong", "wangye": "economy"}},
+    {"id": "D-mixed", "arm": "D", "mapping": {"chulan": "economy", "baobao": "strong", "wangye": "economy"}}
+  ],
+  "stages": [
+    {"id": "smoke", "task_ids": ["cp-01", "cp-04"], "max_budget_fraction": 0.25},
+    {"id": "remaining", "task_ids": ["cp-02", "cp-03", "cp-05", "cp-06"], "max_budget_fraction": 0.55}
+  ],
+  "cost_policy": {
+    "provisional_total_budget_usd": 5,
+    "user_confirmed_budget": false,
+    "reserve_fraction": 0.2,
+    "fallback": false,
+    "automatic_retries": 0,
+    "max_dynamic_host_turns": 2,
+    "stop_on_missing_usage": true,
+    "judge_model_calls": 0,
+    "planning_assumption_input_tokens_per_host_turn": 12000,
+    "planning_assumption_output_tokens_per_host_turn": 1500,
+    "assumptions_are_hard_limits": false
+  }
+}

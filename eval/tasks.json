@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "id": "sf-01",
+      "category": "simple_factual",
+      "title": "压成标题",
+      "difficulty": "easy",
+      "goal": "把下面这句话压缩成不超过 18 个汉字的中文标题，只输出标题，不要解释：我们决定把原本分散在三个人手里的发布检查合并成一个由负责人一次性执行的清单。",
+      "tags": ["compression", "format"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "topic", "kind": "contains_any", "values": ["发布检查", "发布审核", "发布前检查"], "weight": 2, "description": "标题保留发布检查主题"},
+          {"id": "owner", "kind": "contains_any", "values": ["一人", "一个人", "单一", "负责人"], "weight": 1, "description": "体现集中到一个人"},
+          {"id": "checklist", "kind": "contains_any", "values": ["清单", "检查表"], "weight": 1, "description": "体现清单"},
+          {"id": "concise", "kind": "max_chars", "value": 18, "weight": 2, "description": "不超过 18 个汉字，且只输出标题"},
+          {"id": "no_meta", "kind": "not_contains", "values": ["解释", "这句话", "标题："], "weight": 1, "description": "不输出解释或前缀"}
+        ]
+      }
+    },
+    {
+      "id": "sf-02",
+      "category": "simple_factual",
+      "title": "工单计算",
+      "difficulty": "easy",
+      "goal": "计算并只给出结果和一行算式：一个团队 3 人，每人每天处理 12 条工单，连续 5 天共处理多少条？",
+      "tags": ["arithmetic", "format"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "result", "kind": "regex", "value": "180", "weight": 2, "description": "结果 180"},
+          {"id": "formula", "kind": "contains_all", "values": ["3", "12", "5"], "weight": 1, "description": "算式包含三个因子"},
+          {"id": "concise", "kind": "max_chars", "value": 60, "weight": 2, "description": "只给结果和一行算式"},
+          {"id": "no_uncertainty", "kind": "not_contains", "values": ["不确定", "无法计算", "可能"], "weight": 1, "description": "不做无依据的保留"}
+        ]
+      }
+    },
+    {
+      "id": "mc-01",
+      "category": "multi_constraint",
+      "title": "听障 App 验收标准",
+      "difficulty": "medium",
+      "goal": "为一款面向听障用户的会议记录 App 写 3 条上线前验收标准。三条必须分别覆盖：离线可用、隐私保护、误识别后的纠错；每条不超过 40 字；用编号列出。",
+      "tags": ["requirements", "coverage"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "offline", "kind": "contains_any", "values": ["离线"], "weight": 1, "description": "覆盖离线可用"},
+          {"id": "privacy", "kind": "contains_any", "values": ["隐私", "权限", "本地存储"], "weight": 2, "description": "覆盖隐私保护"},
+          {"id": "correction", "kind": "contains_any", "values": ["纠错", "纠正", "修正", "改错", "编辑"], "weight": 2, "description": "覆盖误识别纠错"},
+          {"id": "numbered", "kind": "min_matches", "value": "[123][.、)]", "count": 3, "weight": 1, "description": "三条编号"},
+          {"id": "length", "kind": "max_chars", "value": 260, "weight": 1, "description": "整体简洁，三条各不超过 40 字"}
+        ]
+      }
+    },
+    {
+      "id": "mc-02",
+      "category": "multi_constraint",
+      "title": "杭州周末行程",
+      "difficulty": "medium",
+      "goal": "安排一个杭州周末两日游，必须同时满足：周六上午在室内、尽量避开西湖人流、周日下午 5 点前到杭州东站、总预算 500 元以内、同行一人吃素。请按时间给出可执行行程。",
+      "tags": ["planning", "constraints"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "indoor", "kind": "contains_any", "values": ["室内"], "weight": 1, "description": "周六上午室内"},
+          {"id": "westlake", "kind": "contains_any", "values": ["西湖"], "weight": 1, "description": "回应西湖人流约束"},
+          {"id": "station", "kind": "contains_any", "values": ["东站"], "weight": 2, "description": "周日下午到东站"},
+          {"id": "vegetarian", "kind": "contains_any", "values": ["素"], "weight": 2, "description": "照顾素食者"},
+          {"id": "budget", "kind": "contains_any", "values": ["500"], "weight": 1, "description": "预算 500 元以内"},
+          {"id": "days", "kind": "contains_all", "values": ["周六", "周日"], "weight": 2, "description": "覆盖两天"},
+          {"id": "length", "kind": "max_chars", "value": 900, "weight": 1, "description": "行程可执行且不冗长"}
+        ]
+      }
+    },
+    {
+      "id": "ta-01",
+      "category": "tradeoff_analysis",
+      "title": "SQLite 还是 PostgreSQL",
+      "difficulty": "medium",
+      "goal": "比较 SQLite 和 PostgreSQL 用于本地优先桌面应用的取舍。给出 3 个决策维度，并分别说明在什么条件下选 SQLite、什么条件下选 PostgreSQL。不要泛泛而谈。",
+      "tags": ["tradeoff", "database"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "both", "kind": "contains_all", "values": ["SQLite", "PostgreSQL"], "weight": 2, "description": "同时讨论两个选项"},
+          {"id": "concurrency", "kind": "contains_any", "values": ["并发", "写入"], "weight": 1, "description": "讨论并发/写入"},
+          {"id": "ops", "kind": "contains_any", "values": ["运维", "部署"], "weight": 1, "description": "讨论运维/部署"},
+          {"id": "migration", "kind": "contains_any", "values": ["迁移", "扩展"], "weight": 1, "description": "讨论迁移/扩展"},
+          {"id": "local", "kind": "contains_any", "values": ["单机", "本地"], "weight": 1, "description": "结合本地优先场景"},
+          {"id": "decision", "kind": "contains_any", "values": ["选 SQLite", "选择 SQLite", "用 SQLite", "选SQLite", "选择SQLite", "用SQLite"], "weight": 1, "description": "给出明确选择条件"},
+          {"id": "length", "kind": "max_chars", "value": 1500, "weight": 1, "description": "控制篇幅"}
+        ]
+      }
+    },
+    {
+      "id": "ta-02",
+      "category": "tradeoff_analysis",
+      "title": "重写还是修稳定性",
+      "difficulty": "medium",
+      "goal": "团队只有两周，只能在“重写编辑器”和“修复稳定性”之间选一个。请列出双方各自最强的支持理由、最大风险，并给出明确建议和判断依据。",
+      "tags": ["tradeoff", "decision"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "options", "kind": "contains_all", "values": ["重写", "稳定性"], "weight": 2, "description": "覆盖两个选项"},
+          {"id": "reasons", "kind": "contains_any", "values": ["理由", "因为", "支持"], "weight": 1, "description": "给出支持理由"},
+          {"id": "risks", "kind": "contains_any", "values": ["风险"], "weight": 1, "description": "给出最大风险"},
+          {"id": "recommendation", "kind": "contains_any", "values": ["建议", "选择", "优先"], "weight": 1, "description": "给出明确建议"},
+          {"id": "timeframe", "kind": "contains_any", "values": ["两周", "2 周", "2周"], "weight": 1, "description": "结合两周约束"},
+          {"id": "length", "kind": "max_chars", "value": 1000, "weight": 1, "description": "控制篇幅"}
+        ]
+      }
+    },
+    {
+      "id": "dbg-01",
+      "category": "debugging",
+      "title": "last_n 取错元素",
+      "difficulty": "medium",
+      "goal": "下面函数想返回列表最后 n 个元素，但实际返回的是前 n 个。指出根因，并给出最小修复（只改必要的行）：\n\ndef last_n(items, n):\n    result = []\n    for i in range(n):\n        result.append(items[i])\n    return result",
+      "tags": ["debugging", "python"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "root_cause", "kind": "contains_any", "values": ["items[-n:]", "len(items) - n", "len(items)-n", "切片"], "weight": 2, "description": "指出应取末尾而非开头"},
+          {"id": "index", "kind": "contains_any", "values": ["索引", "下标", "前 n", "开头"], "weight": 1, "description": "解释索引方向错误"},
+          {"id": "fix", "kind": "contains_any", "values": ["return items[-n:]", "items[len(items)-n:]"], "weight": 2, "description": "给出最小修复"},
+          {"id": "minimal", "kind": "not_regex", "value": "(?<!不)(建议|应该|需要|必须|可以)\\s*(完全重写|重写整个函数)", "weight": 2, "description": "不推荐完全重写"},
+          {"id": "length", "kind": "max_chars", "value": 600, "weight": 1, "description": "控制篇幅"}
+        ]
+      }
+    },
+    {
+      "id": "dbg-02",
+      "category": "debugging",
+      "title": "共享默认参数",
+      "difficulty": "medium",
+      "goal": "说明下面函数为什么会在多次调用之间共享数据，并给出两种修复方式：\n\ndef add_item(item, bucket=[]):\n    bucket.append(item)\n    return bucket",
+      "tags": ["debugging", "python"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "mutable", "kind": "contains_any", "values": ["可变默认参数", "默认参数", "mutable"], "weight": 2, "description": "指出可变默认参数"},
+          {"id": "why", "kind": "contains_any", "values": ["共享", "累积", "同一次", "同一个列表"], "weight": 2, "description": "解释跨调用共享"},
+          {"id": "fix_none", "kind": "contains_any", "values": ["None"], "weight": 1, "description": "给出 None 哨兵修复"},
+          {"id": "fix_copy", "kind": "contains_any", "values": ["copy", "list(", "复制"], "weight": 1, "description": "给出复制/新列表修复"},
+          {"id": "length", "kind": "max_chars", "value": 700, "weight": 1, "description": "控制篇幅"}
+        ]
+      }
+    },
+    {
+      "id": "lc-01",
+      "category": "long_context",
+      "title": "会议记录里的冲突",
+      "difficulty": "hard",
+      "goal": "阅读会议记录，指出两处互相冲突的决定，并给出一个不增加人手的解决顺序。只基于记录，不要编造。\n\n周一：决定 3 月 1 日上线。\n周二：法务说隐私评审至少需要 2 周。\n周三：决定把上线日期提前到 2 月 20 日。\n周四：设计确认新手引导延后到 v2。\n周五：运营要求新手引导必须在上线版。\n周六：工程说 2 月 20 日只能交付只读版。",
+      "tags": ["long_context", "conflict"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "launch_date", "kind": "contains_any", "values": ["3 月 1", "3月1", "三月一日"], "weight": 1, "description": "引用上线日期"},
+          {"id": "privacy", "kind": "contains_any", "values": ["隐私"], "weight": 1, "description": "引用隐私评审"},
+          {"id": "duration", "kind": "contains_any", "values": ["两周", "2 周", "2周"], "weight": 1, "description": "引用评审所需时间"},
+          {"id": "onboarding", "kind": "contains_all", "values": ["新手引导", "v2"], "weight": 2, "description": "识别新手引导冲突"},
+          {"id": "readonly", "kind": "contains_any", "values": ["只读", "2 月 20", "2月20"], "weight": 1, "description": "引用只读版约束"},
+          {"id": "conflict", "kind": "contains_any", "values": ["冲突", "矛盾"], "weight": 2, "description": "明确指出冲突"},
+          {"id": "order", "kind": "contains_any", "values": ["先", "顺序"], "weight": 1, "description": "给出解决顺序"},
+          {"id": "length", "kind": "max_chars", "value": 900, "weight": 1, "description": "控制篇幅"}
+        ]
+      }
+    },
+    {
+      "id": "lc-02",
+      "category": "long_context",
+      "title": "故障时间线归因",
+      "difficulty": "hard",
+      "goal": "根据时间线判断最可能的根因、最早的可观测信号，以及还缺哪一条证据才能确认。不要只说“重启解决”。\n\n10:00 监控显示错误率上升。\n10:03 值班重启服务，错误率暂时下降。\n10:07 错误率再次上升。\n10:10 发现 09:55 部署了新配置。\n10:12 回滚配置，错误率下降。\n10:15 日志显示数据库连接池在 09:58 达到上限。",
+      "tags": ["long_context", "incident"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "config", "kind": "contains_any", "values": ["配置", "09:55", "9:55"], "weight": 2, "description": "关联配置部署"},
+          {"id": "pool", "kind": "contains_all", "values": ["连接池", "09:58"], "weight": 2, "description": "关联连接池时间点"},
+          {"id": "earliest", "kind": "contains_any", "values": ["最早", "首个"], "weight": 1, "description": "指出最早信号"},
+          {"id": "evidence", "kind": "contains_any", "values": ["日志", "指标", "证据"], "weight": 1, "description": "指出缺失证据"},
+          {"id": "not_restart", "kind": "not_contains", "values": ["只要重启", "重启就够了"], "weight": 1, "description": "不把重启当根因"},
+          {"id": "length", "kind": "max_chars", "value": 700, "weight": 1, "description": "控制篇幅"}
+        ]
+      }
+    },
+    {
+      "id": "ar-01",
+      "category": "ambiguous_requirement",
+      "title": "首页提升转化",
+      "difficulty": "medium",
+      "goal": "老板说“把首页做得更有转化”，但没有给数据。请先列出必须先澄清的 3 个问题，再给一个不依赖新数据、低风险可立即做的改动。",
+      "tags": ["ambiguity", "product"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "three_questions", "kind": "min_matches", "value": "[?？]", "count": 3, "weight": 2, "description": "列出三个澄清问题"},
+          {"id": "metric", "kind": "contains_any", "values": ["转化", "指标", "漏斗"], "weight": 1, "description": "围绕转化指标"},
+          {"id": "low_risk", "kind": "contains_any", "values": ["低风险", "小改动", "立即"], "weight": 1, "description": "给出低风险改动"},
+          {"id": "assumption", "kind": "contains_any", "values": ["假设", "验证"], "weight": 1, "description": "说明假设或验证方式"},
+          {"id": "length", "kind": "max_chars", "value": 900, "weight": 1, "description": "控制篇幅"}
+        ]
+      }
+    },
+    {
+      "id": "ar-02",
+      "category": "ambiguous_requirement",
+      "title": "下周上线功能不能少",
+      "difficulty": "medium",
+      "goal": "客户要求“下周上线，功能不能少”。现在需求、测试和人力都不明确。请给出一个可执行的范围方案，明确你的假设、风险和取舍。",
+      "tags": ["ambiguity", "scope"],
+      "rubric": {
+        "threshold": 0.8,
+        "checks": [
+          {"id": "timeline", "kind": "contains_any", "values": ["下周", "上线"], "weight": 1, "description": "回应上线时间"},
+          {"id": "assumptions", "kind": "contains_any", "values": ["假设"], "weight": 1, "description": "明确假设"},
+          {"id": "risks", "kind": "contains_any", "values": ["风险"], "weight": 1, "description": "明确风险"},
+          {"id": "scope", "kind": "contains_any", "values": ["取舍", "范围", "优先级"], "weight": 2, "description": "明确取舍/范围"},
+          {"id": "mvp", "kind": "contains_any", "values": ["MVP", "最小", "分批"], "weight": 1, "description": "给出可执行收敛方案"},
+          {"id": "length", "kind": "max_chars", "value": 900, "weight": 1, "description": "控制篇幅"}
+        ]
+      }
+    }
+  ]
+}

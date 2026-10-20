@@ -7,9 +7,18 @@
 ### Added
 
 - 新增代码仓库维护内核：受信仓库登记、隔离 Git worktree、无 shell 验证契约、持久化维护状态、重启恢复、审批/反馈记录与受控进化提案。
+- 设置新增「观测」页签：跨全部会话统计总量、检查项、Trace 覆盖率、花费、Agent / Provider 与最近失败，并支持全部 / 今天 / 7 天 / 30 天窗口；可下钻到逐回合表，再点开单回合的步骤、参数、输出与检查项。接口 `GET /api/observability/overview` 与 `GET /api/observability/turns/{turn_id}`。
+- 新增 `GET /api/observability`：按回合给出步骤（工具 / 原生调用 / 协作 / 产物）、三项读时检查、成本与 trace 覆盖率；说明见 `docs/OBSERVABILITY.md`。
+- 可观测性字段补齐：三个 CLI 的原生工具调用现在记录 `args` / `output` / `ok` / `error` / `duration_ms`，并新增 `provider.session`（session_id、model）；MCP 的 `tool.call` / `tool.result` / `tool.error` 增加 `call_id`、`ok`、`duration_ms`；`turn.usage` 增加 `model` / `stop_reason` / `duration_ms`。所有输出落库前统一脱敏并截断。
+- 可观测性采集补强：v2 的 `read_context` 记录冻结阶段的可读摘要（phase、任务、其他 Agent 观点、材料清单），v2 `read_artifact` 补上工具事件与正文；codex / claude 的原生工具调用补上 `activity_id` 后才会落成 `provider.activity`，并附带命令、搜索结果或工具参数摘要；`tool.result` 可携带脱敏并截断的输出（思考正文、消息正文、产物摘要等）；成本在 provider 未报价时按费率估算。
+- 新增 A/B/C/D 多 Agent 对照评测：Single Agent、Self Reflection、固定多 Agent 工作流和动态 A2A 共享任务集、lead 与 Provider；B/C/D 共享 4 回合检查骨架，输出质量、成本、延迟、配对置信区间和退化标记。入口为 `scripts/run_eval.py`，说明见 `docs/EVALUATION.md`。
 
 ### Changed
 
+- 观测入口移入设置页签：移除右侧栏按钮、`ObservabilityDialog` 与 `useObservability`，会话主区域不再预留侧栏宽度；原来的单会话细节改为在设置 → 观测里点击回合查看。
+
+- 讨论 V2 更严格对齐六阶段架构：Phase 2 按决策项、关键假设和建议行动判断是否跳过，存在冲突时只邀请与冲突决策项相关的 claim 作者，轮数范围收紧为 2～3；Phase 6 综合稿必须逐项记录非价值问题的技术处置，价值问题仍只由用户决定。
+- 任务 Mission 新增可选 `orchestration` 配置；默认仍是 `auto`（现有复杂度路由），评测可显式选择 `single` / `reflection` / `fixed` / `dynamic`。
 - 三位角色改为通透机敏、坦率好奇、松弛笃定的讨论伙伴：移除固定工种路由，统一能力边界，更新人格提示、新用户介绍与界面标签。
 
 - 将用户可见的产品名称统一为 AgentClub。

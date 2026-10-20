@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "id": "cp-01", "category": "simple_extraction", "title": "筛选待处理任务", "difficulty": "easy",
+      "goal": "从以下记录筛选 status 恰好为 pending 的任务，保持输入顺序。只输出一个 JSON 对象，字段 pending_ids 为字符串数组，count 为整数，不要解释或 Markdown。记录：[{\"id\":\"t1\",\"status\":\"done\"},{\"id\":\"t2\",\"status\":\"pending\"},{\"id\":\"t3\",\"status\":\"blocked\"},{\"id\":\"t4\",\"status\":\"pending\"}]。",
+      "tags": ["development", "family:extraction", "smoke", "format"],
+      "notes": "简单负对照，检查额外协作是否破坏格式；不能据此声称模型能力充分覆盖。",
+      "rubric": {"threshold": 1.0, "checks": [{"id": "exact", "kind": "json_exact", "value": {"pending_ids": ["t2", "t4"], "count": 2}}]}
+    },
+    {
+      "id": "cp-02", "category": "cost_arithmetic", "title": "含缓存的调用费用", "difficulty": "easy",
+      "goal": "按以下虚构价格计算一次调用费用，它们不是任何真实模型报价：未缓存输入每百万 token 2 美元；缓存读取输入每百万 token 0.5 美元；输出每百万 token 8 美元。此次 input_tokens=1000，其中 cached_input_tokens=400，output_tokens=200。缓存是输入的子集，不能重复收费。1 美元等于 1000000 微美元。只输出 JSON 对象，字段 cost_microusd 为整数，不要解释或 Markdown。",
+      "tags": ["development", "family:cached-cost", "arithmetic", "cost"],
+      "rubric": {"threshold": 1.0, "checks": [{"id": "exact", "kind": "json_exact", "value": {"cost_microusd": 3000}}]}
+    },
+    {
+      "id": "cp-03", "category": "dependency_constraints", "title": "双工位依赖排程", "difficulty": "medium",
+      "goal": "有两个相同工位，每项任务占一个工位且不可中断。时刻 0 开始工作；每当工位空闲，立即启动所有依赖已完成的任务，若同时有多个可启动任务，按任务字母顺序选取。A 耗时 3，无依赖；B 耗时 2，依赖 A；C 耗时 2，无依赖；D 耗时 1，依赖 B 和 C。给出各任务开始时刻和全部完成时刻。只输出 JSON 对象：starts 为含 A/B/C/D 四个整数值的对象，finish 为整数，不要解释或 Markdown。",
+      "tags": ["development", "family:dependency-scheduling", "constraints", "handoff"],
+      "rubric": {"threshold": 1.0, "checks": [{"id": "exact", "kind": "json_exact", "value": {"starts": {"A": 0, "B": 3, "C": 0, "D": 5}, "finish": 6}}]}
+    },
+    {
+      "id": "cp-04", "category": "conflicting_evidence", "title": "生效配置与申请区分", "difficulty": "medium",
+      "goal": "只能依据下面资料，判断截至 2026-10-18 的生效并发数。S1：2026-10-01 发布，上海并发数为 3。S2：2026-10-15 已生效变更，上海并发数改为 6，仅覆盖上海。S3：2026-10-17 工单，申请上海改为 8，仍待审批，无生效记录。S4：2026-10-02 已生效配置，深圳并发数为 4，此后没有变更。只输出 JSON 对象：shanghai、shenzhen 为整数，sources 按城市上海、深圳顺序列出其直接生效证据 ID；不要解释或 Markdown。",
+      "tags": ["development", "family:effective-evidence", "smoke", "evidence", "uncertainty"],
+      "rubric": {"threshold": 1.0, "checks": [{"id": "exact", "kind": "json_exact", "value": {"shanghai": 6, "shenzhen": 4, "sources": ["S2", "S4"]}}]}
+    },
+    {
+      "id": "cp-05", "category": "code_boundaries", "title": "末尾切片的零和负数边界", "difficulty": "medium",
+      "goal": "函数契约：last_n(items,n) 在 n<=0 时返回空列表，n 大于长度时返回全部元素，否则返回最后 n 项。现实现是 return items[-n:]，不做其他判断。items 固定为 [\"a\",\"b\",\"c\"]，依次检查四例：zero 的 n=0，negative 的 n=-1，two 的 n=2，oversize 的 n=9。只输出 JSON 对象：failed_cases 按给定顺序列出当前实现违反契约的案例 ID；expected 为四个案例按契约应返回的数组组成的对象。不要解释或 Markdown。",
+      "tags": ["development", "family:slice-boundaries", "code", "regression"],
+      "notes": "闭卷代码行为判断；不代表已经验证模型能编辑仓库或正确执行补丁。",
+      "rubric": {"threshold": 1.0, "checks": [{"id": "exact", "kind": "json_exact", "value": {"failed_cases": ["zero", "negative"], "expected": {"zero": [], "negative": [], "two": ["b", "c"], "oversize": ["a", "b", "c"]}}}]}
+    },
+    {
+      "id": "cp-06", "category": "insufficient_information", "title": "未知需求下不能承诺完成", "difficulty": "medium",
+      "goal": "已知：两名工作人员，每人每天最多处理 20 条工单，未来可以完整工作 3 天，没有新增工单，其他资源不构成约束。没有提供剩余工单数量。判断现有工单能否全部完成。只输出 JSON 对象：can_finish 在能确定时为布尔值，无法确定时为 null；capacity 为未来 3 天总处理上限的整数；missing 为确认能否完成所缺的必要字段名数组，用 remaining_tickets 表示剩余工单数量。不要猜测需求量，不要解释或 Markdown。",
+      "tags": ["development", "family:unknown-demand", "uncertainty", "constraints"],
+      "rubric": {"threshold": 1.0, "checks": [{"id": "exact", "kind": "json_exact", "value": {"can_finish": null, "capacity": 120, "missing": ["remaining_tickets"]}}]}
+    }
+  ]
+}

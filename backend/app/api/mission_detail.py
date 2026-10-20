@@ -9,6 +9,7 @@ from backend.app.orchestration.live_progress import get_live_progress_registry
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
 from backend.app.orchestration.roundtable import discussion_view
+from backend.app.api.discussion_projection import annotate_discussion_messages
 
 _CAPABILITY_FALLBACK = {
     "planning": "planning",
@@ -298,7 +299,7 @@ def _derive_tool_events(db_events) -> list[dict[str, object]]:
     """Derive tool event records from tool.call / tool.result / tool.error events."""
     tool_events = []
     for event in db_events:
-        if not event.event_type.startswith("tool."):
+        if not event.event_type.startswith("tool.") and event.event_type != "provider.activity":
             continue
         payload = event.payload
         created_at = (
@@ -324,8 +325,73 @@ def _derive_tool_events(db_events) -> list[dict[str, object]]:
             record["summary"] = payload["summary"]
         if payload.get("error"):
             record["error"] = payload["error"]
+        # Observability detail: structured args/output and the call's identity.
+        for key in ("args", "output", "call_id", "duration_ms", "ok"):
+            if payload.get(key) is not None:
+                record[key] = payload[key]
+        if event.event_type == "provider.activity":
+            record["activity_id"] = payload.get("activity_id")
+            record["phase"] = payload.get("phase")
         tool_events.append(record)
     return tool_events
+
+
+def _derive_failure_events(mission: Mission, db_events) -> list[dict[str, object]]:
+    """Project durable failures without putting system notices in model history.
+
+    Wait for the mission to finish so a failed attempt followed by a successful
+    fallback does not leave a false failure notice in the conversation.
+    """
+    if mission.status.value not in TERMINAL_STATUSES:
+        return []
+    outcomes = {}
+    last_message_at = mission.created_at
+    for event in db_events:
+        if event.event_type == "message" and event.payload.get("created_at"):
+            last_message_at = datetime.fromisoformat(event.payload["created_at"].replace("Z", "+00:00"))
+        if event.event_type in {"turn.completed", "turn.blocked", "turn.failed"}:
+            turn_id = event.payload.get("turn_id")
+            if turn_id:
+                outcomes[turn_id] = (event, last_message_at)
+    failures = []
+    for turn_id, (event, last_message_at) in outcomes.items():
+        if event.event_type == "turn.completed":
+            continue
+        payload = event.payload
+        agent_id, provider_id = payload.get("agent_id"), payload.get("provider_id")
+        error = str(payload.get("error") or payload.get("summary") or "")
+        label = _agent_metadata(agent_id).get("persona_label", agent_id or "伙伴")
+        timed_out = "timeout" in error.lower() or "timed out" in error.lower() or "超时" in error
+        published = any(e.event_type == "message" and e.payload.get("turn_id") == turn_id
+                        and e.payload.get("role") == "agent" for e in db_events)
+        text = f"{label}本轮{'超时' if timed_out else '未完成'}，"
+        text += "已发布的回复已保留。" if published else "未发布回复。"
+        created = event.created_at
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        # SQLite's legacy event clock has second precision. Do not sort an
+        # immediate failure before the user message's fractional timestamp.
+        if last_message_at.tzinfo is None:
+            last_message_at = last_message_at.replace(tzinfo=timezone.utc)
+        created = max(created, last_message_at)
+        failures.append({
+            "id": f"failure:{mission.id}:{turn_id}", "mission_id": mission.id,
+            "event_type": "turn.failure", "role": "system", "content": text,
+            "agent_id": agent_id, "provider_id": provider_id, "turn_id": turn_id,
+            "metadata": _event_metadata(provider_id, agent_id),
+            "created_at": created.isoformat(),
+        })
+    if not failures and mission.status.value in {"blocked", "failed"}:
+        # Runner/startup failures may have no terminal turn event at all.
+        failures.append({
+            "id": f"failure:{mission.id}", "mission_id": mission.id,
+            "event_type": "mission.failure", "role": "system",
+            "content": "本次任务未完成，请检查任务状态后继续。",
+            "created_at": mission.updated_at.isoformat(),
+        })
+    return failures
 
 
 def _derive_interrupts(db_events) -> list[dict[str, object]]:
@@ -536,6 +602,8 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
     serialized_events = []
 
     for index, event in enumerate(db_events):
+        if event.event_type == 'discussion.v2.state':
+            continue  # Internal leases contain capability tokens, never expose them.
         if event.event_type in ("message", "interrupt"):
             message = messages_by_event.get(event.id)
             if message is not None:
@@ -550,11 +618,15 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
     serialized_events.sort(key=lambda item: item["_sort_key"])
     events = [_strip_sort_key(event) for event in serialized_events]
     message_events = [_message_event(entry.message) for entry in entries]
+    audit_cache = {}
+    annotate_discussion_messages(message_events, [mission], db_events, repo, audit_cache)
+    annotate_discussion_messages(events, [mission], db_events, repo, audit_cache)
 
     result = {
         "mission": _mission_payload(mission),
         "discussion": discussion_view(mission, db_events),
         "messages": message_events,
+        "failure_events": _derive_failure_events(mission, db_events),
         "events": events,
         "artifacts": _artifact_records(settings, mission_id, db_events),
         "turns": _derive_turns(db_events),
@@ -564,7 +636,11 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
         "usage_summary": _derive_usage_summary(db_events),
         "thoughts": _derive_thoughts(db_events),
     }
+    from backend.app.orchestration.deliberation import Deliberation, is_v2
+    if is_v2(mission):
+        result['discussion'] = Deliberation(repo).user_view(mission)
+        result['thoughts'] = []
     live_partial = get_live_progress_registry().snapshot_for_mission(mission_id)
-    if live_partial:
+    if live_partial and not is_v2(mission):
         result["live_partial"] = live_partial
     return result
