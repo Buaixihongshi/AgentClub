@@ -6,6 +6,7 @@
 
 ### Added
 
+- 新增可选的 Antigravity 常驻进程模式：按会话与角色隔离、每轮执行凭证、正式回复去重、宿主退出监护及中断恢复记录；默认关闭，详见 [2026-10-18 升级记录](docs/upgrades/2026-10-18-antigravity-session-recovery.md)。
 - 新增代码仓库维护内核：受信仓库登记、隔离 Git worktree、无 shell 验证契约、持久化维护状态、重启恢复、审批/反馈记录与受控进化提案。
 - 设置新增「观测」页签：跨全部会话统计总量、检查项、Trace 覆盖率、花费、Agent / Provider 与最近失败，并支持全部 / 今天 / 7 天 / 30 天窗口；可下钻到逐回合表，再点开单回合的步骤、参数、输出与检查项。接口 `GET /api/observability/overview` 与 `GET /api/observability/turns/{turn_id}`。
 - 新增 `GET /api/observability`：按回合给出步骤（工具 / 原生调用 / 协作 / 产物）、三项读时检查、成本与 trace 覆盖率；说明见 `docs/OBSERVABILITY.md`。
@@ -29,6 +30,7 @@
 
 ### Fixed
 
+- 常驻 Antigravity 的迟到 MCP 调用与重复发布受到执行凭证和操作回执约束；工作进程异常退出时核对已保存回复并保留进度，避免整轮盲目重放。
 - 将任务复杂度与文件交付意图解耦：讨论、比较和评审任务不再因为宝儿姐参与而自动生成产物，演示模式与真实 Provider 使用一致的按需交付边界。
 
 ## [0.1.0] - 2026-08-05
