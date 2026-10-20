@@ -28,32 +28,35 @@ if [ ! -d "$ROOT/frontend/node_modules" ]; then
   exit 1
 fi
 
-echo "[1/9] Backend tests"
+echo "[1/10] Backend tests"
 cd "$ROOT"
 "$PY" -m pytest backend/tests -q
 
-echo "[2/9] Frontend tests"
+echo "[2/10] Frontend tests"
 (cd "$ROOT/frontend" && npm test)
 
-echo "[3/9] Frontend production build"
+echo "[3/10] Frontend production build"
 (cd "$ROOT/frontend" && npm run build)
 
-echo "[4/9] Fresh onboarding smoke (offline demo mode)"
+echo "[4/10] Fresh onboarding smoke (offline demo mode)"
 "$PY" scripts/smoke_onboarding.py --fresh --fake
 
-echo "[5/9] Conversation continuity smoke (offline demo mode)"
+echo "[5/10] Conversation continuity smoke (offline demo mode)"
 "$PY" scripts/smoke_conversation_flow.py --fake
 
-echo "[6/9] Multi-agent mission smoke (offline demo mode)"
+echo "[6/10] Multi-agent mission smoke (offline demo mode)"
 "$PY" scripts/smoke_real_cli_mission.py --fake
 
-echo "[7/9] Python dependency consistency"
+echo "[7/10] Python dependency consistency"
 "$PY" -m pip check
 
-echo "[8/9] Frontend dependency audit"
+echo "[8/10] Frontend dependency audit"
 (cd "$ROOT/frontend" && npm audit)
 
-echo "[9/9] Patch hygiene"
+echo "[9/10] Evaluation harness smoke (fixture mode)"
+"$PY" scripts/run_eval.py --mode fixture --quiet --output "${TMPDIR:-/tmp}/agentclub-eval-release"
+
+echo "[10/10] Patch hygiene"
 git diff --check
 
 if [ "$RUN_REAL_CLI" = true ]; then

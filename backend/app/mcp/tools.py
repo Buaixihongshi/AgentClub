@@ -1,3 +1,4 @@
+import hashlib
 from functools import wraps
 from inspect import signature
 
@@ -23,6 +24,68 @@ from backend.app.orchestration.speaker import WorkflowStep
 from backend.app.storage.repository import Repository
 
 
+def _clip_text(value: object, limit: int = 160) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _context_digest(view: dict) -> str:
+    """A readable summary of the frozen context an agent just read.
+
+    The raw view is mostly ids; the useful part is the task, the other agents'
+    positions, the open issues and which materials are in play. This is what
+    the observability panel shows instead of "Returned frozen phase context".
+    """
+    snapshot = view.get("snapshot") if isinstance(view.get("snapshot"), dict) else {}
+    results = view.get("results") if isinstance(view.get("results"), list) else []
+    issues = view.get("issues") if isinstance(view.get("issues"), dict) else {}
+    materials = snapshot.get("materials") if isinstance(snapshot.get("materials"), dict) else {}
+    paths = [str(item.get("path")) for item in materials.values()
+             if isinstance(item, dict) and item.get("path")]
+    lines = ["phase={phase} · round={round} · results={r} · issues={i} · materials={m} · history={h}".format(
+        phase=view.get("phase") or "?",
+        round=view.get("round_index", 0),
+        r=len(results), i=len(issues), m=len(materials),
+        h=snapshot.get("history_count") or 0)]
+    task = snapshot.get("goal")
+    if task:
+        lines.append("任务：" + _clip_text(task, 140))
+    for result in results[:3]:
+        if not isinstance(result, dict):
+            continue
+        data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        text = data.get("position_summary") or data.get("content") or ""
+        if not text:
+            claims = data.get("claims") if isinstance(data.get("claims"), list) else []
+            text = claims[0].get("statement") if claims and isinstance(claims[0], dict) else ""
+        if not text:
+            sections = data.get("sections") if isinstance(data.get("sections"), list) else []
+            text = sections[0].get("content") if sections and isinstance(sections[0], dict) else ""
+        if text:
+            lines.append("- {agent}/{kind}: {text}".format(
+                agent=result.get("agent_id") or "?", kind=result.get("kind") or "?",
+                text=_clip_text(text, 140)))
+    for issue in list(issues.values())[:2]:
+        if isinstance(issue, dict):
+            lines.append("- issue/{cat}: {problem}".format(
+                cat=issue.get("category") or "?", problem=_clip_text(issue.get("problem"), 120)))
+    if paths:
+        shown = "、".join(paths[:3]) + ("…" if len(paths) > 3 else "")
+        lines.append("材料：" + shown)
+    return "\n".join(lines)
+
+
+def _mission_context_digest(result: dict) -> str:
+    """The non-deliberation `read_context` answer: task plus recent messages."""
+    mission = result.get("mission") if isinstance(result.get("mission"), dict) else {}
+    messages = result.get("messages") if isinstance(result.get("messages"), list) else []
+    lines = ["任务：" + _clip_text(mission.get("goal") or mission.get("title"), 140)]
+    lines.append("历史消息：{n} 条".format(n=len(messages)))
+    if messages and isinstance(messages[-1], dict):
+        lines.append("最近：" + _clip_text(messages[-1].get("content"), 200))
+    return "\n".join(lines)
+
+
 class MCPToolError(ValueError):
     pass
 
@@ -40,6 +103,8 @@ def roundtable_guard(fn):
         turn = values.get('turn_id') or values.get('sender_turn_id')
         if mission is None or mission.room_mode != 'roundtable' or (fn.__name__ == 'update_status' and not agent):
             return fn(self, *args, **kwargs)
+        if mission.discussion and mission.discussion.protocol == 'deliberation_v2':
+            raise MCPToolError('V2 discussion only allows frozen context/source reads and structured submission')
         try:
             with Roundtable(self.repository).tool_scope(mission_id, agent, turn, values.get('provider_id')):
                 if fn.__name__ == 'update_status' and values.get('status') != 'running':
@@ -65,6 +130,7 @@ class MCPTools:
         is_target_scheduled: Optional[Callable[[str], bool]] = None,
         receipt_id: Optional[str] = None,
         current_step_origin: Optional[str] = None,
+        lease_token: Optional[str] = None,
     ):
         self.repository = repository
         self.artifact_root = artifact_root
@@ -76,6 +142,7 @@ class MCPTools:
         self._is_target_scheduled = is_target_scheduled
         self.receipt_id = receipt_id
         self._current_step_origin = current_step_origin
+        self.lease_token = lease_token
 
     @property
     def current_step_origin(self) -> Optional[str]:
@@ -90,7 +157,22 @@ class MCPTools:
         agent_id: Optional[str] = None,
         turn_id: Optional[str] = None,
         provider_id: Optional[str] = None,
+        material_offset: int = 0,
+        history_offset: int = 0,
+        issue_offset: int = 0,
     ) -> Dict[str, object]:
+        from backend.app.orchestration.deliberation import Deliberation, is_v2
+        if is_v2(self.repository.get_mission(mission_id)):
+            try:
+                result = Deliberation(self.repository).read_context(mission_id, agent_id, turn_id, provider_id, self.lease_token,
+                    material_offset=material_offset, history_offset=history_offset, issue_offset=issue_offset)
+                record_tool_call(self.repository, mission_id, turn_id, agent_id, 'read_context', {}, provider_id)
+                record_tool_result(self.repository, mission_id, turn_id, agent_id, 'read_context',
+                                   summary='Returned frozen phase context', provider_id=provider_id,
+                                   output=_context_digest(result))
+                return result
+            except ValueError as exc:
+                raise MCPToolError(str(exc)) from exc
         if agent_id and turn_id:
             record_tool_call(
                 self.repository,
@@ -122,6 +204,7 @@ class MCPTools:
                 "read_context",
                 summary="Returned {n} messages".format(n=len(messages)),
                 provider_id=provider_id,
+                output=_mission_context_digest(result),
             )
         return result
 
@@ -180,6 +263,7 @@ class MCPTools:
                 "publish_message",
                 summary="Published message {id}".format(id=message.id),
                 provider_id=provider_id,
+                output=content,
             )
         return message
 
@@ -221,6 +305,7 @@ class MCPTools:
             raise MCPToolError("Artifact path is outside artifact directory")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
         artifact_id = "{mission_id}:{path}".format(
             mission_id=mission_id,
             path=normalized_relative_path,
@@ -245,10 +330,40 @@ class MCPTools:
             summary="Wrote {path}".format(path=normalized_relative_path),
             artifact_id=artifact_id,
             provider_id=provider_id,
+            output="{path} · {n} chars · sha256:{digest}".format(
+                path=normalized_relative_path, n=len(content), digest=digest),
         )
         return target
 
     READ_ARTIFACT_MAX_CHARS = 20000
+
+    def read_discussion_result(self, mission_id, agent_id, turn_id, provider_id, source_id, offset=0, max_chars=8000):
+        from backend.app.orchestration.deliberation import Deliberation
+        try:
+            result = Deliberation(self.repository).read_entry(mission_id, agent_id, turn_id, provider_id,
+                self.lease_token, source_id, offset, max_chars)
+            record_tool_call(self.repository, mission_id, turn_id, agent_id, 'read_discussion_result',
+                             {'source_id': source_id, 'offset': offset}, provider_id)
+            page = result.get('text') if isinstance(result, dict) else None
+            record_tool_result(self.repository, mission_id, turn_id, agent_id, 'read_discussion_result',
+                               summary='Returned frozen source page', provider_id=provider_id,
+                               output=page if isinstance(page, str) else None)
+            return result
+        except ValueError as exc:
+            raise MCPToolError(str(exc)) from exc
+
+    def submit_discussion_result(self, mission_id, agent_id, turn_id, provider_id, result):
+        from backend.app.orchestration.deliberation import Deliberation
+        kind = result.get('kind') if isinstance(result, dict) else 'invalid'
+        if not isinstance(kind, str) or kind not in {'opinion', 'contribution', 'review', 'draft'}:
+            kind = 'invalid'
+        record_tool_call(self.repository, mission_id, turn_id, agent_id, 'submit_discussion_result', {'kind': kind}, provider_id)
+        try:
+            submitted = Deliberation(self.repository).submit(mission_id, agent_id, turn_id, provider_id, self.lease_token, result)
+            record_tool_result(self.repository, mission_id, turn_id, agent_id, 'submit_discussion_result', summary='Structured result accepted', provider_id=provider_id)
+            return submitted
+        except ValueError as exc:
+            raise MCPToolError(str(exc)) from exc
 
     def read_artifact(
         self,
@@ -260,7 +375,31 @@ class MCPTools:
         provider_id: Optional[str] = None,
         with_line_numbers: bool = True,
         source_mission_id: Optional[str] = None,
+        offset: int = 0,
+        max_chars: int = 8000,
     ) -> Dict[str, object]:
+        from backend.app.orchestration.deliberation import is_v2
+        if is_v2(self.repository.get_mission(mission_id)):
+            from backend.app.orchestration.deliberation import Deliberation
+            key = f'artifact:{source_mission_id or mission_id}:{relative_path}'
+            record_tool_call(
+                self.repository, mission_id, turn_id, agent_id, "read_artifact",
+                {"relative_path": relative_path, "offset": offset}, provider_id,
+            )
+            try:
+                page = Deliberation(self.repository).read_material(
+                    mission_id, agent_id, turn_id, provider_id, self.lease_token, key, offset, max_chars)
+            except ValueError as exc:
+                record_tool_error(self.repository, mission_id, turn_id, agent_id,
+                                  "read_artifact", str(exc), provider_id)
+                raise MCPToolError(str(exc)) from exc
+            content = page.get("content") if isinstance(page.get("content"), str) else ""
+            record_tool_result(
+                self.repository, mission_id, turn_id, agent_id, "read_artifact",
+                summary="Read frozen material {p}".format(p=relative_path),
+                provider_id=provider_id, output=content,
+            )
+            return page
         self._require_mission(mission_id)
         record_tool_call(
             self.repository,
@@ -351,6 +490,7 @@ class MCPTools:
                 trunc=", truncated" if truncated else "",
             ),
             provider_id=provider_id,
+            output=body,
         )
         return result
 
@@ -462,6 +602,7 @@ class MCPTools:
                     tag_note=", tags=" + ",".join(normalized_tags) if normalized_tags else "",
                 ),
                 provider_id=provider_id,
+                output=content,
             )
         return {"ok": True, "event_id": event_id}
 
@@ -498,6 +639,7 @@ class MCPTools:
                 "update_status",
                 summary="Status updated to {status}".format(status=status),
                 provider_id=provider_id,
+                output=summary or "",
             )
 
     @roundtable_guard

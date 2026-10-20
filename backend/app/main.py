@@ -11,6 +11,7 @@ from backend.app.api.hub_settings import build_router as build_hub_settings_rout
 from backend.app.api.health import build_router as build_health_router
 from backend.app.api.maintenance import build_router as build_maintenance_router
 from backend.app.api.missions import build_router as build_missions_router
+from backend.app.api.observability import build_router as build_observability_router
 from backend.app.api.onboarding import build_router as build_onboarding_router
 from backend.app.api.providers import build_router as build_providers_router
 from backend.app.adapters.base import CLIAdapter
@@ -63,6 +64,17 @@ def create_app(
         )
     )
     app.include_router(build_providers_router(app_settings))
+    app.include_router(build_observability_router(repository))
+    # A persisted human choice may have committed just before a crash and
+    # before its worker started. Reservations make rescheduling idempotent.
+    from backend.app.orchestration.deliberation import is_v2
+    from backend.app.api.missions import _run_mission_in_background
+    from backend.app.domain.models import MissionStatus
+    import threading
+    for pending in repository.list_missions():
+        if is_v2(pending) and pending.status == MissionStatus.PENDING:
+            threading.Thread(target=_run_mission_in_background,
+                             args=(repository, app_settings, pending.id, mission_adapter), daemon=True).start()
     return app
 
 

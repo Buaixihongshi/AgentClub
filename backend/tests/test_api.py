@@ -152,7 +152,8 @@ def test_get_mission_serializes_messages_as_thread_events(temp_settings):
             "Fake CLI",
         }
         assert message["metadata"]["persona_label"] in {"张楚岚", "冯宝宝", "王也"}
-        assert message["metadata"]["capability"] == "unknown"
+        expected = {'chulan': 'planning', 'baobao': 'review', 'wangye': 'unknown'}
+        assert message["metadata"]["capability"] == expected[message['agent_id']]
 
 
 def test_get_mission_events_preserve_conversation_order(temp_settings):

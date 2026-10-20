@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>对话框模式重构 Demo 演示 | 王也的手稿台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@600;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #fdfbf7;
+      --paper-soft: #f5f1e8;
+      --paper-warm: #eee8dc;
+      --ink: #1a1a1a;
+      --ink-soft: rgba(26, 26, 26, 0.08);
+      --ink-line: rgba(26, 26, 26, 0.18);
+      --ink-muted: rgba(26, 26, 26, 0.58);
+      --ink-faint: rgba(26, 26, 26, 0.38);
+      --surface: #ffffff;
+      --sage: #7ba79d;
+      --sage-strong: #5f8a80;
+      --sage-soft: rgba(123, 167, 157, 0.16);
+      --amber: #c88327;
+      --amber-soft: rgba(200, 131, 39, 0.12);
+      --red: #cf4234;
+      --font-body: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-serif: "Noto Serif SC", serif;
+      --font-mono: "JetBrains Mono", monospace;
+      --hard-shadow: 4px 4px 0 var(--ink);
+      --hard-shadow-sm: 2px 2px 0 var(--ink);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--paper);
+      color: var(--ink);
+      font-family: var(--font-body);
+      line-height: 1.5;
+      background-image: 
+        radial-gradient(var(--ink-soft) 1px, transparent 1px),
+        linear-gradient(to right, rgba(0,0,0,0.015) 1px, transparent 1px);
+      background-size: 24px 24px, 48px 48px;
+      min-height: 100vh;
+    }
+
+    /* 顶部横幅 */
+    header.header {
+      background: var(--paper-soft);
+      border-bottom: 2px solid var(--ink);
+      padding: 20px 32px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    }
+    .header-titles h1 {
+      margin: 0;
+      font-family: var(--font-serif);
+      font-size: 1.4rem;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge-wangye {
+      font-family: var(--font-body);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      background: var(--ink);
+      color: var(--paper);
+      border-radius: 2px;
+      letter-spacing: 0.05em;
+    }
+    .header-desc {
+      margin: 4px 0 0;
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+    }
+
+    /* 控制栏选项卡 */
+    .view-switcher {
+      display: inline-flex;
+      background: var(--paper-warm);
+      border: 2px solid var(--ink);
+      border-radius: 6px;
+      padding: 3px;
+      gap: 4px;
+    }
+    .view-btn {
+      border: none;
+      background: transparent;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--ink);
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+    }
+    .view-btn:hover {
+      background: rgba(0,0,0,0.05);
+    }
+    .view-btn.active {
+      background: var(--ink);
+      color: var(--paper);
+      box-shadow: 1px 1px 0 rgba(0,0,0,0.2);
+    }
+
+    /* 主容器 */
+    main.container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 28px 24px 80px;
+    }
+
+    /* 格局卡片网格 */
+    .demos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 28px;
+      align-items: start;
+    }
+    .demos-grid.single-mode {
+      grid-template-columns: minmax(320px, 780px);
+      justify-content: center;
+    }
+
+    /* 每一个 Demo 包装盒 */
+    .demo-card {
+      background: var(--surface);
+      border: 2px solid var(--ink);
+      box-shadow: var(--hard-shadow);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .demo-header {
+      padding: 12px 18px;
+      border-bottom: 2px solid var(--ink);
+      background: var(--paper-soft);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .demo-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--ink-muted);
+      letter-spacing: 0.05em;
+    }
+    .demo-title {
+      font-family: var(--font-serif);
+      font-size: 1.05rem;
+      font-weight: 900;
+      margin: 2px 0 0;
+    }
+    .demo-status-pill {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--ink);
+    }
+    .pill-origin { background: #fee2e2; color: #991b1b; }
+    .pill-rec { background: var(--sage-soft); color: var(--sage-strong); }
+    .pill-opt { background: var(--amber-soft); color: var(--amber); }
+
+    /* 模拟对话区域 */
+    .chat-preview {
+      background: var(--paper);
+      padding: 16px;
+      height: 180px;
+      overflow-y: auto;
+      border-bottom: 1px dashed var(--ink-line);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-size: 0.85rem;
+    }
+    .msg-bubble {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      max-width: 88%;
+    }
+    .msg-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1.5px solid var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+      background: #fff;
+    }
+    .avatar-bao { background: #e0f2fe; color: #0369a1; }
+    .avatar-chu { background: #fef3c7; color: #b45309; }
+    .avatar-ye { background: #dcfce7; color: #15803d; }
+    .avatar-user { background: #f3e8ff; color: #7e22ce; align-self: flex-end; }
+    .msg-body {
+      padding: 8px 12px;
+      border: 1.5px solid var(--ink);
+      border-radius: 4px;
+      background: var(--surface);
+      box-shadow: 2px 2px 0 var(--ink-soft);
+      line-height: 1.4;
+    }
+    .msg-sender {
+      font-weight: 700;
+      font-size: 0.72rem;
+      margin-bottom: 2px;
+      color: var(--ink-muted);
+    }
+
+    /* 模拟交互工作区 */
+    .workspace-area {
+      padding: 16px;
+      background: var(--paper);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* 通用输入框与发送按钮 */
+    .mock-composer-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+    .mock-textarea {
+      flex: 1;
+      border: 2px solid var(--ink);
+      border-radius: 4px;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      background: #fff;
+      color: var(--ink);
+      resize: none;
+      height: 64px;
+      box-shadow: inset 1px 1px 2px rgba(0,0,0,0.05);
+      outline: none;
+    }
+    .mock-textarea:focus {
+      border-color: var(--sage-strong);
+    }
+    .mock-send-btn {
+      height: 64px;
+      padding: 0 18px;
+      background: var(--ink);
+      color: var(--paper);
+      border: 2px solid var(--ink);
+      border-radius: 4px;
+      font-weight: 900;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.1s ease;
+      white-space: nowrap;
+    }
+    .mock-send-btn:hover {
+      background: var(--sage-strong);
+      border-color: var(--sage-strong);
+    }
+
+    /* 王也短评栏 */
+    .demo-critique {
+      border-top: 1px solid var(--ink-line);
+      background: var(--paper-warm);
+      padding: 14px 18px;
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+    .critique-title {
+      font-weight: 900;
+      font-size: 0.76rem;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ======================================================== */
+    /* 样式 0：现状（原始版）- 笨重独立大盒子                     */
+    /* ======================================================== */
+    .origin-setup-box {
+      border: 2px solid var(--ink);
+      background: #ffffff;
+      padding: 14px 16px;
+      box-shadow: var(--hard-shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .origin-mode-switch {
+      display: flex;
+      gap: 10px;
+    }
+    .origin-mode-btn {
+      padding: 6px 18px;
+      border: 2px solid var(--ink);
+      border-radius: 999px;
+      background: #ffffff;
+      font-weight: 900;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .origin-mode-btn.active {
+      background: var(--ink);
+      color: #fff;
+    }
+    .origin-participant-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }
+    .origin-card {
+      border: 2px dashed var(--ink-line);
+      background: var(--paper-soft);
+      padding: 8px 10px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .origin-card.selected {
+      border-style: solid;
+      border-color: var(--ink);
+      background: #fff;
+    }
+    .origin-hint {
+      font-size: 0.75rem;
+      color: var(--ink-muted);
+    }
+
+    /* ======================================================== */
+    /* 方案一：素纸内联胶囊 (Inlined Paper Capsules)              */
+    /* ======================================================== */
+    .scheme-1-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .scheme-1-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 2px 4px;
+    }
+    .scheme-1-capsules {
+      display: inline-flex;
+      background: var(--paper-warm);
+      padding: 2px;
+      border-radius: 999px;
+      border: 1px solid var(--ink-line);
+    }
+    .scheme-1-pill {
+      border: none;
+      background: transparent;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--ink-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .scheme-1-pill.active {
+      background: var(--ink);
+      color: var(--paper);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .scheme-1-partner-strip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      animation: fadeIn 0.2s ease;
+    }
+    .scheme-1-avatar-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px 3px 4px;
+      border-radius: 999px;
+      background: var(--paper-soft);
+      border: 1px solid var(--ink-line);
+      font-size: 0.75rem;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s;
+    }
+    .scheme-1-avatar-chip .mini-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 900;
+      border: 1px solid var(--ink);
+      background: #fff;
+    }
+    .scheme-1-avatar-chip.selected {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+    }
+    .scheme-1-avatar-chip.selected .mini-dot {
+      background: var(--paper);
+      color: var(--ink);
+    }
+    .scheme-1-hint {
+      font-size: 0.72rem;
+      color: var(--ink-muted);
+      margin-left: 4px;
+    }
+
+    /* ======================================================== */
+    /* 方案二：分镜便签角标 (Manga Cue Note)                     */
+    /* ======================================================== */
+    .scheme-2-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .scheme-2-cue-line {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      padding: 0 4px;
+      font-size: 0.82rem;
+    }
+    .scheme-2-modes {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+    }
+    .scheme-2-mode-text {
+      cursor: pointer;
+      color: var(--ink-faint);
+      position: relative;
+      padding-bottom: 2px;
+      transition: color 0.15s;
+    }
+    .scheme-2-mode-text.active {
+      color: var(--ink);
+      font-weight: 900;
+    }
+    .scheme-2-mode-text.active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      height: 2px;
+      background: var(--ink);
+      border-radius: 1px;
+    }
+    .scheme-2-divider {
+      color: var(--ink-line);
+      font-weight: 300;
+    }
+    .scheme-2-partners {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.78rem;
+    }
+    .scheme-2-agent-opt {
+      cursor: pointer;
+      color: var(--ink-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      transition: all 0.15s;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .scheme-2-agent-opt:hover {
+      background: var(--paper-warm);
+    }
+    .scheme-2-agent-opt.selected {
+      color: var(--ink);
+      font-weight: 800;
+      background: var(--sage-soft);
+    }
+    .scheme-2-agent-opt.selected::before {
+      content: "✓";
+      font-size: 0.7rem;
+      color: var(--sage-strong);
+    }
+
+    /* ======================================================== */
+    /* 方案三：沉底工具条 (Bottom Bar Stowaway)                  */
+    /* ======================================================== */
+    .scheme-3-box {
+      border: 2px solid var(--ink);
+      border-radius: 4px;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 2px 2px 0 var(--ink-soft);
+    }
+    .scheme-3-drawer {
+      background: var(--paper-soft);
+      border-bottom: 1px dashed var(--ink-line);
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.75rem;
+      animation: slideDown 0.15s ease-out;
+    }
+    .scheme-3-chips {
+      display: flex;
+      gap: 6px;
+    }
+    .scheme-3-chip {
+      padding: 2px 8px;
+      border-radius: 3px;
+      border: 1px solid var(--ink-line);
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.72rem;
+    }
+    .scheme-3-chip.selected {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+      font-weight: 700;
+    }
+    .scheme-3-textarea {
+      border: none;
+      outline: none;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      height: 56px;
+      resize: none;
+    }
+    .scheme-3-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      border-top: 1px solid var(--ink-line);
+      background: var(--paper);
+    }
+    .scheme-3-mode-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--paper-warm);
+      border: 1px solid var(--ink-line);
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+    }
+    .scheme-3-mode-trigger:hover {
+      background: #e2ddd3;
+    }
+    .scheme-3-send-btn {
+      padding: 4px 16px;
+      background: var(--ink);
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      font-weight: 800;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideDown {
+      from { max-height: 0; opacity: 0; }
+      to { max-height: 60px; opacity: 1; }
+    }
+
+    /* 底部收官建议卡 */
+    .summary-card {
+      margin-top: 40px;
+      background: var(--paper-soft);
+      border: 2px solid var(--ink);
+      box-shadow: var(--hard-shadow);
+      padding: 24px 28px;
+    }
+    .summary-card h3 {
+      margin: 0 0 12px;
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .summary-item {
+      background: #fff;
+      border: 1.5px solid var(--ink);
+      padding: 14px 16px;
+      border-radius: 4px;
+    }
+    .summary-item strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.92rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="header-titles">
+      <h1>
+        <span>对话框模式选区重构交互 Demo</span>
+        <span class="badge-wangye">王也推演稿</span>
+      </h1>
+      <p class="header-desc">针对“任务”与“多人讨论”窗口过重抢镜的问题，提供 3 套弱化沉淀思路与原版对比演示。</p>
+    </div>
+    <div class="view-switcher" role="tablist">
+      <button class="view-btn active" onclick="switchView('all')">全览对比</button>
+      <button class="view-btn" onclick="switchView('scheme1')">方案一：素纸胶囊</button>
+      <button class="view-btn" onclick="switchView('scheme2')">方案二：分镜便签</button>
+      <button class="view-btn" onclick="switchView('scheme3')">方案三：沉底工具条</button>
+      <button class="view-btn" onclick="switchView('origin')">原版痛点对照</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="demos-grid" id="demosGrid">
+
+      <!-- ================= 方案一 ================= -->
+      <div class="demo-card" id="card-scheme1">
+        <div class="demo-header">
+          <div>
+            <div class="demo-tag">OPTION 01 · 稳妥实用</div>
+            <div class="demo-title">素纸内联胶囊（Inlined Capsules）</div>
+          </div>
+          <span class="demo-status-pill pill-rec">推荐 · 视觉降重80%</span>
+        </div>
+
+        <div class="chat-preview" id="chat-1">
+          <div class="msg-bubble">
+            <div class="msg-avatar avatar-bao">宝</div>
+            <div class="msg-body">
+              <div class="msg-sender">冯宝宝</div>
+              张楚岚，这套水墨底色看着蛮顺眼，就是之前脑门上那块黑铁疙瘩太碍事了。
+            </div>
+          </div>
+          <div class="msg-bubble">
+            <div class="msg-avatar avatar-chu">楚</div>
+            <div class="msg-body">
+              <div class="msg-sender">张楚岚</div>
+              宝儿姐说得对，所以也总现在把模式做成了内联胶囊，直接贴着纸面走。
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-area">
+          <div class="scheme-1-panel">
+            <div class="scheme-1-bar">
+              <div class="scheme-1-capsules">
+                <button class="scheme-1-pill active" id="s1-btn-task" onclick="setScheme1Mode('task')">任务</button>
+                <button class="scheme-1-pill" id="s1-btn-round" onclick="setScheme1Mode('roundtable')">多人讨论</button>
+              </div>
+
+              <div class="scheme-1-partner-strip" id="s1-partners" style="display: none;">
+                <span class="scheme-1-avatar-chip selected" onclick="toggleScheme1Partner(this, '张楚岚')">
+                  <span class="mini-dot">楚</span> 张楚岚
+                </span>
+                <span class="scheme-1-avatar-chip selected" onclick="toggleScheme1Partner(this, '冯宝宝')">
+                  <span class="mini-dot">宝</span> 冯宝宝
+                </span>
+                <span class="scheme-1-avatar-chip" onclick="toggleScheme1Partner(this, '王也')">
+                  <span class="mini-dot">也</span> 王也
+                </span>
+                <span class="scheme-1-hint" id="s1-count-hint">已选 2 位</span>
+              </div>
+            </div>
+
+            <div class="mock-composer-row">
+              <textarea class="mock-textarea" id="s1-input" placeholder="输入任务，或选多人讨论拉伙伴探讨..."></textarea>
+              <button class="mock-send-btn" onclick="sendMsg(1)">发送</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="demo-critique">
+          <div class="critique-title">王也点评：</div>
+          彻底拆掉原来独立的大白底框和硬黑阴影，把高度压缩到一行 26px。点“多人讨论”时，伙伴只以紧凑小胶囊横向展开，不破坏输入框与聊天流的气口。
+        </div>
+      </div>
+
+      <!-- ================= 方案二 ================= -->
+      <div class="demo-card" id="card-scheme2">
+        <div class="demo-header">
+          <div>
+            <div class="demo-tag">OPTION 02 · 韵味最正</div>
+            <div class="demo-title">分镜便签角标（Cue Note）</div>
+          </div>
+          <span class="demo-status-pill pill-rec">最契合水墨漫画风</span>
+        </div>
+
+        <div class="chat-preview" id="chat-2">
+          <div class="msg-bubble">
+            <div class="msg-avatar avatar-ye">也</div>
+            <div class="msg-body">
+              <div class="msg-sender">王也</div>
+              把程序味儿褪干净，跟漫画分镜稿下头的注脚一样，就几个字，安静待着。
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-area">
+          <div class="scheme-2-panel">
+            <div class="scheme-2-cue-line">
+              <div class="scheme-2-modes">
+                <span class="scheme-2-mode-text active" id="s2-btn-task" onclick="setScheme2Mode('task')">任务</span>
+                <span class="scheme-2-divider">/</span>
+                <span class="scheme-2-mode-text" id="s2-btn-round" onclick="setScheme2Mode('roundtable')">多人讨论</span>
+              </div>
+
+              <div class="scheme-2-partners" id="s2-partners" style="display: none;">
+                <span style="color: var(--ink-faint);">伙伴:</span>
+                <span class="scheme-2-agent-opt selected" onclick="toggleScheme2Partner(this)">张楚岚</span>
+                <span class="scheme-2-agent-opt selected" onclick="toggleScheme2Partner(this)">冯宝宝</span>
+                <span class="scheme-2-agent-opt" onclick="toggleScheme2Partner(this)">王也</span>
+              </div>
+            </div>
+
+            <div class="mock-composer-row">
+              <textarea class="mock-textarea" id="s2-input" placeholder="输入任务，自然对话..."></textarea>
+              <button class="mock-send-btn" onclick="sendMsg(2)">发送</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="demo-critique">
+          <div class="critique-title">王也点评：</div>
+          没有多余的卡片与圆圈，纯排版级注脚。选了“多人讨论”，右边跟着淡雅的小字点选，如同在原稿空白处随手勾勒。眼睛完全不会被它打扰。
+        </div>
+      </div>
+
+      <!-- ================= 方案三 ================= -->
+      <div class="demo-card" id="card-scheme3">
+        <div class="demo-header">
+          <div>
+            <div class="demo-tag">OPTION 03 · 极致腾空</div>
+            <div class="demo-title">沉底工具条（Bottom Toolbar）</div>
+          </div>
+          <span class="demo-status-pill pill-opt">上方彻底无干扰</span>
+        </div>
+
+        <div class="chat-preview" id="chat-3">
+          <div class="msg-bubble">
+            <div class="msg-avatar avatar-chu">楚</div>
+            <div class="msg-body">
+              <div class="msg-sender">张楚岚</div>
+              上方一干二净，聊天流直接贴着打字框！
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-area">
+          <div class="scheme-3-box">
+            <!-- 仅在多人模式展开内部轻薄条 -->
+            <div class="scheme-3-drawer" id="s3-drawer" style="display: none;">
+              <span style="color: var(--ink-muted);">当前多人讨论伙伴：</span>
+              <div class="scheme-3-chips">
+                <span class="scheme-3-chip selected" onclick="toggleScheme3Partner(this)">张楚岚</span>
+                <span class="scheme-3-chip selected" onclick="toggleScheme3Partner(this)">冯宝宝</span>
+                <span class="scheme-3-chip" onclick="toggleScheme3Partner(this)">王也</span>
+              </div>
+            </div>
+
+            <textarea class="scheme-3-textarea" id="s3-input" placeholder="输入对话..."></textarea>
+
+            <div class="scheme-3-toolbar">
+              <div class="scheme-3-mode-trigger" onclick="cycleScheme3Mode()">
+                <span id="s3-mode-label">⚡ 模式：任务模式</span>
+                <span style="font-size: 0.65rem; color: var(--ink-faint);">▼</span>
+              </div>
+              <button class="scheme-3-send-btn" onclick="sendMsg(3)">发送</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="demo-critique">
+          <div class="critique-title">王也点评：</div>
+          模式开关收编进输入框底部工具栏。好处是输入框顶头完全没有多余东西；代价是切换按钮藏在下头，第一次用可能不如方案一二直观。
+        </div>
+      </div>
+
+      <!-- ================= 原始现状对照 ================= -->
+      <div class="demo-card" id="card-origin">
+        <div class="demo-header">
+          <div>
+            <div class="demo-tag">ORIGIN · 现状痛点</div>
+            <div class="demo-title">当前版本（厚重卡片大白盒）</div>
+          </div>
+          <span class="demo-status-pill pill-origin">痛点：占地大/抢镜</span>
+        </div>
+
+        <div class="chat-preview" id="chat-0">
+          <div class="msg-bubble">
+            <div class="msg-avatar avatar-ye">也</div>
+            <div class="msg-body">
+              <div class="msg-sender">王也</div>
+              您瞅瞅下头这大盒子，又是粗黑框又是硬阴影，还自带一大排大卡片，跟施工公告牌似的。
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-area">
+          <div class="origin-setup-box">
+            <div class="origin-mode-switch">
+              <button class="origin-mode-btn" id="s0-btn-task" onclick="setOriginMode('task')">任务</button>
+              <button class="origin-mode-btn active" id="s0-btn-round" onclick="setOriginMode('roundtable')">多人讨论</button>
+            </div>
+            <div id="origin-participants-wrap">
+              <div class="origin-hint">选 2～3 位伙伴，按选择顺序开场：</div>
+              <div class="origin-participant-grid">
+                <div class="origin-card selected" onclick="this.classList.toggle('selected')">
+                  <input type="checkbox" checked /> <strong>张楚岚</strong>
+                </div>
+                <div class="origin-card selected" onclick="this.classList.toggle('selected')">
+                  <input type="checkbox" checked /> <strong>冯宝宝</strong>
+                </div>
+                <div class="origin-card" onclick="this.classList.toggle('selected')">
+                  <input type="checkbox" /> <strong>王也</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mock-composer-row">
+            <textarea class="mock-textarea" placeholder="输入任务..."></textarea>
+            <button class="mock-send-btn">发送</button>
+          </div>
+        </div>
+
+        <div class="demo-critique">
+          <div class="critique-title">痛点分析：</div>
+          独立白底 + 2px 粗黑边 + 4px 硬阴影 + 大卡片阵列，垂直高度超 130px，视线全被它吸走了，打字时极其压抑。
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 底部选型建议 -->
+    <div class="summary-card">
+      <h3>王也的选型定盘</h3>
+      <p style="margin: 0; font-size: 0.9rem; color: var(--ink-muted);">
+        “咱修道讲究个顺其自然，UI 也是一个理。这玩意儿越不起眼，对话的气口就越顺。”
+      </p>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <strong>首选推荐：方案一（素纸内联胶囊）</strong>
+          视觉收敛得最干净，同时交互反馈最明确。手边顺手就能切，但眼角余光绝不会觉得扎眼。
+        </div>
+        <div class="summary-item">
+          <strong>次选推荐：方案二（分镜便签角标）</strong>
+          如果希望把整个界面彻底做成漫画手稿或者旧报纸分镜的质感，选方案二最有韵味。
+        </div>
+        <div class="summary-item">
+          <strong>极简选项：方案三（沉底工具条）</strong>
+          适合把所有注意力 100% 留给文字对话的极简主义者。
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function switchView(view) {
+      const cards = {
+        scheme1: document.getElementById('card-scheme1'),
+        scheme2: document.getElementById('card-scheme2'),
+        scheme3: document.getElementById('card-scheme3'),
+        origin: document.getElementById('card-origin'),
+      };
+      const grid = document.getElementById('demosGrid');
+      const btns = document.querySelectorAll('.view-btn');
+
+      btns.forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+
+      if (view === 'all') {
+        grid.classList.remove('single-mode');
+        Object.values(cards).forEach(c => c.style.display = 'flex');
+      } else {
+        grid.classList.add('single-mode');
+        Object.keys(cards).forEach(key => {
+          cards[key].style.display = (key === view) ? 'flex' : 'none';
+        });
+      }
+    }
+
+    /* 方案一 交互 */
+    function setScheme1Mode(mode) {
+      const btnTask = document.getElementById('s1-btn-task');
+      const btnRound = document.getElementById('s1-btn-round');
+      const strip = document.getElementById('s1-partners');
+      if (mode === 'task') {
+        btnTask.classList.add('active');
+        btnRound.classList.remove('active');
+        strip.style.display = 'none';
+      } else {
+        btnTask.classList.remove('active');
+        btnRound.classList.add('active');
+        strip.style.display = 'flex';
+      }
+    }
+    function toggleScheme1Partner(el) {
+      el.classList.toggle('selected');
+      const count = document.querySelectorAll('#s1-partners .scheme-1-avatar-chip.selected').length;
+      document.getElementById('s1-count-hint').innerText = `已选 ${count} 位`;
+    }
+
+    /* 方案二 交互 */
+    function setScheme2Mode(mode) {
+      const btnTask = document.getElementById('s2-btn-task');
+      const btnRound = document.getElementById('s2-btn-round');
+      const partners = document.getElementById('s2-partners');
+      if (mode === 'task') {
+        btnTask.classList.add('active');
+        btnRound.classList.remove('active');
+        partners.style.display = 'none';
+      } else {
+        btnTask.classList.remove('active');
+        btnRound.classList.add('active');
+        partners.style.display = 'flex';
+      }
+    }
+    function toggleScheme2Partner(el) {
+      el.classList.toggle('selected');
+    }
+
+    /* 方案三 交互 */
+    let s3Mode = 'task';
+    function cycleScheme3Mode() {
+      const label = document.getElementById('s3-mode-label');
+      const drawer = document.getElementById('s3-drawer');
+      if (s3Mode === 'task') {
+        s3Mode = 'roundtable';
+        label.innerText = '👥 模式：多人讨论';
+        drawer.style.display = 'flex';
+      } else {
+        s3Mode = 'task';
+        label.innerText = '⚡ 模式：任务模式';
+        drawer.style.display = 'none';
+      }
+    }
+    function toggleScheme3Partner(el) {
+      el.classList.toggle('selected');
+    }
+
+    /* 原版现状 交互 */
+    function setOriginMode(mode) {
+      const btnTask = document.getElementById('s0-btn-task');
+      const btnRound = document.getElementById('s0-btn-round');
+      const wrap = document.getElementById('origin-participants-wrap');
+      if (mode === 'task') {
+        btnTask.classList.add('active');
+        btnRound.classList.remove('active');
+        wrap.style.display = 'none';
+      } else {
+        btnTask.classList.remove('active');
+        btnRound.classList.add('active');
+        wrap.style.display = 'block';
+      }
+    }
+
+    /* 发送模拟消息 */
+    function sendMsg(id) {
+      const input = document.getElementById(`s${id}-input`);
+      const val = input.value.trim();
+      if (!val) return;
+      const chat = document.getElementById(`chat-${id}`);
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+      bubble.style.alignSelf = 'flex-end';
+      bubble.innerHTML = `
+        <div class="msg-body" style="background: var(--paper-warm); border-color: var(--ink);">
+          <div class="msg-sender" style="color: var(--sage-strong);">你</div>
+          ${val}
+        </div>
+        <div class="msg-avatar avatar-user">我</div>
+      `;
+      chat.appendChild(bubble);
+      chat.scrollTop = chat.scrollHeight;
+      input.value = '';
+    }
+  </script>
+</body>
+</html>

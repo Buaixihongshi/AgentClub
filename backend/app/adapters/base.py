@@ -11,6 +11,8 @@ class TurnOutcome:
     status: TurnStatus
     summary: Optional[str] = None
     session_id: Optional[str] = None
+    failure_code: Optional[str] = None
+    exit_code: Optional[int] = None
 
 
 class CLIAdapter(ABC):

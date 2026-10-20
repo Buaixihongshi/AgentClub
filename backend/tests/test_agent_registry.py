@@ -93,7 +93,7 @@ def test_canonical_agents_have_trigger_points_and_aliases():
         assert agent.aliases, agent_id
 
 
-def test_canonical_agent_personas_preserve_character_voice():
+def test_canonical_agents_have_distinct_work_styles():
     for registry in (
         AgentRegistry.builtin(),
         AgentRegistry.from_config(REPO_ROOT / "config"),
@@ -102,14 +102,9 @@ def test_canonical_agent_personas_preserve_character_voice():
         baobao = registry.require("baobao")
         wangye = registry.require("wangye")
 
-        assert chulan.persona != "拆解"
-        assert baobao.persona != "产物"
-        assert wangye.persona != "风险"
-
-        assert "市井" in chulan.persona or "市侩" in chulan.persona
-        assert "宝儿姐" in chulan.persona
-        assert "四川" in baobao.persona or "晓得" in baobao.persona
-        assert "道长" in wangye.persona or "北京腔" in wangye.persona
+        assert "大局观" in chulan.persona
+        assert "证据" in baobao.persona
+        assert "视觉语言" in wangye.persona
 
 
 
@@ -120,8 +115,14 @@ def test_shipped_profiles_match_builtin_fallback():
     ]
 
 
-def test_personalities_share_capabilities_without_fixed_jobs():
-    agents = AgentRegistry.builtin().all()
-    assert len({agent.role for agent in agents}) == 3
-    assert all(agent.role not in {"规划", "执行", "分析"} for agent in agents)
-    assert all(agent.capability_hints == ["conversation"] for agent in agents)
+def test_agents_have_specialized_roles_and_capability_hints():
+    for registry in (
+        AgentRegistry.builtin(),
+        AgentRegistry.from_config(REPO_ROOT / "config"),
+    ):
+        assert registry.require("chulan").role == "首席架构师和核心开发者"
+        assert registry.require("chulan").capability_hints == ["planning", "code"]
+        assert registry.require("baobao").role == "代码审查员和安全专家"
+        assert registry.require("baobao").capability_hints == ["analysis", "risk"]
+        assert registry.require("wangye").role == "视觉设计师和创意思考者"
+        assert registry.require("wangye").capability_hints == ["conversation"]

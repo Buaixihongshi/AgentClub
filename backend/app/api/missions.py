@@ -138,7 +138,10 @@ def build_router(
     ):
         if repo.get_mission(mission_id) is None:
             raise HTTPException(status_code=404, detail="Mission not found")
-        if repo.get_mission(mission_id).room_mode == 'roundtable':
+        from backend.app.orchestration.deliberation import Deliberation, is_v2
+        if is_v2(repo.get_mission(mission_id)):
+            Deliberation(repo).interrupt(mission_id, payload.content, payload.target_agent_id, payload.request_id)
+        elif repo.get_mission(mission_id).room_mode == 'roundtable':
             Roundtable(repo).interrupt(mission_id, payload.content, payload.target_agent_id, payload.request_id)
         else:
             repo.add_interruption(mission_id, payload.content, payload.target_agent_id)
@@ -146,6 +149,17 @@ def build_router(
 
     @router.post("/{mission_id}/discussion-controls", status_code=202)
     def discussion_control(mission_id: str, payload: DiscussionControlRequest, repo: Repository = Depends(get_repo)):
+        from backend.app.orchestration.deliberation import Deliberation, is_v2
+        if is_v2(repo.get_mission(mission_id)):
+            mission_settings = snapshot_settings(settings)
+            target, schedule = Deliberation(repo).control(mission_id, payload, mission_settings)
+            detail = build_mission_detail(repo, settings, target)
+            if schedule:
+                threading.Thread(target=_run_mission_in_background,
+                                 args=(repo, mission_settings, target, adapter_override), daemon=True).start()
+            return detail
+        if payload.action not in {'finish', 'stop'}:
+            raise HTTPException(status_code=422, detail='Control requires a V2 discussion')
         Roundtable(repo).control(mission_id, payload.action, payload.request_id, payload.summary_agent_id)
         return build_mission_detail(repo, settings, mission_id)
 

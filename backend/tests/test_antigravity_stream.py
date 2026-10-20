@@ -28,13 +28,21 @@ def test_native_activity_deduplicates_and_preserves_completion():
     assert parser.parse(tool_event("DONE")) is None
 
 
-def test_native_ignores_reasoning_and_tool_output_and_masks_command_arguments():
+def test_native_ignores_reasoning_but_keeps_masked_summary_args_and_output():
     parser = StreamLineParser("antigravity")
     assert parser.parse(json.dumps({"event": "step_update", "step_update": {"step_type": "agent_response", "thinking": "private reasoning", "text_delta": "ordinary stdout"}})) is None
     event = parser.parse(tool_event(tool_name="run_command", tool_info={"parameters": {"CommandLine": "npm test --token=secret"}, "output": "secret output"}))
     assert event.tool_summary == "运行测试"
-    assert "secret" not in repr(event)
+    assert event.tool_args == {"CommandLine": "npm test --token=secret"}
+    assert event.tool_output == "secret output"
     assert event.text is None
+
+
+def test_sanitizers_mask_secret_shaped_values():
+    from backend.app.orchestration.events import sanitize_tool_args, sanitize_tool_output
+
+    assert sanitize_tool_args({"api_key": "abc"}) == {"api_key": "***"}
+    assert sanitize_tool_output("npm test --token=secret") == "npm test --token=***"
 
 
 def test_native_malformed_records_and_error_result():

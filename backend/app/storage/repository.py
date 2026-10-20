@@ -35,6 +35,14 @@ class Repository:
                     id TEXT PRIMARY KEY,
                     data TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS discussion_results (
+                    id TEXT PRIMARY KEY,
+                    mission_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    data TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_discussion_results_mission
+                    ON discussion_results(mission_id);
                 CREATE TABLE IF NOT EXISTS messages (
                     id TEXT PRIMARY KEY,
                     mission_id TEXT NOT NULL,
@@ -249,6 +257,18 @@ class Repository:
                 )
             )
         return events
+
+    def mission_id_for_turn(self, turn_id: str) -> Optional[str]:
+        """Which mission owns this turn. Used by the global observability drill-down."""
+        if not turn_id:
+            return None
+        with self._transaction() as db:
+            row = db.execute(
+                "SELECT mission_id FROM events WHERE json_extract(payload, '$.turn_id') = ? "
+                "ORDER BY id ASC LIMIT 1",
+                (turn_id,),
+            ).fetchone()
+        return row["mission_id"] if row else None
 
     def list_events_for_turn(self, mission_id: str, turn_id: str) -> list[MissionEvent]:
         with self._transaction() as db:

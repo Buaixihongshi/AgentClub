@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { ChatBubble } from "../components/ChatBubble";
 import type { TurnView } from "../types";
@@ -22,6 +23,20 @@ function makeTurn(overrides: Partial<TurnView>): TurnView {
 }
 
 describe("ChatBubble", () => {
+  it("keeps final sources and rejected review reasons available without expanding a workflow board", async () => {
+    render(<ChatBubble turn={makeTurn({ metadata: { discussion_visibility: 'final', discussion_audit: {
+      sources: [{ id: 'claim-1', label: '张楚岚 · 观点', summary: '要先验证权限边界' }],
+      reviews: [{ reviewer: '冯宝宝', problem: '风险尚未验证', action: 'not_accepted', reason: '保留为未知，等待补充证据' }],
+    } } })} />);
+    expect(screen.getByText('团队讨论结果')).toBeInTheDocument();
+    expect(screen.getByText('风险尚未验证')).not.toBeVisible();
+    await userEvent.click(screen.getByText('查看依据与复核记录'));
+    expect(screen.getByText('要先验证权限边界')).toBeVisible();
+    expect(screen.getByText('未采纳：保留为未知，等待补充证据')).toBeVisible();
+    expect(screen.queryByText('独立思考')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '展开思考过程' })).not.toBeInTheDocument();
+  });
+
   it("renders user bubble right-aligned with boss label", () => {
     const turn = makeTurn({
       role: "user",

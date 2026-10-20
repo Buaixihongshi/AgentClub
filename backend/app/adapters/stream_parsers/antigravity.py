@@ -5,7 +5,7 @@ import re
 import shlex
 from typing import Optional
 
-from backend.app.adapters.stream_events import StreamEvent, StreamEventType
+from backend.app.adapters.stream_events import StreamEvent, StreamEventType, UsageRecord
 
 
 def _summary(name: str, parameters: dict) -> str:
@@ -64,6 +64,7 @@ class AntigravityStreamParser:
             if isinstance(result, dict):
                 return StreamEvent(
                     StreamEventType.FINISHED if result.get("status") == "SUCCESS" else StreamEventType.ERROR,
+                    usage=_usage(result),
                 )
         if event.get("event") != "step_update":
             return None
@@ -79,8 +80,44 @@ class AntigravityStreamParser:
         info = step.get("tool_info")
         parameters = info.get("parameters", {}) if isinstance(info, dict) else {}
         phase = "started" if state == "ACTIVE" else "completed" if state == "DONE" else "failed"
+        raw_output = info.get("output") if isinstance(info, dict) else None
+        if isinstance(raw_output, dict):
+            output = json.dumps(raw_output, ensure_ascii=False)
+        elif isinstance(raw_output, str):
+            output = raw_output
+        else:
+            output = None
+        error = info.get("error") if isinstance(info, dict) else None
+        if not isinstance(error, str) or not error:
+            error = step.get("error") if isinstance(step.get("error"), str) else None
         return StreamEvent(
             StreamEventType.TOOL_ATTEMPT, tool_name=name,
             activity_id=f"{self._session}:{index}", tool_phase=phase,
             tool_summary=_summary(name, parameters if isinstance(parameters, dict) else {}),
+            tool_args=parameters if isinstance(parameters, dict) else None,
+            tool_output=output,
+            tool_ok=True if phase == "completed" else False if phase == "failed" else None,
+            tool_error=error if phase == "failed" else None,
         )
+
+
+def _usage(result: dict) -> Optional[UsageRecord]:
+    """Native result.usage; output_tokens already includes thinking_tokens.
+
+    Wire contract: https://www.antigravity.google/docs/cli/headless/
+    Missing accounting stays unknown rather than becoming a zero-token record.
+    """
+    raw = result.get("usage")
+    if not isinstance(raw, dict):
+        return None
+    keys = ("input_tokens", "output_tokens", "thinking_tokens", "cache_read_tokens")
+    if any(key not in raw for key in ("input_tokens", "output_tokens")):
+        return None
+    if any(type(raw.get(key, 0)) is not int or raw.get(key, 0) < 0 for key in keys):
+        return None
+    return UsageRecord(
+        input_tokens=raw["input_tokens"], output_tokens=raw["output_tokens"],
+        cached_input_tokens=raw.get("cache_read_tokens", 0),
+        reasoning_output_tokens=raw.get("thinking_tokens", 0),
+        provider_raw=dict(raw),
+    )

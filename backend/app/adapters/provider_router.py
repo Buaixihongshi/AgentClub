@@ -62,6 +62,13 @@ class ProviderRouterAdapter(CLIAdapter):
             self._gemini_home = None
         self._gemini_sessions.clear()
 
+    def run_deliberation_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):
+        if provider_id == 'fake':
+            return self.fake_adapter.run_turn(mission_id, agent_id, turn_id, provider_id, prompt, tools)
+        from backend.app.adapters.deliberation_cli import DeliberationCLIAdapter
+        return DeliberationCLIAdapter(self.config_dir, self.cli_timeout, self.provider_overrides).run_turn(
+            mission_id, agent_id, turn_id, provider_id, prompt, tools)
+
     def run_turn(
         self,
         mission_id: str,

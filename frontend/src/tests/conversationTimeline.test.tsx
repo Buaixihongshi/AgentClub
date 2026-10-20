@@ -12,6 +12,27 @@ const activity: ToolEventRecord = { id: "a1", mission_id: "m1", turn_id: "t1", a
 const conversation: ConversationDetail = { conversation: { id: "c1", title: "test", status: "active", created_at: message.created_at, updated_at: failure.created_at }, missions: [mission("m1", "blocked")], messages: [message], failure_events: [failure] };
 
 describe("persistent failure timeline", () => {
+  it("keeps final discussion results in history while hiding intermediate messages after a follow-up", () => {
+    const initial: ThreadEvent = { ...message, id: 'opinion', role: 'agent', content: '阶段内判断', metadata: { discussion_visibility: 'internal' } };
+    const final: ThreadEvent = { ...initial, id: 'final', content: '经过复核的最终建议', metadata: { discussion_visibility: 'final', discussion_revision_reviewed: true } };
+    const next: ThreadEvent = { ...message, id: 'next', mission_id: 'm2', content: '继续处理', created_at: '2026-10-17T15:38:00Z' };
+    const latest: MissionDetail = { mission: mission('m2', 'completed'), messages: [next] };
+    const events = buildConversationTimeline({ ...conversation, messages: [message, initial, final], failure_events: [] }, latest);
+    expect(events.map((event) => event.id)).toEqual(['u1', 'final', 'next']);
+    render(<TurnTimeline turns={buildTurnViews(events)} />);
+    expect(screen.getByText('经过复核的最终建议')).toBeInTheDocument();
+    expect(screen.getByText('团队讨论结果')).toBeInTheDocument();
+    expect(screen.queryByText('阶段内判断')).not.toBeInTheDocument();
+  });
+
+  it("shows pending human choices and the revision review limit with the final chat result", () => {
+    const final: ThreadEvent = { ...message, id: 'candidate', role: 'agent', content: '已完成复核的候选方案',
+      metadata: { discussion_visibility: 'final', discussion_pending_decision: true, discussion_revision_reviewed: false } };
+    render(<TurnTimeline turns={buildTurnViews([final])} />);
+    expect(screen.getByText('其中的取舍仍待你决定。')).toBeInTheDocument();
+    expect(screen.getByText(/修订部分未再次独立复核/)).toBeInTheDocument();
+  });
+
   it("keeps the notice between the original message and follow-up after refresh", () => {
     const next: ThreadEvent = { ...message, id: "u2", mission_id: "m2", content: "继续", created_at: "2026-10-17T15:38:00Z" };
     const latest: MissionDetail = { mission: mission("m2", "completed"), messages: [next], failure_events: [] };

@@ -1,4 +1,4 @@
-import type { ArtifactContent, Conversation, ConversationDetail, ConversationSummary, DiscussionControlAction, HealthView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository, RoomMode } from "../types";
+import type { ArtifactContent, Conversation, ConversationDetail, ConversationSummary, DiscussionControlAction, HealthView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, ObservabilityOverviewPayload, ObservabilityTurnDetailPayload, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository, RoomMode } from "../types";
 
 const API_ROOT = "";
 
@@ -26,12 +26,28 @@ export async function fetchMission(missionId: string): Promise<MissionDetail> {
   return parseJson<MissionDetail>(response, "加载任务详情失败");
 }
 
+/** One turn with steps/checks, for the drill-down from global observability. */
+export async function fetchObservabilityTurn(turnId: string): Promise<ObservabilityTurnDetailPayload> {
+  const response = await fetch(`${API_ROOT}/api/observability/turns/${encodeURIComponent(turnId)}`);
+  return parseJson<ObservabilityTurnDetailPayload>(response, "加载回合详情失败");
+}
+
+/** Global observability across every conversation (settings → 观测). */
+export async function fetchObservabilityOverview(
+  window: "today" | "7d" | "30d" | "all" = "all",
+): Promise<ObservabilityOverviewPayload> {
+  const params = new URLSearchParams({ window, limit: "12" });
+  const response = await fetch(`${API_ROOT}/api/observability/overview?${params.toString()}`);
+  return parseJson<ObservabilityOverviewPayload>(response, "加载观测数据失败");
+}
+
 export interface MissionCreatePayload {
   goal: string;
+  skill?: "discuss";
   title?: string;
   target_agent_ids?: string[];
   room_mode?: RoomMode;
-  discussion?: { participant_ids: string[]; max_turns?: number };
+  discussion?: { participant_ids: string[]; max_turns?: number; protocol?: "roundtable_v1" | "deliberation_v2"; max_exchange_rounds?: number };
   request_id?: string;
 }
 
@@ -49,6 +65,7 @@ export function newRequestId(scope: string): string {
 function missionCreateBody(payload: MissionCreatePayload): string {
   const body: Record<string, unknown> = { goal: payload.goal };
   if (payload.title) body.title = payload.title;
+  if (payload.skill) body.skill = payload.skill;
   if (payload.room_mode) body.room_mode = payload.room_mode;
   if (payload.discussion) body.discussion = payload.discussion;
   if (payload.target_agent_ids && payload.target_agent_ids.length > 0) {
@@ -86,15 +103,14 @@ export async function interruptMission(
 
 export async function sendDiscussionControl(
   missionId: string,
-  payload: { action: DiscussionControlAction; summaryAgentId?: string },
+  payload: { action: DiscussionControlAction } & import("../types").DiscussionControlFields,
   requestId: string,
 ): Promise<MissionDetail> {
   const response = await fetch(`${API_ROOT}/api/missions/${missionId}/discussion-controls`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      action: payload.action,
-      summary_agent_id: payload.summaryAgentId,
+      ...payload,
       request_id: requestId,
     }),
   });

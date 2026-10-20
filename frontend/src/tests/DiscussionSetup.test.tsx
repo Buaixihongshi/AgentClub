@@ -57,7 +57,7 @@ describe("DiscussionSetup", () => {
 
   it("previews the default turn budget for the current selection", () => {
     renderSetup();
-    expect(screen.getByText(/默认最多 7 个回合（含总结）/)).toBeInTheDocument();
+    expect(screen.getByText(/分歧讨论（最多 2 轮）/)).toBeInTheDocument();
   });
 
   it("switches the mode through the radio group", async () => {
@@ -71,11 +71,9 @@ describe("DiscussionSetup", () => {
     renderSetup({ locked: true });
     expect(screen.getByRole("radio", { name: "多人讨论" })).toBeDisabled();
     expect(screen.getByRole("radio", { name: "任务" })).toBeDisabled();
-    screen
-      .getAllByRole("checkbox")
-      .forEach((box) => expect(box).toBeDisabled());
+    expect(screen.queryByRole("list", { name: "参与者" })).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("模式和参与者已锁定");
-    expect(screen.queryByText(/默认最多 7 个回合/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/分歧讨论（最多 2 轮）/)).not.toBeInTheDocument();
   });
 
   it("surfaces the validation hint when fewer than two participants are selected", () => {

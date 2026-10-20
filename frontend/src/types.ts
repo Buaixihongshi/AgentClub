@@ -2,6 +2,7 @@ export type MissionStatus =
   | "queued"
   | "pending"
   | "running"
+  | "awaiting_input"
   | "blocked"
   | "completed"
   | "completed_with_warnings"
@@ -22,9 +23,45 @@ export function isTerminalMissionStatus(status: string): boolean {
 
 export type RoomMode = "task" | "roundtable";
 
-export type DiscussionPhase = "opening" | "exchange" | "closing" | "ended";
+export type DiscussionPhase = "opening" | "exchange" | "closing" | "ended" | "independent" | "awaiting_synthesizer" | "synthesis" | "review" | "finalizing";
 
-export type DiscussionControlAction = "finish" | "stop";
+export type DiscussionControlAction = "finish" | "stop" | "select_synthesizer" | "retry" | "record_decision" | "restart_with_input" | "defer_input" | "save_knowledge_candidate";
+
+export interface DiscussionControlFields {
+  agent_id?: string;
+  turn_id?: string;
+  decision_id?: string;
+  option_id?: string;
+  input_ids?: string[];
+  goal?: string;
+  expected_revision?: number;
+}
+
+export interface DiscussionResult {
+  id: string;
+  kind: "opinion" | "contribution" | "draft" | "review";
+  agent_id: string;
+  phase: DiscussionPhase;
+  data: {
+    position_summary?: string;
+    claims?: Array<{ id: string; statement: string; evidence_status: string }>;
+    sections?: Array<{ id: string; content: string; source_ids: string[] }>;
+    findings?: Array<{ id: string; section_id: string; problem: string; desired_change: string; blocking: boolean }>;
+    dispositions?: Array<{ finding_id: string; action: string; reason: string }>;
+    issue_decisions?: Array<{ issue_id: string; status: string; decision: string }>;
+    no_findings?: boolean;
+  };
+}
+
+export interface DiscussionAgreement {
+  skip: boolean;
+  reason: "decisions_agree" | "conflicting_decisions" | "assumption_mismatch" | "no_shared_decision" | string;
+  shared_decision_keys: string[];
+  unshared_decision_keys?: string[];
+  conflicts?: Array<{ decision_key: string; claim_ids: string[]; recommendations: string[]; conditions: string[][] }>;
+  assumptions_equal?: boolean;
+  relevant_agent_ids?: string[];
+}
 
 export type DiscussionEndReason =
   | "budget_exhausted"
@@ -39,9 +76,12 @@ export type DiscussionEndReason =
 export interface DiscussionConfigView {
   participant_ids: string[];
   max_turns: number;
+  protocol?: "roundtable_v1" | "deliberation_v2";
+  max_exchange_rounds?: number;
 }
 
 export interface DiscussionView {
+  protocol?: "roundtable_v1" | "deliberation_v2";
   participant_ids: string[];
   phase: DiscussionPhase;
   turns_used: number;
@@ -49,9 +89,34 @@ export interface DiscussionView {
   current_speaker?: string | null;
   current_turn_id?: string | null;
   pending_control?: DiscussionControlAction | null;
-  end_reason?: DiscussionEndReason | null;
+  end_reason?: DiscussionEndReason | "completed" | "completed_with_reservations" | "input_revised" | null;
   summary_message_ids?: Array<number | string>;
   unanswered_interrupt_ids?: Array<number | string>;
+  revision?: number;
+  awaiting_reason?: "select_synthesizer" | "resolve_value_choice" | "revise_input" | null;
+  current_speakers?: string[];
+  progress?: Array<{ turn_id: string; agent_id: string; provider_id?: string | null; phase: DiscussionPhase; status: string; attempt: number; error?: string | null; failure_code?: string | null; exit_code?: number | null }>;
+  attempts_used?: number;
+  round_index?: number;
+  max_exchange_rounds?: number;
+  exchange_end_reason?: "exchange_skipped" | "no_new_information" | "exchange_budget_exhausted" | "issues_classified" | null;
+  exchange_agents?: string[];
+  agreement?: DiscussionAgreement | null;
+  synthesizer_id?: string | null;
+  draft_id?: string | null;
+  final_id?: string | null;
+  retryable?: boolean;
+  error?: string | null;
+  results?: DiscussionResult[];
+  issues?: Array<{ id: string; problem: string; impact: string; category: string; status: string;
+    technical_decision?: string; decision_status?: string; deferred?: boolean }>;
+  value_decisions?: Array<{ id: string; question: string; options: Array<{ id: string; label: string }> }>;
+  decisions?: Record<string, string>;
+  pending_inputs?: string[];
+  rules_version?: string;
+  rules_hash?: string;
+  knowledge_candidate_id?: string | null;
+  build_id?: string;
 }
 
 export type EventRole = "user" | "agent" | "assistant" | "system";
@@ -61,6 +126,7 @@ export interface Mission {
   id: string;
   title?: string;
   goal: string;
+  skill?: "discuss" | null;
   kind?: "task" | "provider_verification";
   room_mode?: RoomMode;
   discussion?: DiscussionConfigView | null;
@@ -78,6 +144,13 @@ export interface Mission {
 }
 
 export interface ThreadEventMetadata {
+  discussion_visibility?: "internal" | "final";
+  discussion_pending_decision?: boolean;
+  discussion_revision_reviewed?: boolean;
+  discussion_audit?: {
+    sources: Array<{ id: string; label: string; summary?: string }>;
+    reviews: Array<{ reviewer: string; problem: string; action?: "accepted" | "partially_accepted" | "not_accepted"; reason?: string }>;
+  };
   capability?: Capability;
   provider_id?: string;
   provider_label?: string;
@@ -236,6 +309,11 @@ export interface ToolEventRecord {
   artifact_id?: string | null;
   summary?: string;
   error?: string;
+  args?: Record<string, unknown>;
+  output?: string;
+  call_id?: string;
+  duration_ms?: number;
+  ok?: boolean;
   created_at: string;
 }
 
@@ -331,6 +409,7 @@ export interface MissionDetail {
 
 export interface TurnView {
   id: string;
+  missionId?: string;
   turnIndex: number;
   role: EventRole;
   eventType: string;
@@ -466,6 +545,9 @@ export interface HealthView {
   database: "ready";
   config: "ready";
   fake_provider: "ready";
+  discussion_protocols?: string[];
+  project_skills?: string[];
+  build_id?: string;
 }
 
 export type OnboardingState =
@@ -518,4 +600,192 @@ export interface OnboardingView {
 export interface OnboardingFirstChatResponse {
   onboarding: OnboardingView;
   conversation: ConversationDetail;
+}
+
+/** Turn-level observability (GET /api/observability). */
+export type CheckValue = 1 | 0 | null;
+
+export interface ObservabilityCheck {
+  name: string;
+  source: "code" | "judge";
+  value: CheckValue;
+  note: string;
+}
+
+export interface ObservabilityStep {
+  id: string;
+  kind: "tool" | "native" | "a2a" | "artifact";
+  tool: string;
+  ts: string;
+  call_id?: string;
+  ok: boolean;
+  error: string;
+  args: Record<string, unknown> | null;
+  output: string;
+  summary: string;
+  duration_ms: number | null;
+  phase: string | null;
+  agent_id: string;
+  provider_id: string;
+  source: string;
+}
+
+export interface ObservabilityCoverage {
+  has_reply: boolean;
+  native_visible: boolean;
+  tool_calls: number;
+  tool_outputs: number;
+  cost_known: boolean;
+}
+
+export interface ObservabilityTurn {
+  turn_id: string;
+  mission_id: string;
+  mission_title: string;
+  index: number;
+  agent_id: string;
+  agent_name: string;
+  provider_id: string;
+  model?: string;
+  session_id?: string;
+  status: string;
+  purpose: string;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_ms: number;
+  reply: string;
+  error: string;
+  steps: ObservabilityStep[];
+  usage: UsageRecord | null;
+  tokens: number;
+  cost_usd: number | null;
+  cost_source: "provider" | "estimate" | null;
+  checks: ObservabilityCheck[];
+  coverage: ObservabilityCoverage;
+}
+
+export interface ObservabilityCheckRow {
+  name: string;
+  what: string;
+  passed: number;
+  failed: number;
+  na: number;
+  pass_rate: number | null;
+  newest_failure: { turn_id: string; agent_id: string; note: string; started_at: string | null } | null;
+}
+
+export interface ObservabilityPayload {
+  generated_at: string;
+  scope: {
+    mission_id: string | null;
+    mission_title: string | null;
+    missions: number;
+    turns: number;
+    shown: number;
+  };
+  summary: {
+    checks: { checks: ObservabilityCheckRow[]; turns: number; turns_passed: number };
+    coverage: {
+      turns: number;
+      turns_with_reply: number;
+      turns_native_visible: number;
+      native_visible_rate: number | null;
+      tool_calls: number;
+      tool_outputs: number;
+      tool_output_rate: number | null;
+      turns_cost_known: number;
+      cost_known_rate: number | null;
+    };
+    spend: {
+      total_usd: number;
+      reported_usd: number;
+      estimated_usd: number;
+      unknown_turns: number;
+      by_provider: { provider_id: string; usd: number; turns: number; unknown: number }[];
+    };
+  };
+  turns: ObservabilityTurn[];
+}
+
+/** Global observability (settings → 观测). */
+export interface ObservabilityOverviewCheck {
+  name: string;
+  what: string;
+  pass: number;
+  fail: number;
+  na: number;
+  rate: number | null;
+}
+
+export interface ObservabilityOverviewTurn {
+  turn_id: string;
+  mission_id: string;
+  mission: string;
+  agent: string;
+  agent_name: string;
+  provider: string;
+  model: string;
+  status: string;
+  duration_ms: number;
+  tokens: number;
+  cost: number | null;
+  checks: ObservabilityCheck[];
+  at: string | null;
+}
+
+export interface ObservabilityFailure {
+  check: string;
+  note: string;
+  agent: string;
+  turn_id: string;
+  mission: string;
+  at: string | null;
+}
+
+export interface ObservabilityOverviewPayload {
+  generated_at: string;
+  window: "today" | "7d" | "30d" | "all";
+  totals: {
+    conversations: number;
+    missions: number;
+    turns: number;
+    tool_calls: number;
+    native_calls: number;
+    tokens: number;
+    cost: number;
+  };
+  checks: ObservabilityOverviewCheck[];
+  turns_passed: number;
+  coverage: {
+    turns: number;
+    native_calls: number;
+    native_rate: number | null;
+    tool_calls: number;
+    output_rate: number | null;
+    cost_known_rate: number | null;
+  };
+  spend: {
+    total: number;
+    reported: number;
+    estimated: number;
+    unknown_turns: number;
+    by_provider: { provider: string; usd: number; turns: number; unknown: number; tokens: number }[];
+  };
+  by_agent: {
+    agent: string;
+    turns: number;
+    tokens: number;
+    cost: number;
+    tools: number;
+    native: number;
+  }[];
+  by_provider: { provider: string; usd: number; turns: number; unknown: number; tokens: number }[];
+  daily: { date: string; turns: number; cost: number }[];
+  recent_turns: ObservabilityOverviewTurn[];
+  failures: ObservabilityFailure[];
+}
+
+export interface ObservabilityTurnDetailPayload {
+  mission: { id: string; title: string };
+  turn: ObservabilityTurn;
 }

@@ -44,6 +44,7 @@ from backend.app.adapters.antigravity_config import (
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
 from backend.app.adapters.cli_diagnostics import write_cli_diagnostic
 from backend.app.adapters.stream_events import StreamEventType, UsageRecord
+from backend.app.orchestration.events import sanitize_tool_args, sanitize_tool_output
 from backend.app.adapters.stream_parsers import StreamLineParser
 from backend.app.adapters.subprocess_cli import (
     _IS_WINDOWS,
@@ -299,6 +300,8 @@ class MCPSubprocessAdapter(CLIAdapter):
             last_usage: list[Optional[UsageRecord]] = [None]
             captured_session_id: list[Optional[str]] = [None]
             stream_ended_with_error: list[bool] = [False]
+            session_recorded = [False]
+            activity_started: dict[str, float] = {}
             stream_parser = StreamLineParser(provider_id)
 
             def _drain_stdout() -> None:
@@ -319,13 +322,36 @@ class MCPSubprocessAdapter(CLIAdapter):
                             self.live_progress.append_text(mission_id, turn_id, ev.text)
                         if ev.type is StreamEventType.SESSION_STARTED and ev.session_id:
                             captured_session_id[0] = ev.session_id
-                        if ev.activity_id and ev.tool_name and ev.tool_name != "call_mcp_tool":
-                            repository.add_event(mission_id, "provider.activity", {
+                            if not session_recorded[0]:
+                                session_recorded[0] = True
+                                repository.add_event(mission_id, "provider.session", {
+                                    "turn_id": turn_id, "agent_id": agent_id,
+                                    "provider_id": provider_id, "session_id": ev.session_id,
+                                    "model": ev.model,
+                                })
+                        if ev.activity_id and ev.tool_name and not _is_mcp_tool(ev.tool_name):
+                            payload = {
                                 "turn_id": turn_id, "agent_id": agent_id,
                                 "provider_id": provider_id, "activity_id": ev.activity_id,
                                 "tool_name": ev.tool_name, "phase": ev.tool_phase,
                                 "summary": ev.tool_summary,
-                            })
+                            }
+                            args = sanitize_tool_args(ev.tool_args)
+                            if args:
+                                payload["args"] = args
+                            if ev.tool_output:
+                                payload["output"] = sanitize_tool_output(ev.tool_output)
+                            if ev.tool_error:
+                                payload["error"] = sanitize_tool_output(ev.tool_error)[:500]
+                            if ev.tool_ok is not None:
+                                payload["ok"] = ev.tool_ok
+                            started_at = activity_started.get(ev.activity_id)
+                            if ev.tool_phase == "started":
+                                activity_started[ev.activity_id] = time.monotonic()
+                            elif started_at is not None:
+                                payload["duration_ms"] = int((time.monotonic() - started_at) * 1000)
+                                activity_started.pop(ev.activity_id, None)
+                            repository.add_event(mission_id, "provider.activity", payload)
                         if ev.type is StreamEventType.ERROR:
                             stream_ended_with_error[0] = True
                         if ev.type is StreamEventType.FINISHED:
@@ -414,7 +440,6 @@ class MCPSubprocessAdapter(CLIAdapter):
                             "provider_id": provider_id,
                             "code": "timeout_after_publish", "summary": warning,
                         })
-                        _emit_turn_usage(repository, mission_id, agent_id, provider_id, turn_id, last_usage[0])
                         return TurnOutcome(
                             status=TurnStatus.COMPLETED, summary="via MCP; " + warning,
                             session_id=captured_session_id[0],
@@ -456,7 +481,6 @@ class MCPSubprocessAdapter(CLIAdapter):
                     agent_id,
                     provider_id,
                 ):
-                    _emit_turn_usage(repository, mission_id, agent_id, provider_id, turn_id, last_usage[0])
                     return TurnOutcome(
                         status=TurnStatus.COMPLETED,
                         summary="via MCP",
@@ -481,6 +505,10 @@ class MCPSubprocessAdapter(CLIAdapter):
                     session_id=captured_session_id[0],
                 )
             finally:
+                # A charged model turn can fail its MCP publish, exit nonzero,
+                # or time out after usage was emitted. Preserve that accounting
+                # exactly once instead of only charging successful turns.
+                _emit_turn_usage(repository, mission_id, agent_id, provider_id, turn_id, last_usage[0])
                 write_cli_diagnostic(
                     self.db_path.parent / "cli-diagnostics",
                     mission_id=mission_id, turn_id=turn_id, provider_id=provider_id,
@@ -930,6 +958,11 @@ def _wait_for_process_with_activity(
             continue
 
 
+def _is_mcp_tool(name: str) -> bool:
+    """True for the agent's own MCP tools: they already have a `tool.call` event."""
+    return name in {"call_mcp_tool", "mcp_tool_call"} or name.startswith(("mcp__", "mcp:"))
+
+
 def _max_event_id(repository: Repository, mission_id: str) -> int:
     events = repository.list_events_after(mission_id, 0)
     if not events:
@@ -947,12 +980,19 @@ def _emit_turn_usage(
 ) -> None:
     if usage is None:
         return
-    repository.add_event(mission_id, "turn.usage", {
+    payload = {
         "agent_id": agent_id,
         "provider_id": provider_id,
         "turn_id": turn_id,
         "usage": dataclasses.asdict(usage),
-    })
+    }
+    if usage.model:
+        payload["model"] = usage.model
+    if usage.stop_reason:
+        payload["stop_reason"] = usage.stop_reason
+    if usage.duration_ms:
+        payload["duration_ms"] = usage.duration_ms
+    repository.add_event(mission_id, "turn.usage", payload)
 
 
 def _mcp_published_message(

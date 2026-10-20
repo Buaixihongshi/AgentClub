@@ -98,7 +98,6 @@ describe("AgentClub app", () => {
     await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
     expect(screen.queryByRole("region", { name: "Agent 参与状态" })).not.toBeInTheDocument();
     expect(await screen.findByText("创建任务后，Agent 轮次会显示在这里。")).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: "任务侧栏" })).toBeInTheDocument();
   });
 
   it("keeps historical thoughts and tools after a follow-up without duplicating the live mission", async () => {

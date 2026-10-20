@@ -9,6 +9,7 @@ from backend.app.orchestration.live_progress import get_live_progress_registry
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
 from backend.app.orchestration.roundtable import discussion_view
+from backend.app.api.discussion_projection import annotate_discussion_messages
 
 _CAPABILITY_FALLBACK = {
     "planning": "planning",
@@ -324,6 +325,10 @@ def _derive_tool_events(db_events) -> list[dict[str, object]]:
             record["summary"] = payload["summary"]
         if payload.get("error"):
             record["error"] = payload["error"]
+        # Observability detail: structured args/output and the call's identity.
+        for key in ("args", "output", "call_id", "duration_ms", "ok"):
+            if payload.get(key) is not None:
+                record[key] = payload[key]
         if event.event_type == "provider.activity":
             record["activity_id"] = payload.get("activity_id")
             record["phase"] = payload.get("phase")
@@ -597,6 +602,8 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
     serialized_events = []
 
     for index, event in enumerate(db_events):
+        if event.event_type == 'discussion.v2.state':
+            continue  # Internal leases contain capability tokens, never expose them.
         if event.event_type in ("message", "interrupt"):
             message = messages_by_event.get(event.id)
             if message is not None:
@@ -611,6 +618,9 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
     serialized_events.sort(key=lambda item: item["_sort_key"])
     events = [_strip_sort_key(event) for event in serialized_events]
     message_events = [_message_event(entry.message) for entry in entries]
+    audit_cache = {}
+    annotate_discussion_messages(message_events, [mission], db_events, repo, audit_cache)
+    annotate_discussion_messages(events, [mission], db_events, repo, audit_cache)
 
     result = {
         "mission": _mission_payload(mission),
@@ -626,7 +636,11 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
         "usage_summary": _derive_usage_summary(db_events),
         "thoughts": _derive_thoughts(db_events),
     }
+    from backend.app.orchestration.deliberation import Deliberation, is_v2
+    if is_v2(mission):
+        result['discussion'] = Deliberation(repo).user_view(mission)
+        result['thoughts'] = []
     live_partial = get_live_progress_registry().snapshot_for_mission(mission_id)
-    if live_partial:
+    if live_partial and not is_v2(mission):
         result["live_partial"] = live_partial
     return result

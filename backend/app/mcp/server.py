@@ -94,6 +94,7 @@ def _load_context() -> _Context:
         valid_agent_ids=valid_agent_ids,
         max_a2a_invocations=max_a2a_invocations,
         receipt_id=receipt_id,
+        lease_token=os.environ.get('YIREN_MCP_LEASE_TOKEN'),
     )
     return _Context(
         mission_id=mission_id,
@@ -240,9 +241,9 @@ _TOOL_DESCRIPTORS = [
                 },
                 "mode": {
                     "type": "string",
-                    "enum": ["fire_and_forget"],
+                    "enum": ["fire_and_forget", "wait_reply"],
                     "default": "fire_and_forget",
-                    "description": "G3 只支持 fire_and_forget。",
+                    "description": "fire_and_forget 安排接力；wait_reply 安排受邀者回复后恢复请求者。工具调用本身不返回对方的答案。",
                 },
             },
             "required": ["target_agent_id", "purpose"],
@@ -311,6 +312,7 @@ def _handle_read_context(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, 
         agent_id=ctx.agent_id,
         turn_id=ctx.turn_id,
         provider_id=ctx.provider_id,
+        **{key: arguments[key] for key in ('material_offset', 'history_offset', 'issue_offset') if key in arguments},
     )
     return {
         "content": [
@@ -363,6 +365,7 @@ def _handle_read_artifact(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str,
         provider_id=ctx.provider_id,
         with_line_numbers=with_line_numbers,
         source_mission_id=source_mission_id,
+        **{key: arguments[key] for key in ('offset', 'max_chars') if key in arguments},
     )
     return {
         "content": [
@@ -451,7 +454,21 @@ def _json_text(obj: Any) -> str:
     return _json.dumps(obj, ensure_ascii=False, default=str)
 
 
+def _handle_submit_discussion_result(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    result = ctx.tools.submit_discussion_result(ctx.mission_id, ctx.agent_id, ctx.turn_id,
+                                              ctx.provider_id, arguments.get('result'))
+    return {'content': [{'type': 'text', 'text': _json_text(result)}], 'isError': False}
+
+
+def _handle_read_discussion_result(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    result = ctx.tools.read_discussion_result(ctx.mission_id, ctx.agent_id, ctx.turn_id, ctx.provider_id,
+        arguments.get('source_id'), arguments.get('offset', 0), arguments.get('max_chars', 8000))
+    return {'content': [{'type': 'text', 'text': _json_text(result)}], 'isError': False}
+
+
 _TOOL_HANDLERS: Dict[str, Callable[[_Context, Dict[str, Any]], Dict[str, Any]]] = {
+    "read_discussion_result": _handle_read_discussion_result,
+    "submit_discussion_result": _handle_submit_discussion_result,
     "publish_message": _handle_publish_message,
     "read_context": _handle_read_context,
     "write_artifact": _handle_write_artifact,
@@ -486,6 +503,29 @@ def _handle_tools_list(ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any]
     from copy import deepcopy
     descriptors = deepcopy(_TOOL_DESCRIPTORS)
     mission = ctx.tools.repository.get_mission(ctx.mission_id)
+    from backend.app.orchestration.deliberation import is_v2
+    if is_v2(mission):
+        descriptors = [d for d in descriptors if d['name'] in {'read_context', 'read_artifact'}]
+        for descriptor in descriptors:
+            properties = descriptor['inputSchema']['properties']
+            names = ('material_offset', 'history_offset', 'issue_offset') if descriptor['name'] == 'read_context' else ('offset', 'max_chars')
+            for key in names:
+                properties[key] = {'type': 'integer', 'minimum': 1 if key == 'max_chars' else 0}
+                if key == 'max_chars':
+                    properties[key]['maximum'] = 8000
+        descriptors.append({'name': 'read_discussion_result',
+            'description': '按 ID 分段读取本阶段可见的原始观点、历史消息、分歧或综合稿；truncated 条目必须完整读取。',
+            'inputSchema': {'type': 'object', 'properties': {
+                'source_id': {'type': 'string'}, 'offset': {'type': 'integer', 'minimum': 0},
+                'max_chars': {'type': 'integer', 'minimum': 1, 'maximum': 8000}},
+                'required': ['source_id'], 'additionalProperties': False}})
+        descriptors.append({
+            'name': 'submit_discussion_result',
+            'description': '提交当前阶段的结构化结果。schema 在本轮 prompt 中；成功后结束本轮。不能用普通聊天代替。',
+            'inputSchema': {'type': 'object', 'properties': {'result': {'type': 'object'}},
+                            'required': ['result'], 'additionalProperties': False},
+        })
+        return {'tools': descriptors}
     if mission and mission.room_mode == "roundtable" and mission.discussion:
         for descriptor in descriptors:
             properties = descriptor["inputSchema"]["properties"]
@@ -501,6 +541,9 @@ def _handle_tools_call(ctx: _Context, params: Dict[str, Any]) -> Dict[str, Any]:
     arguments = params.get("arguments") or {}
     if not isinstance(name, str) or not isinstance(arguments, dict):
         raise _RpcError(JSONRPC_INVALID_PARAMS, "tools/call requires 'name' (str) and 'arguments' (object)")
+    from backend.app.orchestration.deliberation import is_v2
+    if is_v2(ctx.tools.repository.get_mission(ctx.mission_id)) and name not in {'read_context', 'read_artifact', 'read_discussion_result', 'submit_discussion_result'}:
+        return {'content': [{'type': 'text', 'text': 'Tool is unavailable in V2 discussion'}], 'isError': True}
     handler = _TOOL_HANDLERS.get(name)
     if handler is None:
         raise _RpcError(JSONRPC_METHOD_NOT_FOUND, "Unknown tool: {name}".format(name=name))

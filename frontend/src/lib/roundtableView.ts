@@ -44,6 +44,11 @@ export function defaultDiscussionTurnLimit(participantCount: number): number {
 }
 
 const PHASE_LABEL: Record<DiscussionPhase, string> = {
+  independent: "独立思考",
+  awaiting_synthesizer: "选择综合者",
+  synthesis: "扇入综合",
+  review: "原参与者复核",
+  finalizing: "最终收束",
   opening: "初次交流",
   exchange: "继续讨论",
   closing: "正在收尾",
@@ -68,6 +73,9 @@ const END_REASON_LABEL: Record<DiscussionEndReason, string> = {
 
 export function formatDiscussionEndReason(reason?: string | null): string {
   if (!reason) return "";
+  if (reason === "completed") return "讨论已完成";
+  if (reason === "completed_with_reservations") return "已收束，保留待验证或分歧";
+  if (reason === "input_revised") return "已用新条件创建续议";
   return END_REASON_LABEL[reason as DiscussionEndReason] ?? reason;
 }
 

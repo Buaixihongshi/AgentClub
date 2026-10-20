@@ -82,6 +82,20 @@ Conversation data, settings, and artifacts are stored locally, while SSE updates
 
 AgentClub is designed around a process—plan, execute, review, and close—not just a generated response. Distinct personalities, continuous conversations, Agent handoffs, and artifact attribution provide a foundation for reusable team templates, task workflows, and provider-routing strategies.
 
+### 6. Evaluable: measure when multi-agent actually helps
+
+Multi-agent collaboration should not be justified by vibes alone. The repository ships an A/B/C/D evaluation harness that runs Single Agent, Self Reflection, a fixed multi-agent workflow, and dynamic A2A on the same tasks, lead agent, and rubric. B and C share the same 4-turn checking skeleton, and personas are neutral by default; the report covers quality, cost, latency, redundancy, and regressions.
+
+```bash
+# Harness validation, no model calls
+.venv/bin/python scripts/run_eval.py --mode fixture
+
+# Real comparison: pin one provider, 12 tasks, 3 repeats
+.venv/bin/python scripts/run_eval.py --mode real --provider codex --repeats 3
+```
+
+The report flags category/task-level quality regressions and cases that spend 2×+ tokens without a quality gain. See [the evaluation guide](docs/EVALUATION.md) for task design, metric definitions, validity boundaries, and how to extend the suite.
+
 ## Product Demo
 
 ### Zero-account startup and Codex-first onboarding

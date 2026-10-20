@@ -1,5 +1,9 @@
+import re
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 from backend.app.storage.repository import Repository
 
@@ -112,7 +116,15 @@ def record_tool_call(
     tool_name: str,
     tool_input: Optional[dict] = None,
     provider_id: Optional[str] = None,
-) -> None:
+) -> str:
+    """Record a tool call and return its id, used to pair the later result."""
+    call_id = "tc_" + uuid4().hex[:12]
+    key = _pending_key(mission_id, turn_id, agent_id, tool_name)
+    with _PENDING_LOCK:
+        queue = _PENDING_CALLS.setdefault(key, [])
+        queue.append((call_id, time.monotonic()))
+        if len(queue) > _PENDING_LIMIT:
+            queue.pop(0)
     sanitized_input = _sanitize_tool_input(tool_name, tool_input)
     repo.add_event(
         mission_id,
@@ -123,9 +135,82 @@ def record_tool_call(
             "agent_id": agent_id,
             "tool_name": tool_name,
             "tool_input": sanitized_input,
+            "call_id": call_id,
             "provider_id": provider_id,
         },
     )
+    return call_id
+
+
+TOOL_OUTPUT_MAX_CHARS = 2000
+
+# A tool call and its result are recorded by two adjacent function calls, so
+# pairing them here gives every `tool.result` a stable `call_id` and a
+# duration without changing any tool implementation.
+_PENDING_LOCK = threading.Lock()
+_PENDING_CALLS: dict[tuple[str, str, str, str], list[tuple[str, float]]] = {}
+_PENDING_LIMIT = 200
+
+
+def _pending_key(mission_id: str, turn_id: str, agent_id: str, tool_name: str):
+    return (mission_id, turn_id, agent_id, tool_name)
+
+
+def _pop_pending_call(key, call_id: Optional[str]) -> tuple[Optional[str], Optional[float]]:
+    with _PENDING_LOCK:
+        queue = _PENDING_CALLS.get(key) or []
+        if call_id:
+            for index, (pending_id, started) in enumerate(queue):
+                if pending_id == call_id:
+                    queue.pop(index)
+                    return pending_id, started
+        if queue:
+            return queue.pop(0)
+    return None, None
+
+# Values that look like credentials never reach the trace. `summary` is written
+# by our own code, but `output` is tool-produced text and can echo anything.
+_SECRET_VALUE = re.compile(
+    r"(?i)(?:Bearer\s+[A-Za-z0-9._~+/=-]{8,}"
+    r"|\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}"
+    r"|\bgh[pousr]_[A-Za-z0-9]{16,}"
+    r"|\bAKIA[0-9A-Z]{16}\b"
+    r"|\b(token|api[_-]?key|secret|password|passwd)\s*=\s*[^\s&\"']+)"
+)
+SECRET_KEY = re.compile(r"(authorization|apikey|token|secret|password|passwd|cookie|"
+                        r"credential|privatekey|accesskey|x-api-key|bearer)", re.IGNORECASE)
+ARGS_MAX_CHARS = 800
+
+
+def sanitize_tool_output(output: str) -> str:
+    """Mask key-shaped strings, then trim. The trace is for reading, not dumping."""
+    text = _SECRET_VALUE.sub(lambda m: m.group(1) + "=***" if m.group(1) else "***", output or "")
+    if len(text) <= TOOL_OUTPUT_MAX_CHARS:
+        return text
+    return text[: TOOL_OUTPUT_MAX_CHARS - 1] + "…"
+
+
+def sanitize_tool_args(args: Optional[dict]) -> Optional[dict]:
+    """A bounded, credential-free copy of a tool's arguments.
+
+    Native CLIs echo whole command lines and absolute paths; keeping them is
+    what makes a step readable, so mask the values that look secret instead of
+    dropping the structure.
+    """
+    if not isinstance(args, dict):
+        return None
+    out: dict = {}
+    for key, value in list(args.items())[:20]:
+        name = re.sub(r"[^A-Za-z]", "", str(key))
+        if SECRET_KEY.search(name) and value not in (None, ""):
+            out[key] = "***"
+        elif isinstance(value, str):
+            out[key] = sanitize_tool_output(value)[:ARGS_MAX_CHARS]
+        elif isinstance(value, (int, float, bool)) or value is None:
+            out[key] = value
+        else:
+            out[key] = sanitize_tool_output(json.dumps(value, ensure_ascii=False, default=str))[:ARGS_MAX_CHARS]
+    return out
 
 
 def record_tool_result(
@@ -137,20 +222,28 @@ def record_tool_result(
     summary: str = "",
     artifact_id: Optional[str] = None,
     provider_id: Optional[str] = None,
+    output: Optional[str] = None,
+    call_id: Optional[str] = None,
 ) -> None:
-    repo.add_event(
-        mission_id,
-        "tool.result",
-        {
-            "mission_id": mission_id,
-            "turn_id": turn_id,
-            "agent_id": agent_id,
-            "tool_name": tool_name,
-            "summary": summary,
-            "artifact_id": artifact_id,
-            "provider_id": provider_id,
-        },
-    )
+    payload = {
+        "mission_id": mission_id,
+        "turn_id": turn_id,
+        "agent_id": agent_id,
+        "tool_name": tool_name,
+        "summary": summary,
+        "artifact_id": artifact_id,
+        "provider_id": provider_id,
+        "ok": True,
+    }
+    resolved, started = _pop_pending_call(
+        _pending_key(mission_id, turn_id, agent_id, tool_name), call_id)
+    if resolved:
+        payload["call_id"] = resolved
+    if started is not None:
+        payload["duration_ms"] = int((time.monotonic() - started) * 1000)
+    if output:
+        payload["output"] = sanitize_tool_output(output)
+    repo.add_event(mission_id, "tool.result", payload)
 
 
 def record_tool_error(
@@ -161,19 +254,24 @@ def record_tool_error(
     tool_name: str,
     error: str,
     provider_id: Optional[str] = None,
+    call_id: Optional[str] = None,
 ) -> None:
-    repo.add_event(
-        mission_id,
-        "tool.error",
-        {
-            "mission_id": mission_id,
-            "turn_id": turn_id,
-            "agent_id": agent_id,
-            "tool_name": tool_name,
-            "error": error,
-            "provider_id": provider_id,
-        },
-    )
+    payload = {
+        "mission_id": mission_id,
+        "turn_id": turn_id,
+        "agent_id": agent_id,
+        "tool_name": tool_name,
+        "error": error,
+        "provider_id": provider_id,
+        "ok": False,
+    }
+    resolved, started = _pop_pending_call(
+        _pending_key(mission_id, turn_id, agent_id, tool_name), call_id)
+    if resolved:
+        payload["call_id"] = resolved
+    if started is not None:
+        payload["duration_ms"] = int((time.monotonic() - started) * 1000)
+    repo.add_event(mission_id, "tool.error", payload)
 
 
 def _sanitize_tool_input(tool_name: str, tool_input: Optional[dict]) -> Optional[dict]:

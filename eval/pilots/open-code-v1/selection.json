@@ -1,0 +1,43 @@
+{
+  "id": "open-code-v1",
+  "status": "frozen_selection_before_any_model_coding_run",
+  "source": {
+    "dataset": "livecodebench/code_generation_lite",
+    "version_tag": "v6",
+    "revision": "0fe84c3912ea0c4d4a78037083943e8f0c4dd505",
+    "file": "test6.jsonl",
+    "bytes": 134303240,
+    "sha256": "bb4c364f71921c4495a6ad15abe1a927350b720009f4933e2e71f8af0f6fd1f5",
+    "canonical_url": "https://huggingface.co/datasets/livecodebench/code_generation_lite/resolve/0fe84c3912ea0c4d4a78037083943e8f0c4dd505/test6.jsonl",
+    "hash_source": "https://huggingface.co/datasets/livecodebench/code_generation_lite/blob/main/test6.jsonl",
+    "download_transport": "hf-mirror.com; accepted only after matching the SHA256 published on the official Hugging Face file page"
+  },
+  "selection_rule": "Manually stratified by upstream difficulty and algorithm structure before model coding results; stdin tasks with unique integer/string outputs; six distinct contests; not selected using model disagreement or collaboration wins",
+  "tasks": [
+    {"platform": "atcoder", "question_id": "abc387_c", "split": "development", "family": "digit_counting", "focus": "上下界包含关系、首位严格大于其余位"},
+    {"platform": "atcoder", "question_id": "abc391_e", "split": "development", "family": "recursive_majority", "focus": "分层状态、最小修改代价的组合"},
+    {"platform": "atcoder", "question_id": "abc400_b", "split": "locked", "family": "simple_negative_control", "focus": "阈值恰好相等、幂级数与早停；不预设协作受益"},
+    {"platform": "atcoder", "question_id": "abc394_d", "split": "locked", "family": "typed_bracket_validation", "focus": "括号类型、嵌套与错误前缀"},
+    {"platform": "atcoder", "question_id": "abc396_d", "split": "locked", "family": "simple_path_xor", "focus": "简单路径约束、XOR 非单调，避免错误贪心"},
+    {"platform": "atcoder", "question_id": "abc395_e", "split": "locked", "family": "layered_shortest_path", "focus": "全局翻转状态、两种代价与大整数"}
+  ],
+  "scoring": {
+    "language": "Python 3.12",
+    "mode": "stdin_stdout",
+    "comparison": "exact whitespace-separated output tokens; case-sensitive; no floating-point or multiple-valid-output tasks selected",
+    "public_feedback": "original public examples only, equally available to every condition",
+    "hidden_feedback": "none until final submission",
+    "final_submission": "one complete Python source module; no best-of-message selection",
+    "private_tests": "all upstream private tests for each selected task; no subsampling",
+    "timeout_seconds_per_case": 4,
+    "execution": "macOS sandbox-exec, network denied, home/workspace reads denied, sanitized environment; fail closed if unavailable"
+  },
+  "next_capability_stage": {
+    "conditions": ["A-Flash", "A-GPT", "B-Flash", "B-GPT", "C-mixed", "D-on-demand"],
+    "locked_tasks": 4,
+    "repeats": 1,
+    "trials": 24,
+    "run_now": false,
+    "claim_scope": "Exploratory CLI-system coding comparison; no significance or contamination-free claim; no isolated heterogeneous-model causal claim"
+  }
+}

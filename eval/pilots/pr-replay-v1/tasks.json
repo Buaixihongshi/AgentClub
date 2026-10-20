@@ -1,0 +1,41 @@
+{
+  "id": "agentclub-pr-replay-v1",
+  "status": "retrospective_development_only",
+  "repository": "Buaixihongshi/AgentClub",
+  "tasks": [
+    {
+      "id": "repo-001",
+      "source_pr": 7,
+      "source_url": "https://github.com/Buaixihongshi/AgentClub/pull/7",
+      "fix_commit": "455e23756ca8c038411e11cd963468eac29c949c",
+      "base_commit": "5449cb3be786c4c485e89812270e0fa13ed57b0e",
+      "family": "conversation-interruption-history",
+      "split": "development",
+      "holdout_eligible": false,
+      "problem_statement": "同一会话继续讨论时，用户先前插入的补充要求可能从上下文中消失，后续角色会忽略它。请修复上下文读取和提示构建：正式消息与已提交插话按事件发生顺序呈现；旧数据只有 interrupt 事件、没有对应消息时也能读取；重复读取不制造重复消息；read_context 和 build_conversation_context 对插话的可见性一致。保持普通消息可读、不同会话隔离，不把系统消息、工具记录或思考日志当作正式对话。此次范围是后端上下文行为，不要求修改界面。",
+      "reference_paths": ["backend/app/"],
+      "check_file": "history_contract.py",
+      "fail_to_pass": ["test_prior_interruption_survives_context_read", "test_prompt_contains_prior_interruption"],
+      "pass_to_pass": ["test_regular_messages_remain_readable", "test_other_conversation_does_not_leak"],
+      "qualification_scope": "One independently testable backend behavior from a broader PR; not a replay of the full PR"
+    },
+    {
+      "id": "repo-002",
+      "source_pr": 13,
+      "source_url": "https://github.com/Buaixihongshi/AgentClub/pull/13",
+      "fix_commit": "9efec3e5076aca404f703c6dc20a1245bc46f843",
+      "base_commit": "69c7db4f1a5c5b35a9170e29b7a0401203ae0c90",
+      "family": "conversation-artifact-handoff",
+      "split": "development",
+      "holdout_eligible": false,
+      "problem_statement": "用户在同一会话中让一个角色产出文件，再开启下一项任务交给另一个角色继续处理；文件实际存在，但当前 read_artifact 只能读取当前任务，交接失败。请让文件读取工具可通过可选参数 source_mission_id 指定来源任务；Python 工具与 MCP 公布的参数、调用行为须一致。只有当前任务和来源任务属于同一个非空 conversation_id 时才能跨任务读取；不同会话或没有会话关联时应按工具错误拒绝。省略 source_mission_id 时保持当前任务读取行为，路径越界仍必须拒绝。此次范围是后端工具契约，不要求修改界面或提高 CLI 超时时间。",
+      "reference_paths": ["backend/app/"],
+      "check_file": "artifact_contract.py",
+      "fail_to_pass": ["test_same_conversation_source_can_be_read", "test_mcp_schema_and_dispatch_support_source", "test_other_conversation_source_is_rejected", "test_missing_conversation_source_is_rejected"],
+      "pass_to_pass": ["test_default_current_mission_read", "test_local_path_escape_is_rejected"],
+      "qualification_scope": "One independently testable backend behavior from a broader PR; not a replay of the full PR"
+    }
+  ],
+  "split_policy": "All currently selected historical fixes have been inspected and are development tasks. No locked tasks or model capability scores are claimed. Related PRs/subtasks remain grouped by original issue/fix family.",
+  "model_input_policy": "Only opaque task ID, rewritten behavioral problem statement, base snapshot and common tools are provided. PR body, PR URL/number, fix commit, reference patch, grading tests and later git history are evaluator-only."
+}

@@ -33,16 +33,20 @@ export function TurnTimeline({
   conversationId,
   emptyContent,
   afterContent,
+  collapsedAgentMissionId,
 }: {
   turns: TurnView[];
   conversationId?: string;
   emptyContent?: ReactNode;
   afterContent?: ReactNode;
+  collapsedAgentMissionId?: string;
 }) {
   const containerRef = useRef<HTMLElement>(null);
   const lastConvRef = useRef<string | undefined>(undefined);
   const lastTurnsLenRef = useRef<number>(0);
   const stickToBottomRef = useRef<boolean>(true);
+  const collapsed = collapsedAgentMissionId ? turns.filter((t) => t.missionId === collapsedAgentMissionId && (t.role === 'agent' || t.role === 'assistant')) : [];
+  const collapsedIds = new Set(collapsed.map((turn) => turn.id));
 
   useLayoutEffect(() => {
     const el = containerRef.current;
@@ -90,12 +94,16 @@ export function TurnTimeline({
       className="turn-timeline"
       aria-label="任务轮次"
     >
-      {turns.map((turn) => (
+      {turns.filter((turn) => !collapsedIds.has(turn.id)).map((turn) => (
         <Fragment key={turn.id}>
           {turn.a2aInvocation ? <A2AArrow invocation={turn.a2aInvocation} /> : null}
           {turn.isStatusEvent ? <StatusBadge turn={turn} /> : <ChatBubble turn={turn} />}
         </Fragment>
       ))}
+      {collapsed.length > 0 && <details className="deliberation-original-messages">
+        <summary>查看本场原始发言（{collapsed.length} 条）</summary>
+        {collapsed.map((turn) => <ChatBubble key={turn.id} turn={turn} />)}
+      </details>}
       {afterContent}
     </section>
   );

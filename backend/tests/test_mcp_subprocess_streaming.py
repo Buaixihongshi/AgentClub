@@ -57,7 +57,11 @@ def test_native_activity_is_persisted_and_visible_before_cli_exits(repository, t
     assert repository.list_messages(seeded_mission.id) == []
     persisted = build_mission_detail(repository, temp_settings, seeded_mission.id)["tool_events"]
     assert [item["phase"] for item in persisted] == ["started", "completed"]
-    assert "hidden output" not in json.dumps(persisted)
+    # The new contract records the structured detail the CLI reported; the
+    # summary stays human-readable and the args/output are masked at write time.
+    assert persisted[0]["args"] == {"AbsolutePath": "/private/project/example.ts"}
+    assert persisted[0]["output"] == "hidden output"
+    assert persisted[1]["duration_ms"] >= 0
 
 
 def _make_fake_gemini_script(tmp: Path, sleep_s: float = 0.05) -> Path:

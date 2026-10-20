@@ -54,19 +54,12 @@ describe("DiscussionStatus", () => {
     expect(screen.getByText("正在收尾")).toBeInTheDocument();
   });
 
-  it("requests a finish with the chosen summary participant", async () => {
+  it("lets the host pick the summary participant", async () => {
     const user = userEvent.setup();
     const { props } = renderStatus();
-    await user.selectOptions(screen.getByLabelText("收尾人（可选）"), "baobao");
+    expect(screen.queryByLabelText("收尾人（可选）")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "本轮后收尾" }));
-    expect(props.onRequestFinish).toHaveBeenCalledWith("baobao");
-  });
-
-  it("lets the host pick the summary participant when none is chosen", async () => {
-    const user = userEvent.setup();
-    const { props } = renderStatus();
-    await user.click(screen.getByRole("button", { name: "本轮后收尾" }));
-    expect(props.onRequestFinish).toHaveBeenCalledWith(undefined);
+    expect(props.onRequestFinish).toHaveBeenCalledTimes(1);
   });
 
   it("requests a stop", async () => {
@@ -84,7 +77,6 @@ describe("DiscussionStatus", () => {
     expect(pending).toHaveTextContent("不会立即停止 CLI");
     expect(screen.getByRole("button", { name: "本轮后收尾" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "本轮后停止" })).toBeDisabled();
-    expect(screen.getByLabelText("收尾人（可选）")).toBeDisabled();
   });
 
   it("shows the accepted stop request", () => {
@@ -139,17 +131,4 @@ describe("DiscussionStatus", () => {
     expect(screen.getByText("结束原因：你要求停止")).toBeInTheDocument();
   });
 
-  it("falls back to the host order when a stale summary participant is selected", async () => {
-    const user = userEvent.setup();
-    const { props, rerender } = renderStatus({ discussion: { participant_ids: ["chulan", "baobao"] } });
-    await user.selectOptions(screen.getByLabelText("收尾人（可选）"), "baobao");
-    rerender(
-      <DiscussionStatus
-        {...props}
-        discussion={makeDiscussion({ participant_ids: ["chulan", "wangye"] })}
-      />,
-    );
-    await user.click(screen.getByRole("button", { name: "本轮后收尾" }));
-    expect(props.onRequestFinish).toHaveBeenCalledWith(undefined);
-  });
 });

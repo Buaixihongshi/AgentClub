@@ -13,7 +13,7 @@ export function buildConversationTimeline(
     ...(current?.failure_events ?? []),
   ];
   const byId = new Map(events.map((event) => [event.id, event]));
-  return [...byId.values()].sort(
+  return [...byId.values()].filter((event) => event.metadata?.discussion_visibility !== 'internal').sort(
     (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
   );
 }

@@ -41,6 +41,8 @@ def state_from_events(mission, events):
 def discussion_view(mission, events):
     if mission.room_mode != RoomMode.ROUNDTABLE or mission.discussion is None:
         return None
+    if mission.discussion.protocol == 'deliberation_v2':
+        return None  # Repository-backed V2 projection is supplied by mission_detail.
     state = state_from_events(mission, events)
     current = state['current']
     return {
@@ -357,6 +359,20 @@ class Roundtable:
             return mission
 
     def fail(self, mission_id, reason='runner_failed'):
+        from backend.app.orchestration.deliberation import Deliberation, is_v2
+        if is_v2(self.repo.get_mission(mission_id)):
+            policy = Deliberation(self.repo)
+            with policy.transaction(mission_id) as (mission, state):
+                if state['pending_control'] == 'stop':
+                    policy._stop(mission, state)
+                    return self.repo.get_mission(mission_id)
+                if state['phase'] != 'ended':
+                    for lease in state['leases'].values():
+                        lease['execution_active'] = False
+                        if lease['status'] in {'running', 'reserved'}:
+                            lease.update(status='failed', error=reason, token=None)
+                    policy._block(mission, state, reason)
+            return self.repo.get_mission(mission_id)
         with self.transaction(mission_id) as (mission, state, events):
             if mission.status in ACTIVE:
                 return self.end(mission, state, reason, blocked=True)
@@ -364,5 +380,9 @@ class Roundtable:
 
     def recover(self):
         for mission in self.repo.list_missions():
+            from backend.app.orchestration.deliberation import Deliberation, is_v2
+            if is_v2(mission):
+                Deliberation(self.repo).recover(mission)
+                continue
             if mission.room_mode == RoomMode.ROUNDTABLE and mission.status in ACTIVE:
                 self.fail(mission.id, 'service_restart')

@@ -1,6 +1,5 @@
 import { getPersonaColor } from "../lib/personaColors";
 import {
-  defaultDiscussionTurnLimit,
   discussionParticipantOptions,
 } from "../lib/roundtableView";
 import type { RoomMode } from "../types";
@@ -26,75 +25,76 @@ export function DiscussionSetup(props: {
   return (
     <section className={`discussion-setup ${locked ? "is-locked" : ""}`} aria-label="对话模式">
       <div className="discussion-setup-inner">
-        <div className="discussion-mode-switch" role="radiogroup" aria-label="对话模式">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={!roundtable}
-            className={`discussion-mode-option ${!roundtable ? "is-active" : ""}`}
-            disabled={props.disabled || locked}
-            onClick={() => props.onModeChange("task")}
-          >
-            任务
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={roundtable}
-            className={`discussion-mode-option ${roundtable ? "is-active" : ""}`}
-            disabled={props.disabled || locked}
-            onClick={() => props.onModeChange("roundtable")}
-          >
-            多人讨论
-          </button>
-        </div>
+      <div className="discussion-mode-switch" role="radiogroup" aria-label="对话模式">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!roundtable}
+          className={`discussion-mode-option ${!roundtable ? "is-active" : ""}`}
+          disabled={props.disabled || locked}
+          onClick={() => props.onModeChange("task")}
+        >
+          任务
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={roundtable}
+          className={`discussion-mode-option ${roundtable ? "is-active" : ""}`}
+          disabled={props.disabled || locked}
+          onClick={() => props.onModeChange("roundtable")}
+        >
+          多人讨论
+        </button>
+      </div>
 
-        {roundtable ? (
-          <div className="discussion-participants">
-            <p className="discussion-participants-hint">
-              选 2～3 位伙伴，按选择顺序开场。角色只有性格差别，没有固定岗位。
-            </p>
-            <ul className="discussion-participant-list" aria-label="参与者">
-              {options.map((option) => {
-                const checked = props.participantIds.includes(option.agentId);
-                const color = getPersonaColor(option.agentId);
-                return (
-                  <li key={option.agentId}>
-                    <label
-                      className={`discussion-participant-card ${checked ? "is-selected" : ""}`}
-                      style={{ borderColor: checked ? color.border : undefined }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={props.disabled || locked}
-                        onChange={() => props.onToggleParticipant(option.agentId)}
-                      />
-                      <span className="discussion-participant-avatar" aria-hidden="true">
-                        {color.avatar}
-                      </span>
-                      <span className="discussion-participant-copy">
-                        <strong style={{ color: checked ? color.name : undefined }}>
-                          {option.label}
-                        </strong>
-                        <span className="discussion-participant-role">{option.role}</span>
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-            {locked ? (
-              <p className="discussion-lock-note" role="status">
-                讨论进行中：模式和参与者已锁定，结束后点“继续讨论”可以调整。
-              </p>
-            ) : (
-              <p className="discussion-budget-hint">
-                最后一格留给总结：默认最多 {defaultDiscussionTurnLimit(props.participantIds.length)} 个回合（含总结）。
-              </p>
-            )}
-          </div>
-        ) : null}
+      {locked ? (
+        <p className="discussion-lock-note" role="status">
+          讨论进行中：模式和参与者已锁定，结束后点“继续讨论”可以调整。
+        </p>
+      ) : null}
+
+      {roundtable && !locked ? (
+        <div className="discussion-participants">
+          <p className="discussion-participants-hint">
+            选 2～3 位伙伴，先各自独立判断，再讨论实质分歧；由你选择综合者。
+          </p>
+          <ul className="discussion-participant-list" aria-label="参与者">
+            {options.map((option) => {
+              const checked = props.participantIds.includes(option.agentId);
+              const color = getPersonaColor(option.agentId);
+              return (
+                <li key={option.agentId}>
+                  <label
+                    className={`discussion-participant-card ${checked ? "is-selected" : ""}`}
+                    style={{ borderColor: checked ? color.border : undefined }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={props.disabled || locked}
+                      onChange={() => props.onToggleParticipant(option.agentId)}
+                    />
+                    <span className="discussion-participant-avatar" aria-hidden="true">
+                      {color.avatar}
+                    </span>
+                    <span className="discussion-participant-copy">
+                      <strong style={{ color: checked ? color.name : undefined }}>
+                        {option.label}
+                      </strong>
+                      <span className="discussion-participant-role">{option.role}</span>
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="discussion-budget-hint discussion-v2-flow">
+            独立思考 → 分歧讨论（最多 2 轮）→ 你选综合者 → 综合 → 原参与者复核 → 收束。
+          </p>
+        </div>
+      ) : null}
+
       </div>
 
       {props.hint && !locked ? (

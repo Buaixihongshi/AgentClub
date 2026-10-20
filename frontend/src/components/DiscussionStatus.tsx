@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { formatMissionStatus } from "../lib/missionView";
 import {
   formatDiscussionBudget,
@@ -8,6 +7,7 @@ import {
   participantLabel,
 } from "../lib/roundtableView";
 import type { DiscussionView, MissionStatus } from "../types";
+import { DeliberationStatus } from "./DeliberationStatus";
 
 /**
  * Roundtable run state. Every displayed value comes from the mission detail
@@ -17,15 +17,15 @@ export function DiscussionStatus(props: {
   discussion: DiscussionView;
   missionStatus: MissionStatus;
   busy?: boolean;
-  onRequestFinish: (summaryAgentId?: string) => void;
+  onRequestFinish: () => void;
   onRequestStop: () => void;
   onContinue: () => void;
+  onControl?: (action: import("../types").DiscussionControlAction, fields?: import("../types").DiscussionControlFields) => void;
 }) {
   const { discussion } = props;
-  const [summaryAgentId, setSummaryAgentId] = useState("");
+  if (discussion.protocol === "deliberation_v2") return <DeliberationStatus {...props} />;
   const active = discussion.phase !== "ended";
   const participantIds = discussion.participant_ids ?? [];
-  const effectiveSummaryAgentId = participantIds.includes(summaryAgentId) ? summaryAgentId : "";
   const controlsDisabled = Boolean(props.busy) || Boolean(discussion.pending_control);
   const pendingLabel = formatDiscussionControl(discussion.pending_control);
   const unanswered = (discussion.unanswered_interrupt_ids ?? []).length;
@@ -33,30 +33,33 @@ export function DiscussionStatus(props: {
 
   return (
     <section className="discussion-status" aria-label="多人讨论">
-      <div className="discussion-status-head">
-        <h2>多人讨论</h2>
-        <span className={`discussion-phase discussion-phase-${discussion.phase}`}>
-          {formatDiscussionPhase(discussion.phase)}
-        </span>
+      <div className="discussion-status-overview">
+        <div className="discussion-status-head">
+          <h2>多人讨论</h2>
+          <span className={`discussion-phase discussion-phase-${discussion.phase}`}>
+            {formatDiscussionPhase(discussion.phase)}
+          </span>
+        </div>
+        <div className="discussion-status-meta">
+          <span className="discussion-budget">
+            {formatDiscussionBudget(discussion.turns_used, discussion.turns_limit)}
+          </span>
+          <span className="discussion-participants-line">
+            参与者：{participantIds.map((id) => participantLabel(id)).join("、")}
+          </span>
+          {active ? (
+            <span className="discussion-speaker">
+              当前发言：{discussion.current_speaker ? participantLabel(discussion.current_speaker) : "等待领取回合"}
+            </span>
+          ) : (
+            <span className="discussion-end-reason">
+              结束原因：{formatDiscussionEndReason(discussion.end_reason) || "未记录"}
+              {summaryCount > 0 ? ` · 总结消息 ${summaryCount} 条` : ""}
+            </span>
+          )}
+          <span className="discussion-mission-status">任务状态：{formatMissionStatus(props.missionStatus)}</span>
+        </div>
       </div>
-
-      <p className="discussion-budget">
-        {formatDiscussionBudget(discussion.turns_used, discussion.turns_limit)}
-      </p>
-      <p className="discussion-participants-line">
-        参与者：{participantIds.map((id) => participantLabel(id)).join("、")}
-      </p>
-
-      {active ? (
-        <p className="discussion-speaker">
-          当前发言：{discussion.current_speaker ? participantLabel(discussion.current_speaker) : "等待领取回合"}
-        </p>
-      ) : (
-        <p className="discussion-end-reason">
-          结束原因：{formatDiscussionEndReason(discussion.end_reason) || "未记录"}
-          {summaryCount > 0 ? ` · 总结消息 ${summaryCount} 条` : ""}
-        </p>
-      )}
 
       {pendingLabel ? (
         <p role="status" className="discussion-pending">
@@ -70,29 +73,13 @@ export function DiscussionStatus(props: {
         </p>
       ) : null}
 
-      <p className="discussion-mission-status">任务状态：{formatMissionStatus(props.missionStatus)}</p>
-
       {active ? (
         <div className="discussion-controls">
-          <label htmlFor="discussion-summary-agent">收尾人（可选）</label>
-          <select
-            id="discussion-summary-agent"
-            value={effectiveSummaryAgentId}
-            disabled={controlsDisabled}
-            onChange={(event) => setSummaryAgentId(event.target.value)}
-          >
-            <option value="">由系统按顺序决定</option>
-            {participantIds.map((id) => (
-              <option key={id} value={id}>
-                {participantLabel(id)}
-              </option>
-            ))}
-          </select>
           <div className="discussion-control-buttons">
             <button
               type="button"
               disabled={controlsDisabled}
-              onClick={() => props.onRequestFinish(effectiveSummaryAgentId || undefined)}
+              onClick={props.onRequestFinish}
             >
               本轮后收尾
             </button>
