@@ -102,26 +102,24 @@ def _recover_if_crashed() -> None:
 
 
 @contextlib.contextmanager
-def _flock(*, wait_timeout=None, cancelled=None) -> Iterator[None]:
+def _flock(timeout: Optional[float] = None) -> Iterator[None]:
     """Cross-process exclusive lock on ~/.gemini/config/.yiren-mcp.lock."""
     cfg_dir = _config_dir()
     cfg_dir.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(_lock_path()), os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        if wait_timeout is None:
+        if timeout is None:
             fcntl.flock(fd, fcntl.LOCK_EX)
         else:
-            deadline = time.monotonic() + wait_timeout
+            deadline = time.monotonic() + timeout
             while True:
-                if cancelled and cancelled():
-                    raise RuntimeError('Discussion stopped while waiting for provider')
                 try:
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     break
                 except BlockingIOError:
                     if time.monotonic() >= deadline:
-                        raise TimeoutError('Provider configuration lock wait timed out')
-                    time.sleep(.1)
+                        raise TimeoutError('Antigravity MCP configuration is in use')
+                    time.sleep(min(0.05, max(0, deadline - time.monotonic())))
         yield
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
@@ -129,14 +127,14 @@ def _flock(*, wait_timeout=None, cancelled=None) -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def guarded_global_mcp_config(server_spec: dict[str, Any], *, wait_timeout=None, cancelled=None) -> Iterator[Path]:
+def guarded_global_mcp_config(server_spec: dict[str, Any], *, lock_timeout: Optional[float] = None) -> Iterator[Path]:
     """Temporarily replace the global MCP config with only our yiren_hub server.
 
     Holds the lock for the entire ``with`` body (the caller runs and waits on
     the agy subprocess inside it). Restores the original on exit, even on
     exception / kill-then-finally.
     """
-    with _flock(wait_timeout=wait_timeout, cancelled=cancelled):
+    with _flock(timeout=lock_timeout):
         _recover_if_crashed()
         target = global_mcp_config_path()
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -168,8 +166,13 @@ def recover_antigravity_global_config() -> None:
         return
     if not _sentinel_path().is_file():
         return
-    with _flock():
-        _recover_if_crashed()
+    # A retained CLI can legitimately own the sentinel. Do not wait for that
+    # worker here, or construction of the next adapter would deadlock reuse.
+    try:
+        with _flock(timeout=0):
+            _recover_if_crashed()
+    except TimeoutError:
+        return
 
 
 def _agy_log_dir() -> Path:
