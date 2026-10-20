@@ -165,6 +165,15 @@ class Deliberation:
             raise DiscussionError("Discussion capability expired")
         return lease
 
+    def renew_turn_lease(self, mission_id, agent_id, turn_id, provider_id, token, seconds):
+        """Host-only extension; the phase, provider and capability remain fenced."""
+        with self.transaction(mission_id) as (mission, state):
+            lease = self._lease(state, agent_id, turn_id, provider_id, token)
+            expiry = max(datetime.fromisoformat(lease['expires_at']),
+                         utc_now() + timedelta(seconds=seconds))
+            lease['expires_at'] = expiry.isoformat()
+            self.save(mission, state)
+
     def read_context(self, mission_id, agent_id, turn_id, provider_id, token, *, record_access=True,
                      material_offset=0, history_offset=0, issue_offset=0):
         with self.transaction(mission_id) as (mission, state):

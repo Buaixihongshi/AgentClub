@@ -2,6 +2,7 @@ import { Fragment, useLayoutEffect, useRef, type ReactNode } from "react";
 import type { A2AInvocationRecord, TurnView } from "../types";
 import { ChatBubble } from "./ChatBubble";
 import { StatusBadge } from "./StatusBadge";
+import { ArtifactPanel } from "./ArtifactPanel";
 
 const AGENT_NAMES: Record<string, string> = {
   chulan: "张楚岚",
@@ -97,7 +98,9 @@ export function TurnTimeline({
       {turns.filter((turn) => !collapsedIds.has(turn.id)).map((turn) => (
         <Fragment key={turn.id}>
           {turn.a2aInvocation ? <A2AArrow invocation={turn.a2aInvocation} /> : null}
-          {turn.isStatusEvent ? <StatusBadge turn={turn} /> : <ChatBubble turn={turn} />}
+          {turn.artifact ? (
+            <ArtifactPanel key={turn.artifact.created_at} missionId={turn.artifact.mission_id} artifacts={[turn.artifact]} variant="chat" />
+          ) : turn.isStatusEvent ? <StatusBadge turn={turn} /> : <ChatBubble turn={turn} />}
         </Fragment>
       ))}
       {collapsed.length > 0 && <details className="deliberation-original-messages">

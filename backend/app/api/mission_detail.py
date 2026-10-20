@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from fastapi import HTTPException
@@ -177,6 +178,53 @@ def _artifact_records(settings: Settings, mission_id: str, db_events=None) -> li
 ARTIFACT_CONTENT_MAX_CHARS = 200_000
 
 
+def artifact_file_path(settings: Settings, mission_id: str, relative_path: str) -> Path:
+    mission_dir = (settings.artifact_root / mission_id).resolve()
+    try:
+        target = (mission_dir / relative_path).resolve()
+        target.relative_to(mission_dir)
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Artifact path is outside artifact directory")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return target
+
+
+def _derive_artifact_events(db_events) -> list[dict[str, object]]:
+    """Saved-file notices are user-visible immediately, independently of agent speech."""
+    from pathlib import PurePosixPath
+
+    saved = {}
+    for event in db_events:
+        if event.event_type != "artifact" or not event.payload.get("path"):
+            continue
+        payload = event.payload
+        path = PurePosixPath(payload["path"])
+        identity = f"{event.mission_id}:{path}"
+        created = event.created_at
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        created_at = payload.get("saved_at") or created.isoformat()
+        artifact = {
+            "id": identity, "mission_id": event.mission_id,
+            "title": payload.get("title") or path.name,
+            "path": str(path), "kind": path.suffix.lstrip(".") or "file",
+            "created_at": created_at, "agent_id": payload.get("agent_id"),
+            "turn_id": payload.get("turn_id"),
+        }
+        saved[identity] = {
+            "id": f"artifact:{identity}", "mission_id": event.mission_id,
+            "event_type": "artifact.saved", "role": "system",
+            "content": "文件已保存，可打开。", "artifact": artifact,
+            "agent_id": payload.get("agent_id"), "turn_id": payload.get("turn_id"),
+            "metadata": _event_metadata(payload.get("provider_id"), payload.get("agent_id")),
+            "created_at": created_at,
+        }
+    return list(saved.values())
+
+
 def read_artifact_content(settings: Settings, mission_id: str, relative_path: str) -> dict[str, object]:
     """Read a single artifact's raw text for UI display.
 
@@ -189,13 +237,8 @@ def read_artifact_content(settings: Settings, mission_id: str, relative_path: st
     from pathlib import PurePosixPath
 
     mission_dir = (settings.artifact_root / mission_id).resolve()
-    try:
-        target = (mission_dir / relative_path).resolve()
-        normalized = target.relative_to(mission_dir).as_posix()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Artifact path is outside artifact directory")
-    if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="Artifact not found: {p}".format(p=relative_path))
+    target = artifact_file_path(settings, mission_id, relative_path)
+    normalized = target.relative_to(mission_dir).as_posix()
     raw = target.read_text(encoding="utf-8", errors="replace")
     total_chars = len(raw)
     truncated = total_chars > ARTIFACT_CONTENT_MAX_CHARS
@@ -349,6 +392,9 @@ def _derive_failure_events(mission: Mission, db_events) -> list[dict[str, object
     for event in db_events:
         if event.event_type == "message" and event.payload.get("created_at"):
             last_message_at = datetime.fromisoformat(event.payload["created_at"].replace("Z", "+00:00"))
+        if event.event_type == "artifact" and event.payload.get("saved_at"):
+            saved_at = datetime.fromisoformat(event.payload["saved_at"].replace("Z", "+00:00"))
+            last_message_at = max(last_message_at, saved_at)
         if event.event_type in {"turn.completed", "turn.blocked", "turn.failed"}:
             turn_id = event.payload.get("turn_id")
             if turn_id:
@@ -627,6 +673,7 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
         "discussion": discussion_view(mission, db_events),
         "messages": message_events,
         "failure_events": _derive_failure_events(mission, db_events),
+        "artifact_events": _derive_artifact_events(db_events),
         "events": events,
         "artifacts": _artifact_records(settings, mission_id, db_events),
         "turns": _derive_turns(db_events),

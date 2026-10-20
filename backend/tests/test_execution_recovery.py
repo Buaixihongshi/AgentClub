@@ -150,6 +150,20 @@ def test_real_stdio_reuse_rotates_identity_and_keeps_history_isolated(pool, repo
     assert repository.list_messages('m3')[0].agent_id == 'baobao'
 
 
+def test_progress_renews_persistent_worker_deadline_and_mcp_grant(pool, repository, temp_settings, tmp_path):
+    # Cold startup has its own real-pipe overhead; start once before the short budget.
+    cli = adapter(temp_settings, tmp_path, 'long_tools', timeout=8)
+    assert run(pool, cli, repository, temp_settings).status == TurnStatus.COMPLETED
+    cli.timeout = 1.2
+    cli.progress_check_interval = 0.2
+    before = time.monotonic()
+    result = run(pool, cli, repository, temp_settings, mid='m2', turn='t2')
+    assert time.monotonic() - before > 1.2
+    assert result.status == TurnStatus.COMPLETED  # Final publication requires the renewed grant.
+    extensions = [e for e in repository.list_events_after('m2', 0) if e.event_type == 'turn.deadline_extended']
+    assert extensions and extensions[-1].payload['extension'] >= 2
+
+
 def test_worker_loss_before_publish_blocks_without_replay(pool, repository, temp_settings, tmp_path):
     outcome = run(pool, adapter(temp_settings, tmp_path, 'crash_before'), repository, temp_settings)
     assert outcome.status == TurnStatus.BLOCKED

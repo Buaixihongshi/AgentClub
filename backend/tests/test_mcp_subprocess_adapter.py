@@ -530,9 +530,9 @@ def test_antigravity_guards_global_config_instead_of_dot_agents(
     assert "--dangerously-skip-permissions" in captured_cmd
     assert "-p" in captured_cmd
     assert "--add-dir" in captured_cmd
-    # D6: agy self-timeout aligned below our hard kill (120 - 10 = 110s).
+    # The host owns the renewable deadline; disable the CLI's fixed timer.
     assert "--print-timeout" in captured_cmd
-    assert "110s" in captured_cmd
+    assert captured_cmd[captured_cmd.index("--print-timeout") + 1] == "0"
     assert captured_cmd[captured_cmd.index("--output-format") + 1] == "stream-json"
 
 

@@ -51,7 +51,8 @@ def dispatch(repo, root, worker_id, frame):
             metadata = json.loads(grant['data'])
             tools = MCPTools(repo, root, receipt_id=grant['receipt_id'],
                              valid_agent_ids=set(metadata.get('valid_agent_ids') or []),
-                             max_a2a_invocations=metadata.get('max_a2a_invocations', 0))
+                             max_a2a_invocations=metadata.get('max_a2a_invocations', 0),
+                             workspace_root=Path(os.environ.get('YIREN_MCP_WORKSPACE_ROOT', os.getcwd())))
             ctx = server._Context(grant['mission_id'], grant['agent_id'], grant['turn_id'], grant['provider_id'], tools)
             return server._TOOL_HANDLERS[name](ctx, args)
         result = ExecutionLedger(repo).call(worker_id, token, name, args, operation_id, invoke)

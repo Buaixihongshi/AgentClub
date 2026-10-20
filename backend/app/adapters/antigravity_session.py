@@ -75,6 +75,7 @@ class _Worker:
             env = {
                 'YIREN_MCP_DB_PATH': str(adapter.db_path),
                 'YIREN_MCP_ARTIFACT_ROOT': str(adapter.artifact_root),
+                'YIREN_MCP_WORKSPACE_ROOT': str(Path.cwd().resolve()),
                 'YIREN_MCP_WORKER_ID': self.id,
                 'PYTHONPATH': os.pathsep.join(filter(None, [str(Path(__file__).resolve().parents[3]), os.environ.get('PYTHONPATH')])),
             }
@@ -272,8 +273,9 @@ class AntigravitySessionPool:
         self.stopped.set(); self.close()
 
     def run_turn(self, adapter, mission_id, agent_id, turn_id, provider_id, prompt, tools):
+        from backend.app.adapters.turn_deadline import ToolResultDeadline, is_hub_work_result, is_tool_return
         started = time.monotonic()
-        deadline = started + adapter.timeout
+        progress = ToolResultDeadline(adapter.timeout, check_interval=adapter.progress_check_interval)
         if not self.lock.acquire(timeout=max(0, adapter.timeout)):
             return TurnOutcome(TurnStatus.BLOCKED, '等待 Antigravity 工作进程超时；本轮未发送。')
         worker = None
@@ -299,7 +301,7 @@ class AntigravitySessionPool:
                     'activity_id': turn_id + ':startup', 'tool_name': 'worker_startup',
                     'phase': 'started', 'summary': '启动 Antigravity 工作进程',
                 })
-                worker = _Worker(adapter, key, ledger, max(0.001, deadline-time.monotonic()))
+                worker = _Worker(adapter, key, ledger, max(0.001, progress.remaining()))
                 self.worker = worker
                 repo.add_event(mission_id, 'provider.activity', {
                     'turn_id': turn_id, 'agent_id': agent_id, 'provider_id': provider_id,
@@ -309,7 +311,7 @@ class AntigravitySessionPool:
                 initializing = False
             cursor = _max_event_id(repo, mission_id)
             token, receipt = ledger.begin(worker.id, mission_id, agent_id, turn_id, provider_id,
-                                         timeout=max(0.001, deadline-time.monotonic()),
+                                         timeout=max(0.001, progress.remaining()),
                                          valid_agent_ids=sorted(tools.valid_agent_ids or []),
                                          max_a2a_invocations=tools.max_a2a_invocations)
             instruction = (
@@ -331,20 +333,29 @@ class AntigravitySessionPool:
             last_activity = time.monotonic()
             activity_cursor = cursor
             while True:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError('Antigravity turn deadline exceeded')
                 # MCP calls count as activity even if the provider's stream is quiet.
                 for record in repo.list_events_after(mission_id, activity_cursor):
                     activity_cursor = max(activity_cursor, int(record.id))
+                    if is_hub_work_result(record, turn_id):
+                        progress.record_result(('hub', record.id))
                     if record.payload.get('turn_id') == turn_id and record.event_type in {'tool.call', 'tool.result', 'message', 'agent.thought'}:
                         last_activity = time.monotonic()
-                until = min(deadline, last_activity + adapter.idle_timeout) if adapter.idle_timeout else deadline
+                extension = progress.check()
+                if extension and progress.remaining() > 0:
+                    ledger.renew(worker.id, token, timeout=progress.remaining())
+                    repo.add_event(mission_id, 'turn.deadline_extended', {
+                        'turn_id': turn_id, 'agent_id': agent_id, 'provider_id': provider_id,
+                        **extension,
+                    })
+                until = progress.remaining()
+                if adapter.idle_timeout:
+                    until = min(until, max(0, last_activity + adapter.idle_timeout - time.monotonic()))
+                if until <= 0:
+                    raise TimeoutError('Antigravity turn deadline exceeded')
                 # Poll periodically so MCP activity refreshes an idle deadline.
                 try:
-                    event = worker.events.get(timeout=min(0.2, max(0.001, until-time.monotonic())))
+                    event = worker.events.get(timeout=min(0.2, until))
                 except queue.Empty:
-                    if time.monotonic() >= until:
-                        raise TimeoutError('Antigravity turn deadline exceeded')
                     if not worker.alive():
                         raise RuntimeError('Antigravity process exited before result')
                     continue
@@ -368,6 +379,8 @@ class AntigravitySessionPool:
                     })
                     return TurnOutcome(TurnStatus.COMPLETED, 'via MCP; persistent Antigravity', session_id=worker.session_id)
                 parsed = parser.parse(json.dumps(event))
+                if parsed and is_tool_return(parsed):
+                    progress.record_result(('native', parsed.activity_id) if parsed.activity_id else None)
                 if parsed and parsed.type in {StreamEventType.SESSION_STARTED, StreamEventType.TOOL_ATTEMPT}:
                     last_activity = time.monotonic()
                 if parsed and parsed.tool_name and parsed.tool_name != 'call_mcp_tool':
@@ -391,6 +404,7 @@ class AntigravitySessionPool:
                 timeout_seconds=adapter.timeout, duration_ms=int((time.monotonic()-started)*1000),
                 exit_code=worker.proc.poll() if worker and worker.proc else None,
                 interrupted=True, stdout='',
+                **progress.diagnostic(),
                 stderr=(''.join(worker.stderr) if worker else '') + '\n' + str(exc),
             )
             if initializing:

@@ -88,11 +88,16 @@ print(json.dumps({'type':'turn.completed','usage':{'input_tokens':12,'output_tok
 '''
 
 
-def test_isolated_cli_can_only_submit_via_its_host_owned_bridge(repository, temp_settings, tmp_path, monkeypatch):
+@pytest.mark.parametrize('long_running', [False, True])
+def test_isolated_cli_can_only_submit_via_its_host_owned_bridge(repository, temp_settings, tmp_path, monkeypatch, long_running):
     install = tmp_path / 'provider'
     install.mkdir()
     executable = install / 'codex'
-    executable.write_text(f'#!{Path(sys.executable).resolve()}\n' + FAKE_CODEX)
+    source = FAKE_CODEX
+    if long_running:
+        source = source.replace("if view['phase']=='independent':",
+            "import time\nfor i in range(6):\n call(10+i,'read_context',{})\n time.sleep(0.25)\nif view['phase']=='independent':")
+    executable.write_text(f'#!{Path(sys.executable).resolve()}\n' + source)
     executable.chmod(0o700)
     config = tmp_path / 'providers'
     config.mkdir()
@@ -107,12 +112,14 @@ def test_isolated_cli_can_only_submit_via_its_host_owned_bridge(repository, temp
     lease = policy.claim_batch(mission.id, temp_settings.artifact_root)[0]
     auth = policy.authorize(mission.id, lease['turn_id'], 'codex')
     tools = MCPTools(repository, temp_settings.artifact_root, lease_token=auth['token'])
-    adapter = DeliberationCLIAdapter(config, 15, {})
+    adapter = DeliberationCLIAdapter(config, 1.2 if long_running else 15, {}, progress_check_interval=0.2)
     outcome = adapter.run_turn(mission.id, lease['agent_id'], lease['turn_id'], 'codex', 'offline test', tools)
     actual = policy.state(repository.get_mission(mission.id))['leases'][lease['turn_id']]
     assert actual['status'] == 'submitted', outcome.summary
     assert policy.user_view(repository.get_mission(mission.id))['results'] == []
     assert not [m for m in repository.list_messages(mission.id) if m.role == 'agent']
+    if long_running:
+        assert any(e.event_type == 'turn.deadline_extended' for e in repository.list_events_after(mission.id, 0))
 
 
 def test_entire_protocol_runs_through_real_isolated_processes(repository, temp_settings, tmp_path, monkeypatch):

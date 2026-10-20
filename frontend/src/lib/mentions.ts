@@ -3,12 +3,18 @@ export interface MentionOption {
   label: string;
   aliases: string[];
   role: string;
+  /** 拼音全拼，如 "zhangchulan"，用于 @ 检索。 */
+  pinyin?: string;
+  /** 拼音首字母缩写，如 "zcl"，用于 @ 检索。 */
+  abbr?: string;
+  /** 候选头像底色，按 agent 固定，用于 @ 浮层身份强调。 */
+  color?: string;
 }
 
 const DEFAULT_MENTION_OPTIONS: MentionOption[] = [
-  { id: "chulan", label: "张楚岚", aliases: ["张楚岚", "chulan"], role: "通透机敏" },
-  { id: "baobao", label: "冯宝宝", aliases: ["冯宝宝", "宝宝", "baobao"], role: "坦率好奇" },
-  { id: "wangye", label: "王也", aliases: ["王也", "老王", "wangye"], role: "松弛笃定" },
+  { id: "chulan", label: "张楚岚", aliases: ["张楚岚", "chulan"], role: "通透机敏", pinyin: "zhangchulan", abbr: "zcl", color: "#2563eb" },
+  { id: "baobao", label: "冯宝宝", aliases: ["冯宝宝", "宝宝", "baobao"], role: "坦率好奇", pinyin: "fengbaobao", abbr: "fbb", color: "#059669" },
+  { id: "wangye", label: "王也", aliases: ["王也", "老王", "wangye"], role: "松弛笃定", pinyin: "wangye", abbr: "wy", color: "#d97706" },
 ];
 
 // Mutable so loadMentionOptions() can sync with /api/agents at startup while
@@ -20,10 +26,11 @@ let aliasMap: Map<string, MentionOption> = buildAliasMap(MENTION_OPTIONS);
 function buildAliasMap(options: MentionOption[]): Map<string, MentionOption> {
   const map = new Map<string, MentionOption>();
   for (const opt of options) {
-    map.set(opt.id.toLowerCase(), opt);
-    map.set(opt.label.toLowerCase(), opt);
-    for (const alias of opt.aliases) {
-      map.set(alias.toLowerCase(), opt);
+    const keys = [opt.id, opt.label, ...opt.aliases];
+    if (opt.pinyin) keys.push(opt.pinyin);
+    if (opt.abbr) keys.push(opt.abbr);
+    for (const key of keys) {
+      map.set(key.toLowerCase(), opt);
     }
   }
   return map;
@@ -32,8 +39,27 @@ function buildAliasMap(options: MentionOption[]): Map<string, MentionOption> {
 export function setMentionOptions(options: MentionOption[]): void {
   if (!options || options.length === 0) return;
   MENTION_OPTIONS.length = 0;
-  MENTION_OPTIONS.push(...options);
+  // `/api/agents` 目前不下发 pinyin/abbr/color（见 App.tsx 的 setMentionOptions 调用），
+  // 因此按 agent id 从内置默认值回填缺失字段，保证 @zcl 这类拼音缩写检索在运行时仍可用。
+  const fallbackById = new Map(DEFAULT_MENTION_OPTIONS.map((opt) => [opt.id, opt]));
+  MENTION_OPTIONS.push(
+    ...options.map((opt) => {
+      const fallback = fallbackById.get(opt.id);
+      if (!fallback) return opt;
+      return {
+        ...opt,
+        pinyin: opt.pinyin ?? fallback.pinyin,
+        abbr: opt.abbr ?? fallback.abbr,
+        color: opt.color ?? fallback.color,
+      };
+    }),
+  );
   aliasMap = buildAliasMap(MENTION_OPTIONS);
+}
+
+/** Resolve a raw @-alias (name, latin alias, pinyin or abbr) to an option, case-insensitively. */
+export function resolveMentionAlias(alias: string): MentionOption | undefined {
+  return aliasMap.get(alias.trim().toLowerCase());
 }
 
 export function parseMentionTargets(raw: string): {
@@ -76,13 +102,32 @@ export function collectMentionTargetIds(raw: string): string[] {
   return ids;
 }
 
+/**
+ * Rank an option against a lowercased query. Lower is better; -1 means no match.
+ * Order preference per the input-box spec: 完整姓名 > 姓名前缀 > 拼音全拼 > 首字母缩写 > 别名 > 拼音包含.
+ */
+function mentionMatchRank(opt: MentionOption, lower: string): number {
+  const label = opt.label.toLowerCase();
+  if (label === lower) return 0;
+  if (label.startsWith(lower)) return 1;
+  if (label.includes(lower)) return 2;
+  const pinyin = opt.pinyin?.toLowerCase();
+  if (pinyin && pinyin.startsWith(lower)) return 3;
+  const abbr = opt.abbr?.toLowerCase();
+  if (abbr && abbr.startsWith(lower)) return 4;
+  if (opt.aliases.some((a) => a.toLowerCase().startsWith(lower))) return 5;
+  if (pinyin && pinyin.includes(lower)) return 6;
+  return -1;
+}
+
 export function getMentionSuggestions(query: string): MentionOption[] {
   if (!query) return MENTION_OPTIONS;
   const lower = query.toLowerCase();
-  return MENTION_OPTIONS.filter((opt) =>
-    opt.label.includes(query) ||
-    opt.aliases.some((a) => a.toLowerCase().startsWith(lower)),
-  );
+  return MENTION_OPTIONS
+    .map((opt) => ({ opt, rank: mentionMatchRank(opt, lower) }))
+    .filter((entry) => entry.rank >= 0)
+    .sort((a, b) => a.rank - b.rank)
+    .map((entry) => entry.opt);
 }
 
 export function findActiveMention(value: string, cursorIndex: number): {
@@ -90,7 +135,9 @@ export function findActiveMention(value: string, cursorIndex: number): {
   start: number;
 } | null {
   const before = value.slice(0, cursorIndex);
-  const match = before.match(/@([^\s@]*)$/);
+  // `[^\s@/]` keeps a trailing `/` out of the query so "@王也/" falls through
+  // to skill-command detection instead of being captured as a mention query.
+  const match = before.match(/@([^\s@/]*)$/);
   if (!match) return null;
   return {
     query: match[1],
@@ -102,13 +149,13 @@ export function replaceActiveMention(
   value: string,
   cursorIndex: number,
   option: MentionOption,
-): { newValue: string; newCursor: number } {
+): { newValue: string; newCursor: number; start: number } {
   const active = findActiveMention(value, cursorIndex);
-  if (!active) return { newValue: value, newCursor: cursorIndex };
+  if (!active) return { newValue: value, newCursor: cursorIndex, start: cursorIndex };
   const replacement = `@${option.label} `;
   const before = value.slice(0, active.start);
   const after = value.slice(cursorIndex);
   const newValue = before + replacement + after;
   const newCursor = before.length + replacement.length;
-  return { newValue, newCursor };
+  return { newValue, newCursor, start: active.start };
 }

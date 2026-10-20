@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from backend.app.adapters.base import CLIAdapter
 from backend.app.api.mission_detail import (
     build_mission_detail, _mission_payload, _derive_thoughts, _derive_tool_events, _derive_failure_events, _message_event,
+    _derive_artifact_events,
 )
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.models import (
@@ -138,6 +139,7 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
             mission, [event for event in history_events if event.mission_id == mission.id],
         )],
         "latest_mission_detail": latest_detail,
+        "artifact_events": _derive_artifact_events(history_events),
         "thoughts": _derive_thoughts(history_events),
         "tool_events": _derive_tool_events(history_events),
     }

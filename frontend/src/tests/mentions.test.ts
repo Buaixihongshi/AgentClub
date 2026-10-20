@@ -7,6 +7,8 @@ import {
   parseMentionTarget,
   parseMentionTargets,
   replaceActiveMention,
+  resolveMentionAlias,
+  setMentionOptions,
 } from "../lib/mentions";
 
 describe("parseMentionTarget", () => {
@@ -154,6 +156,102 @@ describe("getMentionSuggestions", () => {
   it("returns empty for unrelated query", () => {
     expect(getMentionSuggestions("xyz")).toHaveLength(0);
   });
+
+  it("matches chulan by pinyin abbr 'zcl'", () => {
+    const results = getMentionSuggestions("zcl");
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("chulan");
+  });
+
+  it("matches wangye by pinyin abbr 'wy'", () => {
+    const results = getMentionSuggestions("wy");
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("wangye");
+  });
+
+  it("matches baobao by pinyin abbr 'fbb'", () => {
+    const results = getMentionSuggestions("fbb");
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("baobao");
+  });
+
+  it("matches chulan by pinyin prefix 'zhang'", () => {
+    const results = getMentionSuggestions("zhang");
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("chulan");
+  });
+
+  it("ranks pinyin prefix above pinyin substring", () => {
+    const original = [...MENTION_OPTIONS];
+    try {
+      setMentionOptions([
+        { id: "a", label: "张楚岚", aliases: [], role: "r", pinyin: "zhangchulan", abbr: "zcl" },
+        { id: "b", label: "老张", aliases: [], role: "r", pinyin: "laozhang", abbr: "lz" },
+      ]);
+      expect(getMentionSuggestions("zhang").map((o) => o.id)).toEqual(["a", "b"]);
+    } finally {
+      setMentionOptions(original);
+    }
+  });
+
+  it("ranks exact full name above name prefix regardless of candidate order", () => {
+    const original = [...MENTION_OPTIONS];
+    try {
+      // 反序候选：前缀命中的「张楚岚王」排在前，全名「张楚岚」排在后。
+      setMentionOptions([
+        { id: "prefix", label: "张楚岚王", aliases: [], role: "r" },
+        { id: "full", label: "张楚岚", aliases: [], role: "r" },
+      ]);
+      expect(getMentionSuggestions("张楚岚").map((o) => o.id)).toEqual(["full", "prefix"]);
+    } finally {
+      setMentionOptions(original);
+    }
+  });
+});
+
+describe("setMentionOptions", () => {
+  it("backfills pinyin/abbr/color from builtin defaults by id when API omits them", () => {
+    const original = [...MENTION_OPTIONS];
+    try {
+      setMentionOptions([
+        { id: "chulan", label: "张楚岚", aliases: ["张楚岚", "chulan"], role: "首席架构师和核心开发者" },
+        { id: "baobao", label: "冯宝宝", aliases: [], role: "代码审查员和安全专家" },
+      ]);
+      expect(getMentionSuggestions("zcl").map((o) => o.id)).toEqual(["chulan"]);
+      expect(getMentionSuggestions("fbb").map((o) => o.id)).toEqual(["baobao"]);
+      const chulan = MENTION_OPTIONS.find((o) => o.id === "chulan");
+      expect(chulan?.color).toBe("#2563eb");
+      // 保留 API 下发的真实 role，不被内置默认值覆盖。
+      expect(chulan?.role).toBe("首席架构师和核心开发者");
+    } finally {
+      setMentionOptions(original);
+    }
+  });
+
+  it("leaves unknown ids untouched", () => {
+    const original = [...MENTION_OPTIONS];
+    try {
+      setMentionOptions([{ id: "custom", label: "自定", aliases: [], role: "r" }]);
+      expect(MENTION_OPTIONS).toEqual([
+        { id: "custom", label: "自定", aliases: [], role: "r" },
+      ]);
+    } finally {
+      setMentionOptions(original);
+    }
+  });
+});
+
+describe("resolveMentionAlias", () => {
+  it("resolves full name, latin alias and pinyin abbr", () => {
+    expect(resolveMentionAlias("张楚岚")?.id).toBe("chulan");
+    expect(resolveMentionAlias("Wangye")?.id).toBe("wangye");
+    expect(resolveMentionAlias("zcl")?.id).toBe("chulan");
+    expect(resolveMentionAlias("fbb")?.id).toBe("baobao");
+  });
+
+  it("returns undefined for unknown alias", () => {
+    expect(resolveMentionAlias("unknown")).toBeUndefined();
+  });
 });
 
 describe("findActiveMention", () => {
@@ -169,6 +267,10 @@ describe("findActiveMention", () => {
   it("finds mention with empty query (just @)", () => {
     const result = findActiveMention("test @", 6);
     expect(result).toEqual({ query: "", start: 5 });
+  });
+
+  it("does not capture a trailing slash as part of the mention query", () => {
+    expect(findActiveMention("@王也/", 4)).toBeNull();
   });
 });
 

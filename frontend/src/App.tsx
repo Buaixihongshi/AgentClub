@@ -23,15 +23,15 @@ import {
   type MissionCreatePayload,
 } from "./lib/api";
 import { formatDiscussionError } from "./lib/roundtableView";
-import { parseDiscussCommand } from "./lib/skillCommands";
+import { detectUnsupportedTargetedSkill, parseDiscussCommand } from "./lib/skillCommands";
 import { buildConversationTimeline } from "./lib/conversationTimeline";
 import { buildAgentParticipants, buildMissionRuntimeSummary, buildTurnViews } from "./lib/missionView";
+import { parseMentionTarget, setMentionOptions } from "./lib/mentions";
 import {
-  collectMentionTargetIds,
-  parseMentionTarget,
-  parseMentionTargets,
-  setMentionOptions,
-} from "./lib/mentions";
+  confirmedMentionIds,
+  stripConfirmedMentions,
+  type ConfirmedMention,
+} from "./lib/inputConfirmations";
 import {
   isTerminalMissionStatus,
   type ConversationDetail,
@@ -52,6 +52,7 @@ export default function App() {
   const [convDetail, setConvDetail] = useState<ConversationDetail | undefined>();
   const [latestMissionDetail, setLatestMissionDetail] = useState<MissionDetail | undefined>();
   const [input, setInput] = useState("");
+  const [confirmations, setConfirmations] = useState<ConfirmedMention[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [discussionBusy, setDiscussionBusy] = useState(false);
@@ -290,6 +291,7 @@ export default function App() {
     const previousGoal = latestMissionDetail?.mission.goal ?? "";
     setError(null);
     if (previousGoal) {
+      setConfirmations([]);
       setInput((prev) => (prev.trim() ? prev : `/discuss ${previousGoal}`));
     }
   }
@@ -316,15 +318,29 @@ export default function App() {
 
   async function submit() {
     const rawInput = input.trim();
+    // 组合收紧：讨论技能不支持指定单个成员，明确拦截而不是退化成普通 goal。
+    if (detectUnsupportedTargetedSkill(rawInput)) {
+      setError("/discuss 讨论技能不支持指定成员：请去掉 @成员，或将 /discuss 放在正文开头。");
+      return;
+    }
     const skillCommand = parseDiscussCommand(rawInput);
     if (skillCommand && !skillCommand.goal) {
       setError("请在 /discuss 后输入要讨论的问题。");
       return;
     }
-    const multi = parseMentionTargets(rawInput);
-    const missionTargetAgentIds = collectMentionTargetIds(rawInput);
-    const single = parseMentionTarget(rawInput);
-    if (!multi.content) return;
+
+    // 发送链路消费确认元数据：只有浮层确认过的 @提及才参与路由，
+    // 直接输入/粘贴的 @别名 不路由。
+    const missionTargetAgentIds = confirmedMentionIds(confirmations);
+    // 用未 trim 的原文剥离确认实体，保证实体坐标与提交文本一致：
+    // 尾随/前导空格都不会让坐标错位，纯 @提及 无正文也会被正确拦截。
+    const bodyless = skillCommand
+      ? skillCommand.goal
+      : stripConfirmedMentions(input, confirmations);
+    if (!bodyless.trim()) {
+      setError("仅 @成员 不能作为任务内容，请补充具体任务。");
+      return;
+    }
 
     const activeMission = hasRunningMission ? latestMissionDetail : undefined;
     const roundtableActive = activeMission?.mission.room_mode === "roundtable";
@@ -347,8 +363,10 @@ export default function App() {
       if (activeMission) {
         const updated = await interruptMission(activeMission.mission.id, rawInput, {
           targetAgentId: roundtableActive
-            ? (activeMission.discussion?.protocol === "deliberation_v2" ? undefined : single.targetAgentId)
-            : single.targetAgentId,
+            ? (activeMission.discussion?.protocol === "deliberation_v2"
+                ? undefined
+                : parseMentionTarget(rawInput).targetAgentId)
+            : missionTargetAgentIds[0],
           requestId: roundtableActive ? newRequestId("input") : undefined,
         });
         setLatestMissionDetail(updated);
@@ -372,6 +390,7 @@ export default function App() {
         listConversations().then(setConversations).catch(() => {});
       }
       setInput("");
+      setConfirmations([]);
     } catch (err) {
       // Requests that lost the race keep the user's text and refresh the truth.
       setError(formatDiscussionError(err instanceof Error ? err.message : "请求失败"));
@@ -502,6 +521,8 @@ export default function App() {
       busy={busy}
       error={error}
       onInputChange={setInput}
+      confirmations={confirmations}
+      onConfirmationsChange={setConfirmations}
       onSubmit={submit}
       conversations={conversations}
       selectedConversationId={selectedConvId}

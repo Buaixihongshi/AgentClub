@@ -1,4 +1,6 @@
 import hashlib
+import os
+import stat
 from functools import wraps
 from inspect import signature
 
@@ -11,6 +13,7 @@ from backend.app.domain.models import (
     Message,
     MessageRole,
     is_provider_verification_mission,
+    utc_now,
 )
 from backend.app.orchestration.events import (
     record_a2a_invoke,
@@ -131,6 +134,7 @@ class MCPTools:
         receipt_id: Optional[str] = None,
         current_step_origin: Optional[str] = None,
         lease_token: Optional[str] = None,
+        workspace_root: Optional[Path] = None,
     ):
         self.repository = repository
         self.artifact_root = artifact_root
@@ -143,6 +147,7 @@ class MCPTools:
         self.receipt_id = receipt_id
         self._current_step_origin = current_step_origin
         self.lease_token = lease_token
+        self.workspace_root = (workspace_root or Path.cwd()).resolve()
 
     @property
     def current_step_origin(self) -> Optional[str]:
@@ -274,9 +279,10 @@ class MCPTools:
         agent_id: str,
         turn_id: str,
         relative_path: str,
-        content: str,
+        content: Optional[str] = None,
         *,
         provider_id: Optional[str] = None,
+        source_path: Optional[str] = None,
     ) -> Path:
         self._require_mission(mission_id)
         record_tool_call(
@@ -303,9 +309,28 @@ class MCPTools:
                 provider_id,
             )
             raise MCPToolError("Artifact path is outside artifact directory")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+        try:
+            if (content is None) == (source_path is None):
+                raise MCPToolError("Provide exactly one of content or source_path")
+            if source_path is not None:
+                data = self._read_delivery_file(mission_id, source_path)
+            elif isinstance(content, str):
+                data = content.encode("utf-8")
+            else:
+                raise MCPToolError("content must be a string")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # Replace atomically so a saved-file event never points at a partial write.
+            temporary = target.with_name("." + target.name + "." + uuid4().hex + ".tmp")
+            try:
+                temporary.write_bytes(data)
+                temporary.replace(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+        except (OSError, ValueError) as exc:
+            record_tool_error(self.repository, mission_id, turn_id, agent_id,
+                              "write_artifact", str(exc), provider_id)
+            raise MCPToolError(str(exc)) from exc
+        digest = hashlib.sha256(data).hexdigest()[:16]
         artifact_id = "{mission_id}:{path}".format(
             mission_id=mission_id,
             path=normalized_relative_path,
@@ -319,6 +344,8 @@ class MCPTools:
                 "turn_id": turn_id,
                 "title": target.name,
                 "path": normalized_relative_path,
+                "provider_id": provider_id,
+                "saved_at": utc_now().isoformat(),
             },
         )
         record_tool_result(
@@ -330,10 +357,41 @@ class MCPTools:
             summary="Wrote {path}".format(path=normalized_relative_path),
             artifact_id=artifact_id,
             provider_id=provider_id,
-            output="{path} · {n} chars · sha256:{digest}".format(
-                path=normalized_relative_path, n=len(content), digest=digest),
+            output="{path} · {n} bytes · sha256:{digest}".format(
+                path=normalized_relative_path, n=len(data), digest=digest),
         )
         return target
+
+    IMPORT_MAX_BYTES = 10 * 1024 * 1024
+
+    def _read_delivery_file(self, mission_id: str, source_path: str) -> bytes:
+        """Import bytes from the host workspace, respecting artifact conversation scope."""
+        if not isinstance(source_path, str) or not source_path.strip():
+            raise MCPToolError("source_path must be a non-empty string")
+        source = (self.workspace_root / source_path).resolve()
+        artifact_root = self.artifact_root.resolve()
+        if source.is_relative_to(artifact_root):
+            parts = source.relative_to(artifact_root).parts
+            owner = self.repository.get_mission(parts[0]) if len(parts) > 1 else None
+            current = self.repository.get_mission(mission_id)
+            if not owner or (owner.id != mission_id and not (
+                current.conversation_id and current.conversation_id == owner.conversation_id
+            )):
+                raise MCPToolError("Source artifact is not in the current conversation")
+        elif not source.is_relative_to(self.workspace_root):
+            raise MCPToolError("source_path is outside the workspace")
+        # Reject directories/devices/FIFOs before reading, and bound memory use.
+        fd = os.open(source, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise MCPToolError("source_path must refer to a regular file")
+            if info.st_size > self.IMPORT_MAX_BYTES:
+                raise MCPToolError("Source file exceeds the 10 MiB import limit")
+            data = handle.read(self.IMPORT_MAX_BYTES + 1)
+            if len(data) > self.IMPORT_MAX_BYTES:
+                raise MCPToolError("Source file exceeds the 10 MiB import limit")
+            return data
 
     READ_ARTIFACT_MAX_CHARS = 20000
 

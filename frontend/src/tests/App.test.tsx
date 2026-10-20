@@ -86,12 +86,18 @@ function stubFetch(extraHandlers?: (url: string, init?: RequestInit) => Response
   });
 }
 
+/** 等待 selectAt 里 requestAnimationFrame 设置的光标落位，避免后续打字被移动光标打乱顺序。 */
+async function flushRaf() {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
 describe("AgentClub app", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     vi.stubGlobal("fetch", stubFetch());
   });
-
   it("creates a mission from the composer via conversation API", async () => {
     render(<App />);
     await userEvent.type(screen.getByLabelText("任务输入"), "设计一个多 Agent 任务室");
@@ -255,7 +261,7 @@ describe("AgentClub app", () => {
     expect(BACKEND_MISSION_STATUSES).toContain("pending");
   });
 
-  it("preserves persona hint text and sends target_agent_id for interruptions", async () => {
+  it("confirmed @mention in a running mission sends target_agent_id", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal("fetch", stubFetch((url, init) => {
       calls.push({ url, init });
@@ -285,7 +291,10 @@ describe("AgentClub app", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("任务输入")).toHaveValue(""),
     );
-    await userEvent.type(screen.getByLabelText("任务输入"), "@王也 看风险");
+    await userEvent.type(screen.getByLabelText("任务输入"), "@王");
+    await userEvent.keyboard("{Tab}");
+    await flushRaf();
+    await userEvent.type(screen.getByLabelText("任务输入"), "看风险");
     await userEvent.click(screen.getByRole("button", { name: "发送插话" }));
 
     const interruptCall = calls.find(
@@ -332,7 +341,7 @@ describe("AgentClub app", () => {
     expect(legacyMissionCalls.length).toBe(0);
   });
 
-  it("idle submit with mention preserves mention text and sends target_agent_ids", async () => {
+  it("idle submit with confirmed mention preserves text and sends target_agent_ids", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal("fetch", stubFetch((url, init) => {
       calls.push({ url, init });
@@ -349,7 +358,10 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "@王也 看风险");
+    await userEvent.type(screen.getByLabelText("任务输入"), "@王");
+    await userEvent.keyboard("{Tab}");
+    await flushRaf();
+    await userEvent.type(screen.getByLabelText("任务输入"), "看风险");
     await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
 
     const missionCall = calls.find(c =>
@@ -359,7 +371,51 @@ describe("AgentClub app", () => {
     expect(body).toEqual({ goal: "@王也 看风险", target_agent_ids: ["wangye"] });
   });
 
-  it("idle submit sends target_agent_ids for mentions at the end of mission text", async () => {
+  it("confirmed mention with no body is intercepted before sending", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", stubFetch((url, init) => {
+      calls.push({ url, init });
+      if (url.match(/\/api\/conversations\/[^/]+\/missions/) && init?.method === "POST") {
+        return new Response(JSON.stringify(makeConvDetail()), { status: 200 });
+      }
+      return null;
+    }));
+
+    render(<App />);
+    await userEvent.type(screen.getByLabelText("任务输入"), "@王");
+    await userEvent.keyboard("{Tab}");
+
+    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("仅 @成员 不能作为任务内容");
+    expect(
+      calls.some(c => c.url.match(/\/api\/conversations\/[^/]+\/missions/) && c.init?.method === "POST"),
+    ).toBe(false);
+  });
+
+  it("leading space before a confirmed mention still aligns coordinates", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", stubFetch((url, init) => {
+      calls.push({ url, init });
+      if (url.match(/\/api\/conversations\/[^/]+\/missions/) && init?.method === "POST") {
+        return new Response(JSON.stringify(makeConvDetail()), { status: 200 });
+      }
+      return null;
+    }));
+
+    render(<App />);
+    await userEvent.type(screen.getByLabelText("任务输入"), " @王");
+    await userEvent.keyboard("{Tab}");
+
+    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("仅 @成员 不能作为任务内容");
+    expect(
+      calls.some(c => c.url.match(/\/api\/conversations\/[^/]+\/missions/) && c.init?.method === "POST"),
+    ).toBe(false);
+  });
+
+  it("idle submit does not route plain @mentions without confirmation", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal("fetch", stubFetch((url, init) => {
       calls.push({ url, init });
@@ -385,11 +441,10 @@ describe("AgentClub app", () => {
     const body = JSON.parse(String(missionCall?.init?.body));
     expect(body).toEqual({
       goal: "依据经验复盘@张楚岚 @冯宝宝 @王也",
-      target_agent_ids: ["chulan", "baobao", "wangye"],
     });
   });
 
-  it("running submit with @冯宝宝 preserves mention text and sends target_agent_id", async () => {
+  it("running submit with plain @mention does not route target_agent_id", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal("fetch", stubFetch((url, init) => {
       calls.push({ url, init });
@@ -424,7 +479,6 @@ describe("AgentClub app", () => {
     const interruptCall = calls.find(c => c.url === "/api/missions/m1/interruptions");
     expect(JSON.parse(String(interruptCall?.init?.body))).toEqual({
       content: "@冯宝宝 补一刀",
-      target_agent_id: "baobao",
     });
   });
 

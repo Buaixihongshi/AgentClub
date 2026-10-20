@@ -14,6 +14,53 @@ from backend.app.mcp.tools import MCPTools
 from backend.app.orchestration.live_progress import LiveProgressRegistry
 
 
+def test_real_tool_returns_extend_a_running_subprocess_past_its_original_deadline(repository, temp_settings, seeded_mission, tmp_path):
+    from backend.app.domain.models import TurnStatus
+    fake_mcp = Path(__file__).with_name('_fake_mcp_cli.py')
+    script = tmp_path / 'long_running_tools.py'
+    script.write_text(
+        'import time,json,os,runpy\n'
+        'for i in range(6):\n'
+        ' print(json.dumps({"type":"user","message":{"content":[{"type":"tool_result",'
+        '"tool_use_id":str(i),"content":"test returned"}]}}),flush=True)\n'
+        ' time.sleep(0.25)\n'
+        'os.environ["YIREN_FAKE_MCP_MODE"]="publish"\n'
+        f'runpy.run_path({str(fake_mcp)!r},run_name="__main__")\n'
+    )
+    adapter = MCPSubprocessAdapter(sys.executable, [str(script)], db_path=temp_settings.database_path,
+        artifact_root=temp_settings.artifact_root, timeout=1.2, progress_check_interval=0.2)
+    before = time.monotonic()
+    outcome = adapter.run_turn(seeded_mission.id, 'baobao', 't_extended', 'claude', 'test',
+                               MCPTools(repository, temp_settings.artifact_root))
+    assert time.monotonic() - before > 1.2
+    assert outcome.status == TurnStatus.COMPLETED
+    events = repository.list_events_after(seeded_mission.id, 0)
+    extensions = [e for e in events if e.event_type == 'turn.deadline_extended']
+    assert extensions and extensions[-1].payload['extension'] >= 2
+    records = list((temp_settings.database_path.parent / 'cli-diagnostics').glob('*.json'))
+    diagnostic = json.loads(records[0].read_text())
+    assert diagnostic['deadline_extensions'] >= 2
+    assert not diagnostic['hard_timeout']
+
+
+def test_text_generation_without_tool_returns_does_not_extend_the_deadline(repository, temp_settings, seeded_mission, tmp_path):
+    from backend.app.domain.models import TurnStatus
+    script = tmp_path / 'only_text.py'
+    script.write_text(
+        'import time,json\n'
+        'for i in range(100):\n'
+        ' print(json.dumps({"type":"stream_event","event":{"type":"content_block_delta",'
+        '"delta":{"type":"text_delta","text":"working"}}}),flush=True)\n'
+        ' time.sleep(0.05)\n'
+    )
+    adapter = MCPSubprocessAdapter(sys.executable, [str(script)], db_path=temp_settings.database_path,
+        artifact_root=temp_settings.artifact_root, timeout=0.4, progress_check_interval=0.1)
+    outcome = adapter.run_turn(seeded_mission.id, 'baobao', 't_no_work', 'claude', 'test',
+                               MCPTools(repository, temp_settings.artifact_root))
+    assert outcome.status == TurnStatus.BLOCKED
+    assert not any(e.event_type == 'turn.deadline_extended' for e in repository.list_events_after(seeded_mission.id, 0))
+
+
 def test_native_activity_is_persisted_and_visible_before_cli_exits(repository, temp_settings, seeded_mission, tmp_path):
     from backend.app.api.mission_detail import build_mission_detail
     from backend.app.domain.models import TurnStatus

@@ -46,6 +46,12 @@ try:
             sys.exit(3)
         if mode == 'hang':
             time.sleep(60)
+        if mode == 'long_tools':
+            for index in range(6):
+                emit({'event': 'step_update', 'step_update': {
+                    'step_type': 'tool', 'step_index': index + 10, 'state': 'DONE',
+                    'tool_name': 'view_file', 'tool_info': {'output': 'read result'}}})
+                time.sleep(0.25)
         for state in ['ACTIVE', 'DONE']:
             emit({'event': 'step_update', 'step_update': {
                 'step_type': 'tool', 'step_index': 1, 'state': state, 'tool_name': 'view_file',

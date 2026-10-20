@@ -24,6 +24,7 @@ from backend.app.adapters.deliberation_errors import failure_code, private_error
 from backend.app.config.providers import get_cli_provider
 from backend.app.domain.models import TurnStatus
 from backend.app.mcp.server import _Context, _dispatch
+from backend.app.adapters.turn_deadline import HUB_WORK_TOOLS, PROGRESS_CHECK_SECONDS, ToolResultDeadline
 
 
 def isolation_supported():
@@ -46,7 +47,7 @@ with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as s:
 
 
 @contextmanager
-def mcp_bridge(directory, tools, mission_id, agent_id, turn_id, provider_id):
+def mcp_bridge(directory, tools, mission_id, agent_id, turn_id, provider_id, on_tool_return=None):
     path = directory / "mcp.sock"
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(path))
@@ -71,6 +72,10 @@ def mcp_bridge(directory, tools, mission_id, agent_id, turn_id, provider_id):
                     if reply is not None:
                         stream.write((json.dumps(reply, ensure_ascii=False) + "\n").encode())
                         stream.flush()
+                        if (on_tool_return and frame.get('method') == 'tools/call'
+                                and (frame.get('params') or {}).get('name') in HUB_WORK_TOOLS
+                                and isinstance(reply.get('result'), dict)):
+                            on_tool_return()
         except OSError:
             pass
 
@@ -202,12 +207,14 @@ def claude_provider_environment(env):
 
 
 class DeliberationCLIAdapter:
-    def __init__(self, config_dir, timeout, provider_overrides):
+    def __init__(self, config_dir, timeout, provider_overrides, *, progress_check_interval=PROGRESS_CHECK_SECONDS):
         self.config_dir = config_dir
         self.timeout = timeout
         self.provider_overrides = provider_overrides
+        self.progress_check_interval = progress_check_interval
 
     def run_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):
+        progress = ToolResultDeadline(self.timeout, check_interval=self.progress_check_interval)
         if not isolation_supported():
             return TurnOutcome(status=TurnStatus.BLOCKED, summary="isolation_not_supported")
         provider = get_cli_provider(self.config_dir, provider_id, overrides=self.provider_overrides)
@@ -218,7 +225,8 @@ class DeliberationCLIAdapter:
             return TurnOutcome(status=TurnStatus.BLOCKED, summary="isolation_not_supported for this CLI")
         with tempfile.TemporaryDirectory(prefix="acv2-", dir="/tmp") as temp:
             directory = Path(temp).resolve()
-            with mcp_bridge(directory, tools, mission_id, agent_id, turn_id, provider_id) as server:
+            with mcp_bridge(directory, tools, mission_id, agent_id, turn_id, provider_id,
+                            on_tool_return=lambda: progress.record_result()) as server:
                 env = {k: v for k, v in os.environ.items() if not k.startswith("YIREN_")}
                 env.pop("PYTHONPATH", None)
                 env.pop("NODE_OPTIONS", None)
@@ -265,6 +273,10 @@ class DeliberationCLIAdapter:
                     if "--skip-git-repo-check" not in args:
                         args.append("--skip-git-repo-check")
                 else:
+                    args = [arg for i, arg in enumerate(args)
+                            if arg != '--print-timeout' and not arg.startswith('--print-timeout=')
+                            and not (i > 0 and args[i - 1] == '--print-timeout')]
+                    args = ['--print-timeout', '0', *args]
                     agy_home = directory / 'home'
                     agy_config = agy_home / '.gemini/config'
                     agy_config.mkdir(parents=True)
@@ -308,17 +320,27 @@ class DeliberationCLIAdapter:
                            *prompt_arguments(basename, args, prompt)]
                 proc = subprocess.Popen(command, cwd=directory, env=env, stdin=subprocess.DEVNULL,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-                deadline = time.monotonic() + self.timeout
+                progress = ToolResultDeadline(self.timeout, check_interval=self.progress_check_interval)
                 terminated = None
                 while True:
                     try:
-                        stdout, stderr = proc.communicate(timeout=min(.25, max(.01, deadline - time.monotonic())))
+                        stdout, stderr = proc.communicate(timeout=min(.25, max(.01, progress.remaining())))
                         break
                     except subprocess.TimeoutExpired:
                         from backend.app.orchestration.deliberation import Deliberation
-                        state = Deliberation(tools.repository).state(tools.repository.get_mission(mission_id))
+                        policy = Deliberation(tools.repository)
+                        state = policy.state(tools.repository.get_mission(mission_id))
                         cancelled = state['pending_control'] == 'stop' or state['phase'] == 'ended'
-                        if cancelled or time.monotonic() >= deadline:
+                        extension = progress.check()
+                        if (extension and not cancelled and progress.remaining() > 0
+                                and state['leases'][turn_id]['status'] == 'running'):
+                            policy.renew_turn_lease(mission_id, agent_id, turn_id, provider_id,
+                                                    tools.lease_token, progress.remaining() + 30)
+                            tools.repository.add_event(mission_id, 'turn.deadline_extended', {
+                                'turn_id': turn_id, 'agent_id': agent_id, 'provider_id': provider_id,
+                                **extension,
+                            })
+                        if cancelled or progress.remaining() <= 0:
                             from backend.app.adapters.subprocess_cli import kill_process_tree
                             kill_process_tree(proc)
                             stdout, stderr = proc.communicate(timeout=5)
@@ -352,6 +374,7 @@ class DeliberationCLIAdapter:
                         diagnostic += '\n' + log.read_text(errors='replace')[-8000:]
                 code = None if accepted else failure_code(terminated or diagnostic, exit_code=proc.returncode)
                 tools.repository.add_event(mission_id, "discussion.provider_execution", {
+                    **progress.diagnostic(),
                     "turn_id": turn_id, "provider_id": provider_id, "exit_code": proc.returncode,
                     "isolation": "macos-sandbox+host-mcp-bridge", "usage_available": usage is not None,
                     "failure_code": code,

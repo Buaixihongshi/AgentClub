@@ -127,6 +127,10 @@ export async function fetchArtifactContent(
   return parseJson<ArtifactContent>(response, "加载产物内容失败");
 }
 
+export function artifactDownloadUrl(missionId: string, path: string): string {
+  return `${API_ROOT}/api/missions/${encodeURIComponent(missionId)}/artifacts/file?path=${encodeURIComponent(path)}`;
+}
+
 export function missionStreamUrl(missionId: string): string {
   return `${API_ROOT}/api/missions/${missionId}/stream`;
 }

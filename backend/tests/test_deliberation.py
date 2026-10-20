@@ -45,6 +45,19 @@ def create(repo, settings, n=3, rounds=2):
     return create_requested_mission(repo, settings, payload)[0]
 
 
+def test_host_can_renew_only_its_current_discussion_capability(repository, temp_settings):
+    from datetime import datetime
+    mission = create(repository, temp_settings)
+    policy = Deliberation(repository)
+    lease = policy.claim_batch(mission.id, temp_settings.artifact_root)[0]
+    tools, auth = tools_for(repository, temp_settings, mission.id, lease)
+    policy.renew_turn_lease(mission.id, auth['agent_id'], auth['turn_id'], 'fake', auth['token'], 3000)
+    updated = policy.state(repository.get_mission(mission.id))['leases'][auth['turn_id']]
+    assert datetime.fromisoformat(updated['expires_at']) > datetime.fromisoformat(auth['expires_at'])
+    with pytest.raises(ValueError):
+        policy.renew_turn_lease(mission.id, auth['agent_id'], auth['turn_id'], 'other', auth['token'], 3000)
+
+
 def control(repo, settings, mid, action, **fields):
     policy = Deliberation(repo)
     state = policy.state(repo.get_mission(mid))
