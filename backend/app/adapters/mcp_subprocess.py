@@ -336,6 +336,8 @@ class MCPSubprocessAdapter(CLIAdapter):
                         if is_tool_return(ev):
                             progress.record_result(("native", ev.activity_id) if ev.activity_id else None)
                         if ev.type is StreamEventType.PARTIAL_TEXT and ev.text:
+                            if not self.live_progress.get_partial_text(mission_id, turn_id):
+                                repository.add_event(mission_id, "provider.output_started", {"turn_id": turn_id, "provider_id": provider_id})
                             self.live_progress.append_text(mission_id, turn_id, ev.text)
                         if ev.type is StreamEventType.SESSION_STARTED and ev.session_id:
                             captured_session_id[0] = ev.session_id
@@ -980,7 +982,10 @@ def _wait_for_process_with_activity(
             if now >= idle_deadline:
                 return ProcessWaitReason.IDLE_TIMEOUT
 
-        remaining = hard_deadline - now
+        from backend.app.adapters.turn_budget import remaining_timeout
+        remaining = remaining_timeout(hard_deadline - now)
+        if remaining <= 0:
+            return ProcessWaitReason.HARD_TIMEOUT
         if idle_deadline is not None:
             remaining = min(remaining, idle_deadline - now)
         try:

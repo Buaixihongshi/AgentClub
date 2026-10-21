@@ -5,6 +5,7 @@ from typing import Callable, Dict, List, Optional
 from uuid import uuid4
 
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
+from backend.app.adapters.turn_budget import budgeted_turn, claim_attempt
 from backend.app.domain.agent_registry import AgentRegistry, get_agent_registry
 from backend.app.domain.models import (
     AgentProfile,
@@ -626,6 +627,7 @@ class MissionRunner:
                 a2a_queue.append(resume_step)
         return False
 
+    @budgeted_turn(lambda self, *args, **kwargs: self.settings.cli_timeout)
     def _run_turn_with_fallbacks(
         self,
         mission: Mission,
@@ -643,7 +645,19 @@ class MissionRunner:
                 agent_id=agent_id
             ),
         )
+        from backend.app.adapters.fallback_policy import context_approved, may_retry
+        provider_candidates = list(dict.fromkeys(provider_candidates))
         for index, provider_id in enumerate(provider_candidates):
+            if not claim_attempt():
+                return TurnOutcome(status=TurnStatus.BLOCKED, summary="Shared turn budget exhausted",
+                                   failure_code="budget_exhausted", retryable=False)
+            if index and not context_approved(self.settings, agent_id, provider_id):
+                self.repository.add_event(mission.id, "provider.fallback_denied", {"turn_id": turn_id,
+                    "provider_id": provider_id, "reason": "context_approval_required"})
+                return TurnOutcome(status=TurnStatus.BLOCKED, summary="Fallback API context export requires endpoint-bound approval",
+                                   failure_code="configuration", retryable=False)
+            prior_events = self.repository.list_events_after(mission.id, 0)
+            event_offset = len(prior_events)
             attempt = index + 1
             if mission.room_mode == 'roundtable':
                 from backend.app.orchestration.roundtable import Roundtable
@@ -711,6 +725,11 @@ class MissionRunner:
                 duration_ms,
                 outcome.summary or "blocked",
             )
+            attempt_events = self.repository.list_events_after(mission.id, 0)[event_offset:]
+            from backend.app.orchestration.live_progress import get_live_progress_registry
+            if (not may_retry(outcome, attempt_events)
+                    or get_live_progress_registry().get_partial_text(mission.id, turn_id)):
+                return outcome
             if index < len(provider_candidates) - 1:
                 tools.update_status(
                     mission.id,
@@ -747,6 +766,8 @@ def _apply_agent_overrides(
             updates["default_provider_id"] = ov.default_provider_id
         if ov.fallback_provider_ids is not None:
             updates["fallback_provider_ids"] = list(ov.fallback_provider_ids)
+        if ov.provider_models is not None:
+            updates["provider_models"] = dict(ov.provider_models)
         result.append(agent.model_copy(update=updates) if updates else agent)
     return result
 

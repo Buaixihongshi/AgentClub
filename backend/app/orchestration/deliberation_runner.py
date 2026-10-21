@@ -1,6 +1,7 @@
 """Batch execution separated from the transactional discussion state machine."""
 import json
 import time
+from backend.app.adapters.turn_budget import budgeted_turn, claim_attempt
 from concurrent.futures import ThreadPoolExecutor
 
 from backend.app.domain.deliberation import RESULT_TYPES
@@ -59,10 +60,18 @@ def run_deliberation(repository, settings, mission_id, adapter):
         mission = repository.get_mission(mission_id)
         profiles = {a["id"]: AgentProfile.model_validate(a) for a in mission.discussion.profiles}
 
+        @budgeted_turn(settings.cli_timeout)
         def run_one(reserved):
             agent_id, turn_id = reserved["agent_id"], reserved["turn_id"]
             routes = mission.discussion.provider_routes[agent_id]
-            for provider_id in routes:
+            from backend.app.adapters.fallback_policy import context_approved, may_retry
+            for index, provider_id in enumerate(dict.fromkeys(routes)):
+                if not claim_attempt():
+                    return
+                if (index or provider_id != profiles[agent_id].default_provider_id) and not context_approved(settings, agent_id, provider_id):
+                    repository.add_event(mission_id, "provider.fallback_denied", {"turn_id": turn_id,
+                        "provider_id": provider_id, "reason": "context_approval_required"})
+                    return
                 try:
                     lease = policy.authorize(mission_id, turn_id, provider_id)
                 except ValueError:
@@ -87,6 +96,7 @@ def run_deliberation(repository, settings, mission_id, adapter):
                                  lease_token=lease["token"])
                 start = time.monotonic()
                 outcome = None
+                event_offset = len(repository.list_events_after(mission_id, 0))
                 try:
                     method = getattr(adapter, "run_deliberation_turn", adapter.run_turn)
                     outcome = method(mission_id, agent_id, turn_id, provider_id, prompt, tools)
@@ -105,6 +115,11 @@ def run_deliberation(repository, settings, mission_id, adapter):
                                       exit_code=getattr(outcome, 'exit_code', None))
                 record_turn_failed(repository, mission_id, turn_id, agent_id, provider_id,
                                    lease["attempt"], duration, 'Provider run or structured submission failed; sealed diagnostic retained privately')
+                attempt_events = repository.list_events_after(mission_id, 0)[event_offset:]
+                model_tool_events = () if provider_id in settings.api_connections else (
+                    e for e in attempt_events if e.payload.get('turn_id') == turn_id)
+                if outcome is None or not may_retry(outcome, model_tool_events):
+                    return
         with ThreadPoolExecutor(max_workers=3, thread_name_prefix="deliberation") as executor:
             futures = [executor.submit(run_one, lease) for lease in batch]
             for future in futures:

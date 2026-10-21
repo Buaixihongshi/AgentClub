@@ -5,6 +5,7 @@ from collections import deque
 from typing import Callable, Optional
 
 from backend.app.adapters.stream_events import StreamEvent, StreamEventType
+from backend.app.adapters.turn_budget import remaining_timeout
 
 
 PROGRESS_CHECK_SECONDS = 300
@@ -71,7 +72,8 @@ class ToolResultDeadline:
                 if not new_results:
                     continue
                 previous = self.deadline
-                self.deadline = max(previous, checked_at + self.timeout)
+                self.deadline = min(max(previous, checked_at + self.timeout),
+                                    now + remaining_timeout(float("inf")))
                 if self.deadline == previous:
                     continue
                 self.extensions += 1
@@ -81,7 +83,7 @@ class ToolResultDeadline:
             return extension
 
     def remaining(self):
-        return max(0, self.deadline - self.clock())
+        return remaining_timeout(max(0, self.deadline - self.clock()))
 
     def diagnostic(self):
         return {"deadline_extensions": self.extensions,

@@ -35,16 +35,17 @@ export function TurnTimeline({
   emptyContent,
   afterContent,
   collapsedAgentMissionId,
+  contentRevision,
 }: {
   turns: TurnView[];
   conversationId?: string;
   emptyContent?: ReactNode;
   afterContent?: ReactNode;
   collapsedAgentMissionId?: string;
+  contentRevision?: number;
 }) {
   const containerRef = useRef<HTMLElement>(null);
   const lastConvRef = useRef<string | undefined>(undefined);
-  const lastTurnsLenRef = useRef<number>(0);
   const stickToBottomRef = useRef<boolean>(true);
   const collapsed = collapsedAgentMissionId ? turns.filter((t) => t.missionId === collapsedAgentMissionId && (t.role === 'agent' || t.role === 'assistant')) : [];
   const collapsedIds = new Set(collapsed.map((turn) => turn.id));
@@ -57,16 +58,14 @@ export function TurnTimeline({
     if (convChanged) {
       el.scrollTop = el.scrollHeight;
       lastConvRef.current = conversationId;
-      lastTurnsLenRef.current = turns.length;
       stickToBottomRef.current = true;
       return;
     }
 
-    if (turns.length > lastTurnsLenRef.current && stickToBottomRef.current) {
+    if (stickToBottomRef.current) {
       el.scrollTop = el.scrollHeight;
     }
-    lastTurnsLenRef.current = turns.length;
-  }, [conversationId, turns.length]);
+  }, [conversationId, turns.length, contentRevision]);
 
   function handleScroll() {
     const el = containerRef.current;

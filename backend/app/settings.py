@@ -10,8 +10,11 @@ class ProviderOverride(BaseModel):
 
 
 class AgentOverride(BaseModel):
+    fallback_context_approved: bool = False
+    fallback_context_targets: Dict[str, str] = Field(default_factory=dict)
     default_provider_id: Optional[str] = None
     fallback_provider_ids: Optional[list[str]] = None
+    provider_models: Optional[Dict[str, str]] = None
 
 
 class Settings(BaseModel):
@@ -31,6 +34,7 @@ class Settings(BaseModel):
     maintenance_command_timeout: int = Field(default=900, ge=1)
     provider_overrides: Dict[str, ProviderOverride] = {}
     agent_overrides: Dict[str, AgentOverride] = {}
+    api_connections: Dict[str, dict] = Field(default_factory=dict, exclude=True, repr=False)
 
 
 _RUNTIME_FIELDS = {
@@ -96,10 +100,11 @@ def get_settings() -> Settings:
             if isinstance(adata, dict):
                 agent_overrides[aid] = AgentOverride(**{
                     k: v for k, v in adata.items()
-                    if k in {"default_provider_id", "fallback_provider_ids"}
+                    if k in {"default_provider_id", "fallback_provider_ids", "provider_models", "fallback_context_approved", "fallback_context_targets"}
                 })
     kwargs["agent_overrides"] = agent_overrides
 
+    kwargs["api_connections"] = file_data.get("connections") or {}
     return Settings(**kwargs)
 
 
@@ -152,10 +157,11 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
         if isinstance(adata, dict):
             agent_overrides[aid] = AgentOverride(**{
                 k: v for k, v in adata.items()
-                if k in {"default_provider_id", "fallback_provider_ids"}
+                if k in {"default_provider_id", "fallback_provider_ids", "provider_models", "fallback_context_approved", "fallback_context_targets"}
             })
     kwargs["agent_overrides"] = agent_overrides
 
+    kwargs["api_connections"] = file_data.get("connections") or {}
     return Settings(**kwargs)
 
 

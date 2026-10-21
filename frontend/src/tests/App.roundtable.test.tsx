@@ -82,7 +82,8 @@ describe("discussion as a project skill in chat", () => {
     expect(screen.queryByRole("list", { name: "参与者" })).not.toBeInTheDocument();
     await submitText(user, `/discuss ${GOAL}`);
     expect(lastBody(calls, isMissionCreate)).toEqual({ goal: GOAL, skill: "discuss", request_id: expect.stringMatching(/^skill-/) });
-    expect(await screen.findByText("团队正在独立核对这个问题…")).toBeInTheDocument();
+    expect(await screen.findByText("团队正在形成独立判断…")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "讨论重点" })).toHaveTextContent(GOAL);
     expect(screen.queryByRole("list", { name: "讨论流程" })).not.toBeInTheDocument();
     expect(screen.queryByText(/已用 .*最多|参与者：|六阶段讨论/)).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /王也/ })).not.toBeInTheDocument();
@@ -152,7 +153,7 @@ describe("discussion as a project skill in chat", () => {
     const user = userEvent.setup(); let current = skillMission();
     const calls = stubSkillFetch({ conversations: [conversationSummary()], conversation: () => conversationDetail(current) }); render(<App />);
     await user.click(await screen.findByRole("button", { name: /复盘会/ }));
-    await screen.findByText("团队正在独立核对这个问题…");
+    await screen.findByText("团队正在形成独立判断…");
     const EventSourceMock = window.EventSource as unknown as { instances: Array<EventTarget & { close: ReturnType<typeof vi.fn> }> };
     await waitFor(() => expect(EventSourceMock.instances.length).toBeGreaterThan(0));
     current = skillMission({ phase: "ended", end_reason: "completed", revision: 19 }, "completed");

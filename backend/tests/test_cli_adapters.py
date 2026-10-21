@@ -149,10 +149,30 @@ class SelectiveBlockingAdapter:
         if provider_id == "claude":
             return TurnOutcome(
                 status=TurnStatus.BLOCKED,
-                summary="provider is disabled: claude",
+                summary="temporary provider network failure",
+                failure_code="network",
+                retryable=True,
             )
         tools.publish_message(mission_id, agent_id, turn_id, "fallback ok", provider_id)
         return TurnOutcome(status=TurnStatus.COMPLETED)
+
+
+@pytest.mark.parametrize("failure", ["authentication", "configuration"])
+def test_runner_does_not_fallback_after_permanent_failure(repository, temp_settings, failure):
+    calls = []
+
+    class PermanentFailureAdapter:
+        def run_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):
+            calls.append(provider_id)
+            return TurnOutcome(status=TurnStatus.BLOCKED, failure_code=failure, retryable=False)
+
+    repository.create_mission(Mission(id="m_permanent", title="Plan", goal="设计方案"))
+    runner = MissionRunner(repository, temp_settings, adapter=PermanentFailureAdapter())
+    runner.agents = [AgentProfile(id="chulan", display_name="张楚岚", role="规划",
+                                 persona="拆解", default_provider_id="claude",
+                                 fallback_provider_ids=["gemini"])]
+    assert runner.run("m_permanent").status == MissionStatus.BLOCKED
+    assert calls == ["claude"]
 
 
 def test_runner_uses_agent_fallback_provider_when_default_blocks(

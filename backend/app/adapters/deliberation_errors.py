@@ -1,6 +1,19 @@
 """Allowlisted public diagnostics; provider output stays private until release."""
 
 MESSAGES = {
+    'configuration': 'API 配置无效或凭据已更新，请检查连接与模型。',
+    'endpoint_policy': 'API 出站端点未通过网络策略校验。',
+    'tls_verification': 'API TLS 证书校验失败。',
+    'network': 'API 网络请求失败。',
+    'dns': 'API 端点 DNS 解析失败。',
+    'dns_busy': 'API DNS 解析繁忙，请稍后重试。',
+    'upstream': 'API 服务暂时不可用。',
+    'protocol': 'API 返回了不兼容的协议数据。',
+    'incomplete': 'API 流在完成前中断。',
+    'response_limit': 'API 返回内容超过大小限制。',
+    'unsupported_tools': 'API 连接仅支持纯文本，不能执行工具。',
+    'empty_response': 'API 未返回有效文本。',
+    'invalid_submission': 'API 未返回符合讨论协议的结构化结果。',
     'managed_preferences': 'CLI 无法读取 macOS 管理偏好，初始化失败。',
     'filesystem_permission': 'CLI 所需文件或临时目录访问被隔离规则拒绝。',
     'invalid_arguments': 'CLI 启动参数不兼容，尚未进入讨论。',

@@ -1,0 +1,1959 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentClub 团队配置与自定义 API 接入 - 多版交互视觉 Demo | 王也设计室</title>
+  <style>
+    :root {
+      --bg: #090b11;
+      --bg-card: rgba(18, 22, 33, 0.88);
+      --bg-card-hover: rgba(25, 31, 46, 0.96);
+      --bg-inset: rgba(0, 0, 0, 0.28);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: #8b5cf6;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --purple: #8b5cf6;
+      --purple-light: #a78bfa;
+      --purple-soft: rgba(139, 92, 246, 0.14);
+      --purple-glow: rgba(139, 92, 246, 0.35);
+      --cyan: #06b6d4;
+      --cyan-soft: rgba(6, 182, 212, 0.12);
+      --emerald: #10b981;
+      --emerald-soft: rgba(16, 185, 129, 0.14);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.14);
+      --rose: #f43f5e;
+      --rose-soft: rgba(244, 63, 94, 0.14);
+      --radius: 14px;
+      --radius-sm: 8px;
+      --shadow: 0 12px 36px -10px rgba(0,0,0,0.6);
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --bg-card: rgba(255, 255, 255, 0.94);
+      --bg-card-hover: #ffffff;
+      --bg-inset: rgba(241, 245, 249, 0.85);
+      --border: rgba(0, 0, 0, 0.09);
+      --border-focus: #7c3aed;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      --purple: #7c3aed;
+      --purple-light: #6d28d9;
+      --purple-soft: rgba(124, 58, 237, 0.1);
+      --purple-glow: rgba(124, 58, 237, 0.2);
+      --cyan: #0891b2;
+      --cyan-soft: rgba(8, 145, 178, 0.1);
+      --emerald: #059669;
+      --emerald-soft: rgba(5, 150, 105, 0.1);
+      --amber: #d97706;
+      --amber-soft: rgba(217, 119, 6, 0.1);
+      --rose: #e11d48;
+      --rose-soft: rgba(225, 29, 72, 0.1);
+      --shadow: 0 10px 30px -5px rgba(0,0,0,0.06);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      transition: background 0.25s ease, color 0.25s ease;
+      line-height: 1.5;
+    }
+
+    /* Top Bar */
+    .top-bar {
+      height: 64px;
+      padding: 0 28px;
+      background: var(--bg-card);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .brand-icon {
+      font-size: 20px;
+      background: var(--purple-soft);
+      border: 1px solid var(--purple-glow);
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9px;
+      color: var(--purple);
+    }
+    .brand-tag {
+      background: var(--purple-soft);
+      color: var(--purple);
+      border: 1px solid var(--purple-glow);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+
+    .tabs-nav {
+      display: flex;
+      background: rgba(0,0,0,0.18);
+      padding: 4px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      gap: 4px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 7px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.18s ease;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      background: var(--purple);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 2px 10px var(--purple-glow);
+    }
+    .badge-recommend {
+      background: var(--emerald-soft);
+      color: var(--emerald);
+      border: 1px solid var(--emerald);
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-action {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 12.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn-action:hover {
+      border-color: var(--purple);
+      background: var(--purple-soft);
+      color: var(--purple);
+    }
+    .btn-action.primary {
+      background: var(--purple);
+      color: #fff;
+      border-color: var(--purple);
+    }
+    .btn-action.primary:hover {
+      background: var(--purple-light);
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 28px 80px;
+      width: 100%;
+      flex: 1;
+    }
+
+    /* Concept Banner */
+    .concept-banner {
+      background: linear-gradient(135deg, var(--purple-soft) 0%, var(--cyan-soft) 100%);
+      border: 1px solid var(--purple-glow);
+      border-radius: var(--radius);
+      padding: 16px 22px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .concept-text h4 {
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .concept-text p {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    /* Demo Views */
+    .demo-view {
+      display: none;
+      animation: fadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .demo-view.active { display: block; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Pool Strip (CLI + API) */
+    .pool-strip {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+    }
+    .pool-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .pool-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pool-pills {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .conn-pill {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      padding: 7px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .conn-pill:hover {
+      border-color: var(--purple);
+      background: var(--purple-soft);
+      transform: translateY(-1px);
+    }
+    .conn-pill.is-api {
+      border-color: rgba(6, 182, 212, 0.25);
+    }
+    .conn-pill.is-api:hover {
+      border-color: var(--cyan);
+      background: var(--cyan-soft);
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+    .dot.ready { background: var(--emerald); box-shadow: 0 0 8px var(--emerald); }
+    .dot.warning { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+    .dot.api-live { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+    .type-tag {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .type-tag.cli { background: rgba(139, 92, 246, 0.2); color: var(--purple); }
+    .type-tag.api { background: rgba(6, 182, 212, 0.2); color: var(--cyan); }
+
+    /* ========================================================
+       方案 A: 渐进融合卡片流 (Progressive Fluid Cards)
+       ======================================================== */
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 22px;
+    }
+    @media (max-width: 1024px) {
+      .agent-grid { grid-template-columns: 1fr; }
+    }
+    .agent-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: border-color 0.2s ease, transform 0.2s ease;
+    }
+    .agent-card:hover {
+      border-color: rgba(139, 92, 246, 0.35);
+      transform: translateY(-2px);
+    }
+    .agent-card.modified {
+      border-color: var(--purple);
+    }
+    .card-mod-badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--purple-soft);
+      color: var(--purple);
+      border: 1px solid var(--purple-glow);
+      font-weight: 600;
+      display: none;
+    }
+    .agent-card.modified .card-mod-badge {
+      display: inline-block;
+    }
+
+    .agent-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 16px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .avatar.chulan { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+    .avatar.baobao { background: linear-gradient(135deg, #10b981, #047857); }
+    .avatar.ye { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+
+    .agent-meta h3 {
+      font-size: 15.5px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .agent-meta p {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .desc-tag {
+      font-weight: 400;
+      color: var(--text-dim);
+      font-size: 11px;
+    }
+
+    .custom-select, .custom-input {
+      width: 100%;
+      background: var(--bg-inset);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+    .custom-select:focus, .custom-input:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 2px var(--purple-soft);
+    }
+
+    /* Filter Strip for Model Catalog */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      margin-bottom: 8px;
+    }
+    .filter-label {
+      font-size: 10.5px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+    }
+    .filter-chip {
+      font-size: 10.5px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      padding: 2px 7px;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.12s ease;
+    }
+    .filter-chip.active {
+      background: var(--purple-soft);
+      border-color: var(--purple);
+      color: var(--purple);
+      font-weight: 600;
+    }
+
+    /* Capability Badge Box */
+    .cap-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-top: 6px;
+      font-weight: 500;
+    }
+    .cap-badge.tools {
+      background: var(--emerald-soft);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .cap-badge.text-only {
+      background: var(--amber-soft);
+      color: var(--amber);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    /* Catalog Status Info */
+    .catalog-status {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .btn-text-action {
+      background: transparent;
+      border: none;
+      color: var(--cyan);
+      cursor: pointer;
+      font-size: 11px;
+      text-decoration: underline;
+      padding: 0;
+    }
+
+    /* Fallback Drawer */
+    .fallback-box {
+      margin-top: 14px;
+      background: rgba(0,0,0,0.18);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+    }
+    .fallback-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+    .fallback-header span {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .fallback-body {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .outbound-note {
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .outbound-note strong {
+      color: var(--cyan);
+    }
+
+    /* ========================================================
+       方案 B: 双栏拓扑工作台 (Master-Detail Workbench)
+       ======================================================== */
+    .split-layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      min-height: 580px;
+      overflow: hidden;
+    }
+    @media (max-width: 900px) {
+      .split-layout { grid-template-columns: 1fr; }
+    }
+    .split-sidebar {
+      border-right: 1px solid var(--border);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      background: rgba(0,0,0,0.12);
+    }
+    .sidebar-section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+      font-weight: 700;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .conn-list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 12px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 12.5px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .conn-list-item:hover {
+      border-color: var(--purple);
+      background: var(--purple-soft);
+    }
+    .conn-list-item.active {
+      border-color: var(--cyan);
+      background: var(--cyan-soft);
+    }
+
+    .agent-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      margin-bottom: 6px;
+      transition: all 0.15s ease;
+    }
+    .agent-nav-item:hover {
+      background: rgba(255,255,255,0.03);
+    }
+    .agent-nav-item.active {
+      background: var(--purple-soft);
+      border-color: var(--purple-glow);
+    }
+    .agent-nav-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .agent-nav-sub {
+      font-size: 11.5px;
+      color: var(--text-dim);
+    }
+
+    .split-content {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .detail-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 22px;
+    }
+    .grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+    }
+    @media (max-width: 768px) {
+      .grid-2col { grid-template-columns: 1fr; }
+    }
+
+    /* Outbound Security Audit Banner in View B */
+    .security-audit-box {
+      background: rgba(16, 185, 129, 0.06);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-top: 20px;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .audit-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-muted);
+    }
+    .audit-item code {
+      font-family: monospace;
+      color: var(--text);
+      background: rgba(0,0,0,0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* ========================================================
+       方案 C: 容灾管道拓扑流 (Pipeline Topology)
+       ======================================================== */
+    .pipeline-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      box-shadow: var(--shadow);
+    }
+    .pipe-agent-block {
+      background: rgba(0,0,0,0.18);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 22px;
+    }
+    .pipe-agent-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .pipe-flow {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      overflow-x: auto;
+      padding-bottom: 8px;
+    }
+    .pipe-node {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 170px;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .pipe-node.primary {
+      border-color: var(--purple);
+      background: var(--purple-soft);
+    }
+    .pipe-node.fallback-node {
+      border-color: var(--amber);
+      background: var(--amber-soft);
+    }
+    .pipe-node.breaker {
+      border-color: var(--cyan);
+      background: rgba(6, 182, 212, 0.08);
+      min-width: 140px;
+      text-align: center;
+    }
+    .pipe-node.dest {
+      border-color: rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.25);
+      min-width: 190px;
+    }
+    .pipe-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+    }
+    .pipe-val {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .pipe-arrow {
+      color: var(--text-dim);
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .breaker-badge {
+      font-size: 10.5px;
+      background: rgba(6, 182, 212, 0.15);
+      color: var(--cyan);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      margin-top: 4px;
+    }
+
+    /* Comparison Table */
+    .compare-section {
+      margin-top: 44px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+    .compare-section h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .compare-table th, .compare-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .compare-table th {
+      color: var(--text-dim);
+      font-weight: 600;
+      font-size: 12px;
+      background: rgba(0,0,0,0.1);
+    }
+    .compare-table tr:last-child td { border-bottom: none; }
+    .compare-table tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+
+    /* Sticky Save Footer */
+    .save-bar {
+      position: sticky;
+      bottom: 20px;
+      margin-top: 36px;
+      background: rgba(18, 22, 33, 0.95);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+      max-width: 820px;
+      margin-left: auto;
+      margin-right: auto;
+      z-index: 90;
+    }
+    .save-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .save-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-save {
+      background: var(--purple);
+      border: none;
+      color: #fff;
+      font-weight: 600;
+      padding: 8px 22px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 13px;
+      box-shadow: 0 2px 14px var(--purple-glow);
+      transition: all 0.2s ease;
+    }
+    .btn-save:hover {
+      transform: scale(1.02);
+      filter: brightness(1.1);
+    }
+    .btn-cancel {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 8px 16px;
+    }
+    .btn-cancel:hover { color: var(--text); }
+
+    /* Modal for Custom API & Creds */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(6px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-box {
+      background: #111522;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 680px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      animation: modalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes modalIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+      max-height: 70vh;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      background: rgba(0,0,0,0.15);
+    }
+
+    /* Key State Interactive Component */
+    .key-state-box {
+      background: var(--bg-inset);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .key-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .key-status-badge {
+      font-size: 11px;
+      font-family: monospace;
+      color: var(--emerald);
+      background: var(--emerald-soft);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .key-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-key-action {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-key-action:hover {
+      color: var(--text);
+      border-color: var(--purple);
+    }
+    .btn-key-action.danger:hover {
+      border-color: var(--rose);
+      color: var(--rose);
+    }
+
+    /* Security callout */
+    .security-callout {
+      background: rgba(14, 165, 233, 0.08);
+      border: 1px solid rgba(14, 165, 233, 0.25);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #7dd3fc;
+      line-height: 1.5;
+    }
+    .security-callout strong {
+      color: #38bdf8;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      background: var(--emerald);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+      display: none;
+      z-index: 2000;
+      animation: toastIn 0.3s ease forwards;
+    }
+    @keyframes toastIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Controller -->
+  <header class="top-bar">
+    <div class="brand">
+      <div class="brand-icon">☯</div>
+      <div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>王也 · 视觉交互工坊</span>
+          <span class="brand-tag">AgentClub UI Lab</span>
+        </div>
+      </div>
+    </div>
+
+    <nav class="tabs-nav" aria-label="方案切换">
+      <button class="tab-btn active" onclick="switchDemo('a', this)">
+        <span>方案 A: 渐进融合卡片流</span>
+        <span class="badge-recommend">推荐</span>
+      </button>
+      <button class="tab-btn" onclick="switchDemo('b', this)">
+        <span>方案 B: 双栏拓扑工作台</span>
+      </button>
+      <button class="tab-btn" onclick="switchDemo('c', this)">
+        <span>方案 C: 容灾管道拓扑流</span>
+      </button>
+    </nav>
+
+    <div class="top-actions">
+      <button class="btn-action" onclick="openConnModal()">
+        <span>⚡ 连接与凭据池</span>
+        <span style="font-size: 10px; background: rgba(255,255,255,0.1); padding: 1px 5px; border-radius: 4px;">4 个活动</span>
+      </button>
+      <button class="btn-action" onclick="toggleTheme()">🌓 切换明暗</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Concept Banner -->
+    <div class="concept-banner">
+      <div class="concept-text">
+        <h4 id="concept-title">💡 方案 A 设计核心：渐进式披露 + CLI 与 自定义 API 统一纳管</h4>
+        <p id="concept-desc">
+          将外部模型统一抽象为「连接 + 动态目录」，并为每位 Agent 分配主备链路。重点响应宝儿姐的安全约束：明确区分 CLI 执行沙箱与 API 纯文本能力，直观呈现数据出站端点，并对密钥实行无回传安全三态交互。
+        </p>
+      </div>
+      <div style="flex-shrink: 0; text-align: right;">
+        <span style="font-size: 11px; color: var(--text-dim); display: block;">设计评审基线</span>
+        <strong style="font-size: 12.5px; color: var(--purple-light);">v2.4 (CLI + Custom API + P2 Security)</strong>
+      </div>
+    </div>
+
+    <!-- Global Connection Pool Strip -->
+    <div class="pool-strip">
+      <div class="pool-header">
+        <div class="pool-title">
+          <span>🌐 运行环境与连接资源池 (CLI & Custom API)</span>
+          <span style="font-size: 11.5px; color: var(--text-dim); font-weight: normal;">— 点击节点查看出站审查与模型目录状态</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-action" style="font-size: 11.5px; padding: 4px 10px;" onclick="refreshAllCatalogs()">
+            🔄 刷新全部模型目录
+          </button>
+          <button class="btn-action" style="font-size: 11.5px; padding: 4px 10px;" onclick="openConnModal()">
+            ＋ 新建 API 连接
+          </button>
+        </div>
+      </div>
+      <div class="pool-pills">
+        <!-- Codex CLI -->
+        <div class="conn-pill" onclick="showConnDetail('codex')">
+          <span class="dot ready"></span>
+          <span class="type-tag cli">CLI</span>
+          <strong>Codex</strong>
+          <span style="color: var(--text-dim); font-size: 11px;">7 个模型 · 具备沙箱读写</span>
+        </div>
+        <!-- Antigravity CLI -->
+        <div class="conn-pill" onclick="showConnDetail('agy')">
+          <span class="dot ready"></span>
+          <span class="type-tag cli">CLI</span>
+          <strong>Antigravity</strong>
+          <span style="color: var(--text-dim); font-size: 11px;">6 个模型 · 多厂商汇聚</span>
+        </div>
+        <!-- Claude Code CLI -->
+        <div class="conn-pill" onclick="showConnDetail('claude_cli')">
+          <span class="dot warning"></span>
+          <span class="type-tag cli">CLI</span>
+          <strong>Claude Code</strong>
+          <span style="color: var(--amber); font-size: 11px;">暂无枚举 · 支持手填</span>
+        </div>
+        <!-- OpenAI API -->
+        <div class="conn-pill is-api" onclick="showConnDetail('api_openai')">
+          <span class="dot api-live"></span>
+          <span class="type-tag api">API</span>
+          <strong>OpenAI 官方连接</strong>
+          <span style="color: var(--cyan); font-size: 11px;">12 个模型 · 纯文本</span>
+        </div>
+        <!-- Custom Internal API -->
+        <div class="conn-pill is-api" onclick="showConnDetail('api_internal')">
+          <span class="dot api-live"></span>
+          <span class="type-tag api">API</span>
+          <strong>公司内网 LLM 网关</strong>
+          <span style="color: var(--cyan); font-size: 11px;">HTTPS · 已放行</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================================
+         VIEW A: 方案 A (渐进融合卡片流)
+         ======================================================== -->
+    <section id="view-a" class="demo-view active">
+      <div class="agent-grid">
+        <!-- 张楚岚 -->
+        <article class="agent-card" id="card-chulan">
+          <span class="card-mod-badge">已自定义</span>
+          <div class="agent-header">
+            <div class="avatar chulan">楚</div>
+            <div class="agent-meta">
+              <h3>张楚岚</h3>
+              <p>全局统筹 / 架构规划 / 代码实施</p>
+            </div>
+          </div>
+
+          <!-- 主用配置 -->
+          <div class="form-group">
+            <label class="form-label">
+              <span>主用连接来源</span>
+              <span class="desc-tag">CLI 或 API</span>
+            </label>
+            <select class="custom-select" id="select-conn-chulan" onchange="onConnChange('chulan', this.value)">
+              <optgroup label="CLI 本地宿主 (具备工具与代码执行能力)">
+                <option value="codex" selected>Codex (7 个可用模型 · 推荐架构研发)</option>
+                <option value="agy">Antigravity (多厂商沙箱环境)</option>
+                <option value="claude_cli">Claude Code (暂无自动枚举，可手填)</option>
+              </optgroup>
+              <optgroup label="自定义 API (首期仅支持普通聊天与讨论)">
+                <option value="api_openai">OpenAI 官方 (Responses 协议)</option>
+                <option value="api_internal">公司内网 LLM 网关 (vLLM / Chat)</option>
+              </optgroup>
+            </select>
+            <!-- 能力标签提示 -->
+            <div id="cap-badge-chulan" class="cap-badge tools">
+              <span>🛠️ 具备工具执行环境 (文件读写 / 终端命令 / 测试运行)</span>
+            </div>
+          </div>
+
+          <!-- 模型选择与厂商筛选 -->
+          <div class="form-group" id="model-group-chulan">
+            <label class="form-label">
+              <span>动态分配模型 (Model ID)</span>
+              <span class="desc-tag">按厂商筛选</span>
+            </label>
+            <div class="filter-bar">
+              <span class="filter-label">筛选:</span>
+              <span class="filter-chip active" onclick="filterModels('chulan', 'all', this)">全部</span>
+              <span class="filter-chip" onclick="filterModels('chulan', 'openai', this)">OpenAI</span>
+              <span class="filter-chip" onclick="filterModels('chulan', 'anthropic', this)">Claude</span>
+              <span class="filter-chip" onclick="filterModels('chulan', 'google', this)">Gemini</span>
+            </div>
+            <select class="custom-select" id="select-model-chulan" onchange="onModelSelect('chulan', this.value)">
+              <option value="gpt-6.1-sol" selected>gpt-6.1-sol (OpenAI / 推理增强)</option>
+              <option value="gpt-6-sol">gpt-6-sol (OpenAI / 高速生成)</option>
+              <option value="gpt-6-astra">gpt-6-astra (OpenAI / 代码专精)</option>
+              <option value="custom">✏️ 手动输入指定模型 ID...</option>
+            </select>
+            <input
+              type="text"
+              class="custom-input"
+              id="input-model-custom-chulan"
+              style="display: none; margin-top: 8px;"
+              placeholder="请输入精确模型 ID，如 claude-3-7-sonnet"
+              oninput="markDirty('chulan')"
+            />
+            <div class="catalog-status">
+              <span>来源缓存: 5 分钟前获取 (Codex app-server)</span>
+              <button class="btn-text-action" onclick="refreshSingleCatalog('codex')">强制刷新</button>
+            </div>
+          </div>
+
+          <!-- 主备容灾抽屉 -->
+          <div class="fallback-box">
+            <div class="fallback-header" onclick="toggleFallback('chulan')">
+              <span>🛡️ 容灾备用链路 (Fallback)</span>
+              <span id="fallback-arrow-chulan">▼</span>
+            </div>
+            <div class="fallback-body" id="fallback-body-chulan">
+              <div style="font-size: 11.5px; color: var(--text-dim);">当主用遇到超时、限流或 5xx 故障时自动无缝降级：</div>
+              <label class="form-label" style="font-size: 11px;">备用连接与模型</label>
+              <select class="custom-select" style="font-size: 12px;" onchange="markDirty('chulan')">
+                <option value="api_openai" selected>降级至: OpenAI 官方 API (gpt-5-turbo)</option>
+                <option value="agy">降级至: Antigravity CLI (gemini-2.5-pro)</option>
+                <option value="none">不启用备用 (直接抛出错误)</option>
+              </select>
+              <!-- 宝儿姐强调：主备接收方端点透出 -->
+              <div class="outbound-note">
+                <strong>📡 数据出站流向：</strong><br/>
+                主用 <code>本地进程 (Codex)</code> ➔ 备用出站 <code>https://api.openai.com/v1</code><br/>
+                <span style="color: var(--amber); font-size: 10.5px;">* 401 鉴权失效不切备用；流式已输出中断不静默重放</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- 冯宝宝 -->
+        <article class="agent-card" id="card-baobao">
+          <span class="card-mod-badge">已自定义</span>
+          <div class="agent-header">
+            <div class="avatar baobao">宝</div>
+            <div class="agent-meta">
+              <h3>冯宝宝</h3>
+              <p>质量守护 / 极限边界核验 / 巡检</p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <span>主用连接来源</span>
+              <span class="desc-tag">CLI 或 API</span>
+            </label>
+            <select class="custom-select" id="select-conn-baobao" onchange="onConnChange('baobao', this.value)">
+              <optgroup label="CLI 本地宿主 (具备工具与代码执行能力)">
+                <option value="codex">Codex (7 个可用模型)</option>
+                <option value="agy" selected>Antigravity (多厂商沙箱 · 默认推荐)</option>
+                <option value="claude_cli">Claude Code (暂无自动枚举)</option>
+              </optgroup>
+              <optgroup label="自定义 API (首期仅支持普通聊天与讨论)">
+                <option value="api_openai">OpenAI 官方 (Responses 协议)</option>
+                <option value="api_internal">公司内网 LLM 网关 (vLLM)</option>
+              </optgroup>
+            </select>
+            <div id="cap-badge-baobao" class="cap-badge tools">
+              <span>🛠️ 具备工具执行环境 (沙箱隔离 / 独立工作区)</span>
+            </div>
+          </div>
+
+          <div class="form-group" id="model-group-baobao">
+            <label class="form-label">
+              <span>动态分配模型 (Model ID)</span>
+              <span class="desc-tag">按厂商筛选</span>
+            </label>
+            <div class="filter-bar">
+              <span class="filter-label">筛选:</span>
+              <span class="filter-chip active" onclick="filterModels('baobao', 'all', this)">全部</span>
+              <span class="filter-chip" onclick="filterModels('baobao', 'gemini', this)">Gemini</span>
+              <span class="filter-chip" onclick="filterModels('baobao', 'claude', this)">Claude</span>
+            </div>
+            <select class="custom-select" id="select-model-baobao" onchange="onModelSelect('baobao', this.value)">
+              <option value="gemini-3.8-flash" selected>gemini-3.8-flash (Google / 快速核验)</option>
+              <option value="gemini-2.5-pro">gemini-2.5-pro (Google / 深度推理)</option>
+              <option value="claude-3-7-sonnet">claude-3-7-sonnet (Anthropic)</option>
+              <option value="custom">✏️ 手动输入指定模型 ID...</option>
+            </select>
+            <input
+              type="text"
+              class="custom-input"
+              id="input-model-custom-baobao"
+              style="display: none; margin-top: 8px;"
+              placeholder="请输入精确模型 ID"
+              oninput="markDirty('baobao')"
+            />
+            <div class="catalog-status">
+              <span>来源缓存: 12 分钟前 (agy models 探测)</span>
+              <button class="btn-text-action" onclick="refreshSingleCatalog('agy')">强制刷新</button>
+            </div>
+          </div>
+
+          <div class="fallback-box">
+            <div class="fallback-header" onclick="toggleFallback('baobao')">
+              <span>🛡️ 容灾备用链路 (Fallback)</span>
+              <span id="fallback-arrow-baobao">▼</span>
+            </div>
+            <div class="fallback-body" id="fallback-body-baobao">
+              <div style="font-size: 11.5px; color: var(--text-dim);">核验失败或配额受限时降级路径：</div>
+              <label class="form-label" style="font-size: 11px;">备用连接与模型</label>
+              <select class="custom-select" style="font-size: 12px;" onchange="markDirty('baobao')">
+                <option value="codex" selected>降级至: Codex CLI (gpt-6-sol)</option>
+                <option value="api_internal">降级至: 公司内网网关</option>
+              </select>
+              <div class="outbound-note">
+                <strong>📡 数据出站流向：</strong><br/>
+                主用 <code>本地沙箱 (agy)</code> ➔ 备用出站 <code>本地进程 (Codex)</code><br/>
+                <span style="color: var(--emerald); font-size: 10.5px;">✓ 数据全程留在本地开发机环境，无第三方泄露</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- 王也 -->
+        <article class="agent-card" id="card-ye">
+          <span class="card-mod-badge">已自定义</span>
+          <div class="agent-header">
+            <div class="avatar ye">也</div>
+            <div class="agent-meta">
+              <h3>王也</h3>
+              <p>视觉设计 / 创意探索 / 人机交互</p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <span>主用连接来源</span>
+              <span class="desc-tag">CLI 或 API</span>
+            </label>
+            <select class="custom-select" id="select-conn-ye" onchange="onConnChange('ye', this.value)">
+              <optgroup label="自定义 API (首期仅支持普通聊天与讨论)">
+                <option value="api_openai" selected>OpenAI 官方 (Responses 协议 / 创意生成)</option>
+                <option value="api_internal">公司内网 LLM 网关 (vLLM)</option>
+              </optgroup>
+              <optgroup label="CLI 本地宿主 (具备工具与代码执行能力)">
+                <option value="agy">Antigravity (多厂商沙箱)</option>
+                <option value="codex">Codex (代码专精)</option>
+                <option value="claude_cli">Claude Code (暂无自动枚举)</option>
+              </optgroup>
+            </select>
+            <!-- 此时选的是 API，展现纯文本提示 -->
+            <div id="cap-badge-ye" class="cap-badge text-only">
+              <span>💬 仅纯文本对话与讨论 (无本地终端与文件系统写入权限)</span>
+            </div>
+          </div>
+
+          <div class="form-group" id="model-group-ye">
+            <label class="form-label">
+              <span>动态分配模型 (Model ID)</span>
+              <span class="desc-tag">按厂商筛选</span>
+            </label>
+            <div class="filter-bar">
+              <span class="filter-label">筛选:</span>
+              <span class="filter-chip active" onclick="filterModels('ye', 'all', this)">全部</span>
+              <span class="filter-chip" onclick="filterModels('ye', 'openai', this)">OpenAI</span>
+            </div>
+            <select class="custom-select" id="select-model-ye" onchange="onModelSelect('ye', this.value)">
+              <option value="gpt-6-creative" selected>gpt-6-creative (OpenAI / 创意思维)</option>
+              <option value="gpt-6.1-sol">gpt-6.1-sol (OpenAI / 逻辑严谨)</option>
+              <option value="custom">✏️ 手动输入指定模型 ID...</option>
+            </select>
+            <input
+              type="text"
+              class="custom-input"
+              id="input-model-custom-ye"
+              style="display: none; margin-top: 8px;"
+              placeholder="请输入精确模型 ID"
+              oninput="markDirty('ye')"
+            />
+            <div class="catalog-status">
+              <span>来源缓存: 1 小时前 (OpenAI API /models)</span>
+              <button class="btn-text-action" onclick="refreshSingleCatalog('api_openai')">强制刷新</button>
+            </div>
+          </div>
+
+          <div class="fallback-box">
+            <div class="fallback-header" onclick="toggleFallback('ye')">
+              <span>🛡️ 容灾备用链路 (Fallback)</span>
+              <span id="fallback-arrow-ye">▼</span>
+            </div>
+            <div class="fallback-body" id="fallback-body-ye">
+              <div style="font-size: 11.5px; color: var(--text-dim);">API 故障或限流时降级：</div>
+              <label class="form-label" style="font-size: 11px;">备用连接与模型</label>
+              <select class="custom-select" style="font-size: 12px;" onchange="markDirty('ye')">
+                <option value="agy" selected>降级至: Antigravity CLI (gemini-3.8-flash)</option>
+                <option value="api_internal">降级至: 内网网关</option>
+              </select>
+              <div class="outbound-note">
+                <strong>📡 数据出站流向：</strong><br/>
+                主用 <code>https://api.openai.com/v1</code> ➔ 备用出站 <code>本地沙箱 (agy)</code><br/>
+                <span style="color: var(--cyan); font-size: 10.5px;">* 云端到本地安全回退，保护任务持续可响应</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         VIEW B: 方案 B (双栏拓扑工作台)
+         ======================================================== -->
+    <section id="view-b" class="demo-view">
+      <div class="split-layout">
+        <!-- 左侧连接与安全池 -->
+        <aside class="split-sidebar">
+          <div>
+            <div class="sidebar-section-title">
+              <span>已纳管连接 (5 项)</span>
+              <span class="btn-text-action" onclick="openConnModal()">＋ 新增</span>
+            </div>
+            <div class="conn-list-item active" onclick="switchConnInspector('codex')">
+              <div>
+                <strong>Codex CLI</strong>
+                <div style="font-size: 11px; color: var(--text-dim);">app-server · 7 个模型</div>
+              </div>
+              <span class="dot ready"></span>
+            </div>
+            <div class="conn-list-item" onclick="switchConnInspector('agy')">
+              <div>
+                <strong>Antigravity CLI</strong>
+                <div style="font-size: 11px; color: var(--text-dim);">agy models · 6 个模型</div>
+              </div>
+              <span class="dot ready"></span>
+            </div>
+            <div class="conn-list-item" onclick="switchConnInspector('claude_cli')">
+              <div>
+                <strong>Claude Code CLI</strong>
+                <div style="font-size: 11px; color: var(--amber);">未发现子命令 · 允许手填</div>
+              </div>
+              <span class="dot warning"></span>
+            </div>
+            <div class="conn-list-item" onclick="switchConnInspector('api_openai')">
+              <div>
+                <strong>OpenAI 官方 API</strong>
+                <div style="font-size: 11px; color: var(--cyan);">api.openai.com · 已配置密钥</div>
+              </div>
+              <span class="dot api-live"></span>
+            </div>
+            <div class="conn-list-item" onclick="switchConnInspector('api_internal')">
+              <div>
+                <strong>内网 vLLM 网关</strong>
+                <div style="font-size: 11px; color: var(--cyan);">ai.corp.internal · 内网放行</div>
+              </div>
+              <span class="dot api-live"></span>
+            </div>
+          </div>
+
+          <div>
+            <div class="sidebar-section-title">选择装配 Agent</div>
+            <div class="agent-nav-item active" onclick="switchSplitAgent('chulan', this)">
+              <div class="avatar chulan" style="width: 28px; height: 28px; font-size: 12px;">楚</div>
+              <div>
+                <div class="agent-nav-name">张楚岚</div>
+                <div class="agent-nav-sub">主用: Codex / 备用: OpenAI API</div>
+              </div>
+            </div>
+            <div class="agent-nav-item" onclick="switchSplitAgent('baobao', this)">
+              <div class="avatar baobao" style="width: 28px; height: 28px; font-size: 12px;">宝</div>
+              <div>
+                <div class="agent-nav-name">冯宝宝</div>
+                <div class="agent-nav-sub">主用: Antigravity / 备用: Codex</div>
+              </div>
+            </div>
+            <div class="agent-nav-item" onclick="switchSplitAgent('ye', this)">
+              <div class="avatar ye" style="width: 28px; height: 28px; font-size: 12px;">也</div>
+              <div>
+                <div class="agent-nav-name">王也</div>
+                <div class="agent-nav-sub">主用: OpenAI API / 备用: Antigravity</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 右侧装配与安全审计详情 -->
+        <main class="split-content">
+          <div>
+            <div class="detail-header">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="avatar chulan" id="split-avatar">楚</div>
+                <div>
+                  <h3 id="split-agent-title" style="font-size: 16px;">张楚岚 · 调度参数与网络出站装配台</h3>
+                  <p id="split-agent-desc" style="font-size: 12px; color: var(--text-dim);">主用 Codex 本地沙箱执行，备用接入第三方 API 容灾</p>
+                </div>
+              </div>
+              <span class="type-tag cli" id="split-conn-type">当前主用具备 CLI 执行权限</span>
+            </div>
+
+            <div class="grid-2col">
+              <!-- 主用装配 -->
+              <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                <div style="font-size: 12px; font-weight: 700; color: var(--purple-light); margin-bottom: 12px; display: flex; justify-content: space-between;">
+                  <span>PRIMARY · 主用执行链路</span>
+                  <span>权重 100%</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">指定连接</label>
+                  <select class="custom-select" style="font-size: 12.5px;">
+                    <option selected>Codex CLI (本地 app-server)</option>
+                    <option>OpenAI 官方 API</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">指定模型 (Model ID)</label>
+                  <select class="custom-select" style="font-size: 12.5px;">
+                    <option selected>gpt-6.1-sol</option>
+                    <option>gpt-6-sol</option>
+                    <option>gpt-6-astra</option>
+                  </select>
+                </div>
+                <div style="font-size: 11px; color: var(--emerald);">✓ 具备读写代码、执行测试与终端执行能力</div>
+              </div>
+
+              <!-- 备用装配 -->
+              <div style="background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+                <div style="font-size: 12px; font-weight: 700; color: var(--amber); margin-bottom: 12px; display: flex; justify-content: space-between;">
+                  <span>FALLBACK · 容灾备用链路</span>
+                  <span>熔断降级</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">备用连接</label>
+                  <select class="custom-select" style="font-size: 12.5px;">
+                    <option selected>OpenAI 官方 API (api.openai.com)</option>
+                    <option>Antigravity CLI</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">备用模型</label>
+                  <input type="text" class="custom-input" value="gpt-5-turbo" style="font-size: 12.5px;" />
+                </div>
+                <div style="font-size: 11px; color: var(--amber);">⚠️ 仅纯文本对话，不自动提供本地执行器</div>
+              </div>
+            </div>
+
+            <!-- 安全与出站审计提示 -->
+            <div class="security-audit-box">
+              <div style="font-weight: 700; color: var(--emerald); display: flex; align-items: center; gap: 6px;">
+                <span>🛡️ 宝儿姐安全规范审计通过 (P2 Security Verification)</span>
+              </div>
+              <div class="audit-item">
+                <span>出站 Base URL 规范:</span>
+                <code>HTTPS 强制 / 禁止 30x 跨域重定向 / 防 SSRF 白名单</code>
+              </div>
+              <div class="audit-item">
+                <span>凭据安全隔离:</span>
+                <code>前端仅展示已配置状态 [sk-••••••] / 严禁掩码或明文回传</code>
+              </div>
+              <div class="audit-item">
+                <span>容灾防雪崩机制:</span>
+                <code>401 鉴权失效禁切备用 / 流式已输出内容严禁静默重放</code>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         VIEW C: 方案 C (容灾管道拓扑流)
+         ======================================================== -->
+    <section id="view-c" class="demo-view">
+      <div class="pipeline-container">
+        <div style="margin-bottom: 24px;">
+          <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">🌊 数据接收方流向与容灾管线拓扑</h3>
+          <p style="font-size: 12.5px; color: var(--text-dim);">
+            以数据流动视角呈现：当任务发出后，主用接收方是谁、断路器在何种条件触发、降级切换到哪个端点，以及能力边界如何变化。
+          </p>
+        </div>
+
+        <!-- Pipeline: 张楚岚 -->
+        <div class="pipe-agent-block">
+          <div class="pipe-agent-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div class="avatar chulan" style="width: 32px; height: 32px; font-size: 13px;">楚</div>
+              <strong style="font-size: 14px;">张楚岚 · 架构与执行管线</strong>
+            </div>
+            <span class="badge-recommend">CLI ➔ API 混合容灾</span>
+          </div>
+          <div class="pipe-flow">
+            <!-- Node: Prompt In -->
+            <div class="pipe-node">
+              <span class="pipe-label">1. 任务请求</span>
+              <span class="pipe-val">用户任务 Prompt</span>
+              <span style="font-size: 10.5px; color: var(--text-dim);">包含执行上下文</span>
+            </div>
+            <div class="pipe-arrow">➔</div>
+            <!-- Node: Primary -->
+            <div class="pipe-node primary">
+              <span class="pipe-label">2. 主用节点 (PRIMARY)</span>
+              <span class="pipe-val">Codex CLI</span>
+              <span style="font-size: 11px; color: var(--purple-light);">模型: gpt-6.1-sol</span>
+              <span style="font-size: 10px; color: var(--emerald);">✓ 终端与文件工具就绪</span>
+            </div>
+            <div class="pipe-arrow">➔</div>
+            <!-- Node: Breaker -->
+            <div class="pipe-node breaker">
+              <span class="pipe-label">3. 故障断路器</span>
+              <span class="pipe-val" style="font-size: 12px; color: var(--cyan);">超时 / 5xx 熔断</span>
+              <span class="breaker-badge">401 鉴权拒绝切流</span>
+            </div>
+            <div class="pipe-arrow">➔</div>
+            <!-- Node: Fallback -->
+            <div class="pipe-node fallback-node">
+              <span class="pipe-label">4. 备用节点 (FALLBACK)</span>
+              <span class="pipe-val">OpenAI API</span>
+              <span style="font-size: 11px; color: var(--amber);">模型: gpt-5-turbo</span>
+              <span style="font-size: 10px; color: var(--amber);">⚠️ 纯文本 / 禁静默重放</span>
+            </div>
+            <div class="pipe-arrow">➔</div>
+            <!-- Node: Final Dest -->
+            <div class="pipe-node dest">
+              <span class="pipe-label">5. 最终物理端点</span>
+              <span class="pipe-val" style="font-size: 12px; font-family: monospace;">api.openai.com</span>
+              <span style="font-size: 10px; color: var(--text-dim);">HTTPS · 严格禁止重定向</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pipeline: 冯宝宝 -->
+        <div class="pipe-agent-block">
+          <div class="pipe-agent-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div class="avatar baobao" style="width: 32px; height: 32px; font-size: 13px;">宝</div>
+              <strong style="font-size: 14px;">冯宝宝 · 质量巡检管线</strong>
+            </div>
+            <span style="font-size: 11px; color: var(--emerald); background: var(--emerald-soft); padding: 2px 8px; border-radius: 4px;">纯本地沙箱闭环</span>
+          </div>
+          <div class="pipe-flow">
+            <div class="pipe-node">
+              <span class="pipe-label">1. 质检输入</span>
+              <span class="pipe-val">边界巡检用例</span>
+            </div>
+            <div class="pipe-arrow">➔</div>
+            <div class="pipe-node primary">
+              <span class="pipe-label">2. 主用节点</span>
+              <span class="pipe-val">Antigravity CLI</span>
+              <span style="font-size: 11px; color: var(--purple-light);">gemini-3.8-flash</span>
+            </div>
+            <div class="pipe-arrow">➔</div>
+            <div class="pipe-node breaker">
+              <span class="pipe-label">3. 异常降级</span>
+              <span class="pipe-val" style="font-size: 12px; color: var(--cyan);">进程挂起检测</span>
+            </div>
+            <div class="pipe-arrow">➔</div>
+            <div class="pipe-node fallback-node">
+              <span class="pipe-label">4. 本地备用</span>
+              <span class="pipe-val">Codex CLI</span>
+              <span style="font-size: 11px; color: var(--amber);">gpt-6-sol</span>
+            </div>
+            <div class="pipe-arrow">➔</div>
+            <div class="pipe-node dest">
+              <span class="pipe-label">5. 物理隔离</span>
+              <span class="pipe-val" style="font-size: 12px; color: var(--emerald);">localhost 进程闭环</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Comparison Section -->
+    <section class="compare-section">
+      <h3>📊 三版方案维度对比与设计取舍 (王也设计评估)</h3>
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th style="width: 20%;">设计对比维度</th>
+            <th style="width: 28%;">方案 A: 渐进融合卡片流 (推荐)</th>
+            <th style="width: 26%;">方案 B: 双栏拓扑工作台</th>
+            <th style="width: 26%;">方案 C: 容灾管道拓扑流</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>核心视觉模型</strong></td>
+            <td><strong>Agent 角色卡片为中心</strong>，将连接管理收敛在顶栏与抽屉中，渐进展开容灾。</td>
+            <td><strong>左右分栏 Master-Detail</strong>，左侧连接池与审计，右侧配置详情。</td>
+            <td><strong>电路流程拓扑节点</strong>，直接透出数据出站接收方与断路器。</td>
+          </tr>
+          <tr>
+            <td><strong>CLI 与 API 差异认知</strong></td>
+            <td>通过<strong>颜色徽章 (绿色沙箱执行 vs 黄色纯文本)</strong>实时感知，操作直观。</td>
+            <td>在右侧详情以<strong>分列对比面板</strong>呈现，参数最详实。</td>
+            <td>在流动节点上<strong>标注能力分流与物理端点</strong>，因果感最强。</td>
+          </tr>
+          <tr>
+            <td><strong>安全与凭据交互感知</strong></td>
+            <td>轻量模态窗管理，密钥三态展示（保留/替换/删除），防止页面过于严肃。</td>
+            <td>常驻安全审计栏（宝儿姐三项 P2 规范打勾），合规感最强。</td>
+            <td>直观呈现出站 URL 与防静默重放断路器，适合架构审查。</td>
+          </tr>
+          <tr>
+            <td><strong>日常使用与配置效率</strong></td>
+            <td>⭐⭐⭐⭐⭐ (极高，3 步完成主备与模型分配)</td>
+            <td>⭐⭐⭐⭐ (适合复杂连接众多的场景)</td>
+            <td>⭐⭐⭐ (侧重理解拓扑，操作面积略大)</td>
+          </tr>
+          <tr>
+            <td><strong>前端实现与复用成本</strong></td>
+            <td><strong>低</strong> (可无缝复用当前卡片组件与响应式网格)</td>
+            <td>中等 (需调整主布局为 SplitPane)</td>
+            <td>较高 (需绘制管道连线与横向流转)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <!-- Sticky Save Bar -->
+  <footer class="save-bar" id="save-bar">
+    <div class="save-status">
+      <span class="dot ready" id="save-indicator"></span>
+      <span id="save-status-text">配置已就绪 (当前无未保存修改)</span>
+    </div>
+    <div class="save-actions">
+      <button class="btn-cancel" onclick="resetConfig()">重置修改</button>
+      <button class="btn-save" onclick="saveAllConfig()">保存全局配置</button>
+    </div>
+  </footer>
+
+  <!-- Modal: Connection & Credential Pool Management -->
+  <div class="modal-overlay" id="conn-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>⚡ 连接与凭据配置 (Custom API & CLI 纳管)</h3>
+        <button class="btn-action" style="padding: 2px 8px; border: none; font-size: 16px;" onclick="closeConnModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="security-callout">
+          <strong>🔒 宝儿姐 P2 安全约束落实说明：</strong><br/>
+          • 出站规则：默认强制 HTTPS，严禁跨域重定向，支持内网白名单放行，防 SSRF 探测。<br/>
+          • 凭据交互：后端绝不回传明文或掩码，仅返回状态；清空不等于删除，需显式点击“彻底删除”。
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">连接类型</label>
+          <div style="display: flex; gap: 10px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="conn-type" checked onchange="toggleApiForm(true)" />
+              <span>自定义 API 连接 (OpenAI / Anthropic 兼容)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+              <input type="radio" name="conn-type" onchange="toggleApiForm(false)" />
+              <span>本地 CLI 接入 (Codex / agy / Claude)</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="api-form-fields">
+          <div class="form-group">
+            <label class="form-label">连接别名</label>
+            <input type="text" class="custom-input" id="modal-conn-name" value="OpenAI 官方服务" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">协议类型</label>
+            <select class="custom-select" id="modal-conn-proto">
+              <option value="openai_responses">OpenAI - Responses 协议 (官方推荐)</option>
+              <option value="openai_chat">OpenAI - Chat Completions 协议 (兼容网关)</option>
+              <option value="anthropic_messages">Anthropic - Messages 协议 (Claude)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <span>Base URL</span>
+              <span class="desc-tag">必须为 https:// 或已审批内网地址</span>
+            </label>
+            <input type="text" class="custom-input" id="modal-conn-url" value="https://api.openai.com/v1" />
+          </div>
+
+          <!-- 敏感密钥状态组件 -->
+          <div class="form-group">
+            <label class="form-label">API 凭据密钥 (API Key)</label>
+            <div class="key-state-box">
+              <div class="key-row">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="key-status-badge">已配置: sk-99••••••••••••3fa</span>
+                  <span style="font-size: 11px; color: var(--text-dim);">(后端安全存储，无明文回传)</span>
+                </div>
+                <div class="key-actions">
+                  <button class="btn-key-action" onclick="replaceKey()">替换密钥</button>
+                  <button class="btn-key-action danger" onclick="deleteKey()">彻底删除</button>
+                </div>
+              </div>
+              <input
+                type="password"
+                class="custom-input"
+                id="modal-key-input"
+                style="display: none; margin-top: 6px;"
+                placeholder="在此输入新的 API Key (留空保存则继续保留原有密钥)"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action" onclick="testConnection()">🔍 测试连接与探测目录</button>
+        <button class="btn-action primary" onclick="saveConnection()">确认保存连接</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let isDirty = false;
+
+    function switchDemo(type, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      document.querySelectorAll('.demo-view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + type).classList.add('active');
+
+      const bannerTitle = document.getElementById('concept-title');
+      const bannerDesc = document.getElementById('concept-desc');
+
+      if (type === 'a') {
+        bannerTitle.innerHTML = '💡 方案 A 设计核心：渐进式披露 + CLI 与 自定义 API 统一纳管 (推荐)';
+        bannerDesc.innerHTML = '以 Agent 角色卡片为核心，将连接池收敛在顶部胶囊与弹窗；主备展开时清晰透出数据出站端点，兼顾日常易用性与安全深度。';
+      } else if (type === 'b') {
+        bannerTitle.innerHTML = '💡 方案 B 设计核心：双栏拓扑工作台 + 统一网络与安全审计面板';
+        bannerDesc.innerHTML = '左侧全局连接池与 Agent 列表，右侧深层装配；将宝儿姐强调的 Base URL、凭据无回传、防重放三大安全审计常驻展示。';
+      } else if (type === 'c') {
+        bannerTitle.innerHTML = '💡 方案 C 设计核心：容灾管道拓扑流 + 出站接收方物理可视化';
+        bannerDesc.innerHTML = '以数据流向图直观展示「主备切换 = 数据接收方切换」；让团队清楚理解熔断触发条件与工具执行能力边界。';
+      }
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme');
+      if (current === 'light') {
+        document.documentElement.removeAttribute('data-theme');
+        showToast('已切换至极夜暗色主题');
+      } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+        showToast('已切换至素雅浅色主题');
+      }
+    }
+
+    function toggleFallback(agent) {
+      const body = document.getElementById('fallback-body-' + agent);
+      const arrow = document.getElementById('fallback-arrow-' + agent);
+      if (body.style.display === 'none' || body.style.display === '') {
+        body.style.display = 'flex';
+        arrow.textContent = '▲';
+      } else {
+        body.style.display = 'none';
+        arrow.textContent = '▼';
+      }
+    }
+
+    function onConnChange(agent, val) {
+      markDirty(agent);
+      const badge = document.getElementById('cap-badge-' + agent);
+      if (val.startsWith('api_')) {
+        badge.className = 'cap-badge text-only';
+        badge.innerHTML = '<span>💬 仅纯文本对话与讨论 (无本地终端与文件系统写入权限)</span>';
+      } else {
+        badge.className = 'cap-badge tools';
+        badge.innerHTML = '<span>🛠️ 具备工具执行环境 (文件读写 / 终端命令 / 测试运行)</span>';
+      }
+    }
+
+    function filterModels(agent, brand, chip) {
+      const parent = chip.parentElement;
+      parent.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      showToast(`已筛选 ${brand.toUpperCase()} 厂商模型`);
+    }
+
+    function onModelSelect(agent, val) {
+      const customInput = document.getElementById('input-model-custom-' + agent);
+      if (val === 'custom') {
+        customInput.style.display = 'block';
+        customInput.focus();
+      } else {
+        customInput.style.display = 'none';
+      }
+      markDirty(agent);
+    }
+
+    function markDirty(agent) {
+      isDirty = true;
+      const card = document.getElementById('card-' + agent);
+      if (card) card.classList.add('modified');
+      const indicator = document.getElementById('save-indicator');
+      indicator.className = 'dot warning';
+      document.getElementById('save-status-text').textContent = '有尚未保存的配置更改 (离开前请保存)';
+    }
+
+    function resetConfig() {
+      isDirty = false;
+      document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('modified'));
+      document.getElementById('save-indicator').className = 'dot ready';
+      document.getElementById('save-status-text').textContent = '已重置为服务器保存配置';
+      showToast('已放弃所有未保存修改');
+    }
+
+    function saveAllConfig() {
+      isDirty = false;
+      document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('modified'));
+      document.getElementById('save-indicator').className = 'dot ready';
+      document.getElementById('save-status-text').textContent = '全局配置已持久化保存';
+      showToast('✓ 团队配置与自定义 API 路由已成功保存！');
+    }
+
+    function openConnModal() {
+      document.getElementById('conn-modal').classList.add('active');
+    }
+    function closeConnModal() {
+      document.getElementById('conn-modal').classList.remove('active');
+    }
+
+    function replaceKey() {
+      const input = document.getElementById('modal-key-input');
+      input.style.display = 'block';
+      input.focus();
+      showToast('请输入新密钥，保存时将替换已有凭据');
+    }
+
+    function deleteKey() {
+      if (confirm('确定要删除该连接的 API Key 凭据吗？删除后该连接将无法发起调用。')) {
+        showToast('凭据标记为待删除状态');
+      }
+    }
+
+    function testConnection() {
+      showToast('🔍 正在探测端点连通性并拉取动态模型目录...');
+      setTimeout(() => {
+        showToast('✓ 探测成功：端点握手正常，动态拉取到 12 个模型！');
+      }, 900);
+    }
+
+    function saveConnection() {
+      closeConnModal();
+      showToast('✓ 自定义 API 连接已保存并加入全局连接池');
+    }
+
+    function refreshAllCatalogs() {
+      showToast('🔄 正在异步后台刷新各 CLI 及 API 的模型目录...');
+      setTimeout(() => {
+        showToast('✓ 模型目录刷新完毕：Codex(7), agy(6), OpenAI(12)');
+      }, 800);
+    }
+
+    function refreshSingleCatalog(name) {
+      showToast(`正在单独刷新 ${name} 目录...`);
+    }
+
+    function showConnDetail(name) {
+      openConnModal();
+    }
+
+    function switchSplitAgent(agent, el) {
+      document.querySelectorAll('.agent-nav-item').forEach(i => i.classList.remove('active'));
+      el.classList.add('active');
+      const avatar = document.getElementById('split-avatar');
+      const title = document.getElementById('split-agent-title');
+      const desc = document.getElementById('split-agent-desc');
+      if (agent === 'chulan') {
+        avatar.className = 'avatar chulan';
+        avatar.textContent = '楚';
+        title.textContent = '张楚岚 · 调度参数与网络出站装配台';
+        desc.textContent = '主用 Codex 本地沙箱执行，备用接入第三方 API 容灾';
+      } else if (agent === 'baobao') {
+        avatar.className = 'avatar baobao';
+        avatar.textContent = '宝';
+        title.textContent = '冯宝宝 · 调度参数与网络出站装配台';
+        desc.textContent = '主用 Antigravity 隔离沙箱，本地双 CLI 闭环巡检';
+      } else {
+        avatar.className = 'avatar ye';
+        avatar.textContent = '也';
+        title.textContent = '王也 · 调度参数与网络出站装配台';
+        desc.textContent = '主用 OpenAI 官方 API 对话，备用本地沙箱';
+      }
+    }
+
+    function switchConnInspector(name) {
+      showToast(`已选中连接: ${name}`);
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => {
+        toast.style.display = 'none';
+      }, 2600);
+    }
+  </script>
+</body>
+</html>

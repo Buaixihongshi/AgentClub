@@ -122,7 +122,8 @@ class SubprocessCLIAdapter(CLIAdapter):
             return TurnOutcome(status=TurnStatus.BLOCKED, summary=summary)
 
         try:
-            stdout, stderr = proc.communicate(timeout=self.timeout)
+            from backend.app.adapters.turn_budget import remaining_timeout
+            stdout, stderr = proc.communicate(timeout=remaining_timeout(self.timeout))
         except subprocess.TimeoutExpired:
             kill_process_tree(proc)
             stdout, stderr = proc.communicate()
@@ -132,7 +133,7 @@ class SubprocessCLIAdapter(CLIAdapter):
                 stderr_snippet=stderr.strip() if stderr else "",
                 stdout_snippet=stdout.strip() if stdout else "",
             )
-            return TurnOutcome(status=TurnStatus.BLOCKED, summary=summary)
+            return TurnOutcome(status=TurnStatus.BLOCKED, summary=summary, retryable=False)
 
         stdout = stdout.strip()
         stderr = stderr.strip()
@@ -144,7 +145,7 @@ class SubprocessCLIAdapter(CLIAdapter):
                 stderr_snippet=stderr,
                 stdout_snippet=stdout,
             )
-            return TurnOutcome(status=TurnStatus.BLOCKED, summary=summary)
+            return TurnOutcome(status=TurnStatus.BLOCKED, summary=summary, retryable=False)
 
         content = self.output_parser(stdout) if stdout else ""
         envelope = _parse_result_envelope(content)

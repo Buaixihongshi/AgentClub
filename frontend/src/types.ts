@@ -44,6 +44,9 @@ export interface DiscussionResult {
   phase: DiscussionPhase;
   data: {
     position_summary?: string;
+    assumptions?: string[];
+    unknowns?: string[];
+    actions?: string[];
     claims?: Array<{ id: string; statement: string; evidence_status: string }>;
     sections?: Array<{ id: string; content: string; source_ids: string[] }>;
     findings?: Array<{ id: string; section_id: string; problem: string; desired_change: string; blocking: boolean }>;
@@ -109,7 +112,8 @@ export interface DiscussionView {
   error?: string | null;
   results?: DiscussionResult[];
   issues?: Array<{ id: string; problem: string; impact: string; category: string; status: string;
-    technical_decision?: string; decision_status?: string; deferred?: boolean }>;
+    technical_decision?: string; decision_status?: string; deferred?: boolean; resolution?: string;
+    positions?: Record<string, { proposal: string }> }>;
   value_decisions?: Array<{ id: string; question: string; options: Array<{ id: string; label: string }> }>;
   decisions?: Record<string, string>;
   pending_inputs?: string[];
@@ -504,19 +508,66 @@ export interface HubSettingsRuntimeView {
   a2a_idle_timeout: SettingField<number>;
 }
 
+export type HubConnectionProtocol = "openai_responses" | "openai_chat" | "anthropic";
+export type HubConnectionKind = "cli" | "api";
+
+export interface HubConnectionView {
+  id: string;
+  name: string;
+  kind: HubConnectionKind;
+  protocol: HubConnectionProtocol | null;
+  base_url: string | null;
+  enabled: boolean;
+  has_key: boolean;
+  timeout: number;
+  allow_private: boolean;
+}
+
+export interface HubConnectionPatch {
+  name?: string;
+  protocol?: HubConnectionProtocol | null;
+  base_url?: string | null;
+  enabled?: boolean;
+  timeout?: number;
+  allow_private?: boolean;
+  key_action?: "keep" | "replace" | "delete";
+  api_key?: string;
+  delete?: boolean;
+}
+
+export type ConnectionCatalogStatus = "ready" | "stale" | "error" | "unsupported" | "loading";
+
+export interface ConnectionModelItem {
+  id: string;
+  label: string;
+  vendor: string | null;
+}
+
+export interface ConnectionCatalogView {
+  connection_id: string;
+  status: ConnectionCatalogStatus;
+  models: ConnectionModelItem[];
+  fetched_at: string | null;
+  error: string | null;
+}
+
 export interface HubSettingsAgentView {
   id: string;
   display_name: string;
   default_provider_id: SettingField<string>;
   fallback_provider_ids: SettingField<string[]>;
+  provider_models?: SettingField<Record<string, string>>;
+  base_provider_models?: Record<string, string>;
   base_default_provider_id: string;
   base_fallback_provider_ids: string[];
+  fallback_context_approved?: SettingField<boolean>;
 }
 
 export interface HubSettingsView {
   runtime: HubSettingsRuntimeView;
   providers: HubSettingsProviderView[];
   agents: HubSettingsAgentView[];
+  connections?: HubConnectionView[];
 }
 
 export interface ProviderOverridePatch {
@@ -532,8 +583,10 @@ export interface RuntimePatch {
 }
 
 export interface AgentOverridePatch {
+  provider_models?: Record<string, string>;
   default_provider_id?: string;
   fallback_provider_ids?: string[];
+  fallback_context_approved?: boolean;
   clear?: boolean;
 }
 
@@ -541,6 +594,7 @@ export interface HubSettingsPatch {
   providers?: Record<string, ProviderOverridePatch>;
   runtime?: RuntimePatch;
   agents?: Record<string, AgentOverridePatch>;
+  connections?: Record<string, HubConnectionPatch>;
 }
 
 export interface HealthView {

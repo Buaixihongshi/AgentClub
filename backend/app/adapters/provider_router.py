@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
+from backend.app.adapters.turn_budget import remaining_timeout
 from backend.app.adapters.fake import FakeCLIAdapter
 from backend.app.adapters.mcp_subprocess import MCPSubprocessAdapter
 from backend.app.adapters.antigravity_config import recover_antigravity_global_config
@@ -11,7 +12,8 @@ from backend.app.adapters.subprocess_cli import SubprocessCLIAdapter
 from backend.app.config.providers import ProviderNotFoundError, get_cli_provider
 from backend.app.domain.models import TurnStatus
 from backend.app.mcp.tools import MCPTools
-from backend.app.settings import ProviderOverride
+from backend.app.settings import AgentOverride, ProviderOverride
+from backend.app.domain.agent_registry import get_agent_registry
 
 
 class ProviderRouterAdapter(CLIAdapter):
@@ -25,7 +27,10 @@ class ProviderRouterAdapter(CLIAdapter):
         database_path: Optional[Path] = None,
         artifact_root: Optional[Path] = None,
         provider_overrides: Optional[dict[str, ProviderOverride]] = None,
+        agent_overrides: Optional[dict[str, AgentOverride]] = None,
+        api_settings=None,
     ):
+        self.api_settings = api_settings
         self.config_dir = config_dir
         self.cli_timeout = cli_timeout
         self.a2a_idle_timeout = max(0, a2a_idle_timeout)
@@ -33,6 +38,7 @@ class ProviderRouterAdapter(CLIAdapter):
         self.database_path = database_path
         self.artifact_root = artifact_root
         self.provider_overrides = provider_overrides or {}
+        self.agent_overrides = agent_overrides or {}
         self.fake_adapter = FakeCLIAdapter()
         # Per-mission Gemini state: one persistent GEMINI_CLI_HOME so session
         # files survive across turns, plus an (agent_id -> session_id) map so
@@ -62,11 +68,31 @@ class ProviderRouterAdapter(CLIAdapter):
             self._gemini_home = None
         self._gemini_sessions.clear()
 
+    def _model_for(self, agent_id, provider_id):
+        override = self.agent_overrides.get(agent_id)
+        agent = get_agent_registry(self.config_dir).get(agent_id)
+        if override and override.provider_models is not None:
+            models = override.provider_models
+        else:
+            models = agent.provider_models if agent else {}
+        return models.get(provider_id, "")
+
+    def _api_adapter(self, agent_id, provider_id):
+        from backend.app.adapters.api_text import APITextAdapter
+        if self.api_settings is None or provider_id not in self.api_settings.api_connections:
+            return None
+        return APITextAdapter(self.api_settings, self.api_settings.api_connections[provider_id],
+                              self._model_for(agent_id, provider_id))
+
     def run_deliberation_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):
+        api = self._api_adapter(agent_id, provider_id)
+        if api:
+            return api.run_turn(mission_id, agent_id, turn_id, provider_id, prompt, tools)
         if provider_id == 'fake':
             return self.fake_adapter.run_turn(mission_id, agent_id, turn_id, provider_id, prompt, tools)
         from backend.app.adapters.deliberation_cli import DeliberationCLIAdapter
-        return DeliberationCLIAdapter(self.config_dir, self.cli_timeout, self.provider_overrides).run_turn(
+        return DeliberationCLIAdapter(self.config_dir, remaining_timeout(self.cli_timeout), self.provider_overrides,
+            model=self._model_for(agent_id, provider_id)).run_turn(
             mission_id, agent_id, turn_id, provider_id, prompt, tools)
 
     def run_turn(
@@ -78,14 +104,20 @@ class ProviderRouterAdapter(CLIAdapter):
         prompt: str,
         tools: MCPTools,
     ) -> TurnOutcome:
+        api = self._api_adapter(agent_id, provider_id)
+        if api:
+            return api.run_turn(mission_id, agent_id, turn_id, provider_id, prompt, tools)
         try:
             provider = get_cli_provider(
                 self.config_dir,
                 provider_id,
                 overrides=self.provider_overrides,
             )
-        except ProviderNotFoundError as exc:
-            return TurnOutcome(status=TurnStatus.BLOCKED, summary=str(exc))
+        except ProviderNotFoundError:
+            return TurnOutcome(status=TurnStatus.BLOCKED, summary="Unknown connection configuration", failure_code="configuration", retryable=False)
+
+        from backend.app.adapters.model_selection import with_model
+        provider = with_model(provider, self._model_for(agent_id, provider_id))
 
         if not provider.enabled:
             return TurnOutcome(
@@ -93,6 +125,7 @@ class ProviderRouterAdapter(CLIAdapter):
                 summary="provider is disabled: {provider_id}".format(
                     provider_id=provider_id
                 ),
+                failure_code="configuration", retryable=False,
             )
 
         if provider.id == "fake":
@@ -113,7 +146,7 @@ class ProviderRouterAdapter(CLIAdapter):
                 if mission and not is_provider_verification_mission(mission):
                     return run_persistent_turn(
                         provider, database_path=self.database_path, artifact_root=self.artifact_root,
-                        timeout=self.cli_timeout,
+                        timeout=remaining_timeout(self.cli_timeout),
                         idle_timeout=self.a2a_idle_timeout if tools.current_step_origin in {'a2a', 'a2a_resume'} else 0,
                         mission_id=mission_id, agent_id=agent_id, turn_id=turn_id, prompt=prompt, tools=tools,
                     )
@@ -127,7 +160,7 @@ class ProviderRouterAdapter(CLIAdapter):
                 provider.args,
                 db_path=self.database_path,
                 artifact_root=self.artifact_root,
-                timeout=self.cli_timeout,
+                timeout=remaining_timeout(self.cli_timeout),
                 idle_timeout=(
                     self.a2a_idle_timeout
                     if tools.current_step_origin in {"a2a", "a2a_resume"}
@@ -159,7 +192,7 @@ class ProviderRouterAdapter(CLIAdapter):
             provider.command,
             provider.args,
             output_parser=lambda output: parse_provider_output(provider.id, output),
-            timeout=self.cli_timeout,
+            timeout=remaining_timeout(self.cli_timeout),
         )
         return adapter.run_turn(
             mission_id,
