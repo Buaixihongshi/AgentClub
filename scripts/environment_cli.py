@@ -78,6 +78,13 @@ def launch(args, root, profile, allocate=False):
     if profile == "runtime": raise EnvironmentError("Runtime activation is reserved for the owner release command")
     if profile == "alpha" and args.real_cli: raise EnvironmentError("Alpha is demo-only; use a separate feature --real-cli instance")
     if profile == "alpha" and args.reload: raise EnvironmentError("Alpha must not reload mutable source")
+    if profile == "alpha":
+        if root.resolve() != (home() / "alpha").resolve():
+            raise EnvironmentError("Alpha may only run from its dedicated main mirror; use env.sh alpha start")
+        if git(root, "branch", "--show-current") or git(root, "status", "--porcelain", "--untracked-files=all"):
+            raise EnvironmentError("Alpha must be a clean detached main checkout")
+        if git(root, "rev-parse", "HEAD") != git(ROOT, "rev-parse", "origin/main"):
+            raise EnvironmentError("Alpha is not at refreshed origin/main; sync it before starting")
     if not (root / "backend/app/runtime_control.py").exists():
         raise EnvironmentError("Checkout does not include the managed lifecycle yet; merge PR 2 before using alpha/main features")
     record = start(root, profile, detach=args.detach,

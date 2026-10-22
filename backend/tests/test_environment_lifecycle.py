@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -54,6 +55,13 @@ def test_features_have_separate_branches_and_resume_without_reset(source_repo):
     assert cli.feature("one") == first
     assert (first / "value").read_text() == "keep user change"
     with pytest.raises(common.EnvironmentError): cli.feature("../escape")
+
+
+def test_generic_start_cannot_label_a_feature_checkout_as_alpha(source_repo, monkeypatch):
+    args = SimpleNamespace(real_cli=False, reload=False)
+    monkeypatch.setattr(cli, "start", lambda *a, **k: pytest.fail("must not start a mislabeled alpha"))
+    with pytest.raises(common.EnvironmentError, match="dedicated main mirror"):
+        cli.launch(args, source_repo, "alpha")
 
 
 def test_state_isolation_and_explicit_real_mode(tmp_path, monkeypatch):
