@@ -30,5 +30,6 @@ if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
 fi
 
 export PYTHONPATH="$ROOT"
+export YIREN_ENVIRONMENT="${YIREN_ENVIRONMENT:-development}"
 exec "$PY" -m uvicorn backend.app.main:app \
   --host "$HOST" --port "$PORT" --reload "$@"

@@ -98,6 +98,26 @@ describe("AgentClub app", () => {
     vi.unstubAllGlobals();
     vi.stubGlobal("fetch", stubFetch());
   });
+
+  it("clears a previously matching identity when the backend becomes unreachable", async () => {
+    let offline = false;
+    const source = __FRONTEND_IDENTITY__;
+    vi.stubGlobal("fetch", stubFetch((url) => {
+      if (url !== "/api/health") return null;
+      if (offline) throw new Error("offline");
+      return new Response(JSON.stringify({
+        status: "ok", version: "0.1.0", database: "ready", config: "ready", fake_provider: "ready",
+        runtime: { started: { ...source, pid: 123, python: "3.12.12", use_fake_cli: true },
+          current: source, source_changed: false },
+      }), { status: 200 });
+    }));
+    render(<App />);
+    expect(await screen.findByText("启动版本一致")).toBeInTheDocument();
+    offline = true;
+    window.dispatchEvent(new Event("focus"));
+    expect(await screen.findByText("版本信息不完整")).toBeInTheDocument();
+    expect(screen.queryByText("启动版本一致")).not.toBeInTheDocument();
+  });
   it("creates a mission from the composer via conversation API", async () => {
     render(<App />);
     await userEvent.type(screen.getByLabelText("任务输入"), "设计一个多 Agent 任务室");

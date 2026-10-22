@@ -6,10 +6,12 @@ from backend.app.storage.repository import Repository
 from backend.app.orchestration.deliberation import BUILD_ID, RULES_VERSION, digest
 from backend.app.orchestration.discussion_rules import COMMON_DISCUSSION_RULES
 from backend.app.domain.project_skills import PROJECT_SKILLS
+from backend.app.runtime_identity import capture_runtime, runtime_view
 
 
 def build_router(settings: Settings, repository: Repository) -> APIRouter:
     router = APIRouter(prefix="/api/health", tags=["health"])
+    started = capture_runtime(settings)
 
     @router.get("")
     def get_health():
@@ -40,6 +42,7 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
             "discussion_rules_version": RULES_VERSION,
             "discussion_rules_hash": digest(COMMON_DISCUSSION_RULES),
             "build_id": BUILD_ID,
+            "runtime": runtime_view(started),
         }
 
     return router

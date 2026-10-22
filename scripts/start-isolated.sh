@@ -10,6 +10,7 @@ esac
 shift
 export PORT FRONTEND_PORT
 export HOST=127.0.0.1
+export YIREN_ENVIRONMENT="$ENVIRONMENT"
 STATE="$ROOT/.yiren/$ENVIRONMENT"
 mkdir -p "$STATE/config" "$STATE/artifacts" "$STATE/data"
 for file in agents.json cli-providers.json; do
