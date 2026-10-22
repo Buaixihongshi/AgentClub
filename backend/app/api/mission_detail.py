@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import re
+from stat import S_ISREG
 from typing import Optional
 
 from fastapi import HTTPException
@@ -154,12 +156,19 @@ def _artifact_records(settings: Settings, mission_id: str, db_events=None) -> li
     mission_dir = settings.artifact_root / mission_id
     if mission_dir.exists():
         for path in sorted(mission_dir.glob("**/*")):
-            if not path.is_file():
+            # MCP writers publish with an atomic rename; staging files are not artifacts.
+            if re.fullmatch(r"\..+\.[0-9a-f]{32}\.tmp", path.name, flags=re.DOTALL):
+                continue
+            try:
+                metadata = path.stat()
+            except FileNotFoundError:
+                continue  # A concurrent writer may already have renamed this entry.
+            if not S_ISREG(metadata.st_mode):
                 continue
             relative_path = path.relative_to(mission_dir).as_posix()
             if relative_path in event_artifacts:
                 continue
-            created_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+            created_at = datetime.fromtimestamp(metadata.st_mtime, tz=timezone.utc).isoformat()
             event_artifacts[relative_path] = {
                 "id": "{mid}:{path}".format(mid=mission_id, path=relative_path),
                 "mission_id": mission_id,
