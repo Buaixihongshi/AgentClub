@@ -133,3 +133,21 @@ def test_frontend_proxy_and_reload_worker_identity_are_checked(monkeypatch):
     assert supervisor.verify(record)["pid"] == 2
     record["instance_id"] = "other"
     with pytest.raises(common.EnvironmentError): supervisor.verify(record)
+
+
+def test_inventory_includes_managed_backend_only_ports(tmp_path, monkeypatch):
+    from scripts import environment_status as status
+    index = tmp_path / ".instances"
+    index.mkdir()
+    record = tmp_path / "instance.json"
+    record.write_text(json.dumps({"checkout": str(tmp_path), "backend_port": 8400, "frontend_port": None, "status": "running"}))
+    (index / "owned.json").write_text(json.dumps({"record": str(record)}))
+    monkeypatch.setattr(common, "home", lambda: tmp_path)
+    monkeypatch.setattr(status, "worktrees", lambda: [])
+    monkeypatch.setattr(status, "listeners", lambda: {})
+    monkeypatch.setattr(status, "get_json", lambda *a: {"status": "ok"})
+    report = status.inventory([], [])
+    assert len(report["services"]) == 1
+    assert report["services"][0]["backend_port"] == 8400
+    assert report["services"][0]["frontend_port"] is None
+    assert "仅后端实例" in status.render(report)
