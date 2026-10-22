@@ -384,6 +384,8 @@ class EvalRunner:
             database_path=self.settings.database_path,
             artifact_root=self.settings.artifact_root,
             provider_overrides=self.settings.provider_overrides,
+            agent_overrides=self.settings.agent_overrides,
+            api_settings=self.settings,
         )
 
     # ------------------------------------------------------------------

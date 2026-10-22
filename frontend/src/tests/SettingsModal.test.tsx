@@ -158,7 +158,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
 
     expect(screen.getByRole("heading", { name: "CLI 接入" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "团队配置" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "团队配置" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "团队配置" }));
     expect(screen.getByRole("heading", { name: "团队配置" })).toBeInTheDocument();
 
@@ -224,5 +224,154 @@ describe("SettingsModal", () => {
     expect(screen.getByTestId("provider-card-antigravity")).toHaveTextContent("已安装 · 待验证");
     fireEvent.click(screen.getByRole("button", { name: "验证真实对话" }));
     expect(onVerifyProvider).toHaveBeenCalledWith("antigravity");
+  });
+
+  it("supports Scheme B dual-pane: creates custom API connection and submits in patch", () => {
+    const onSave = vi.fn();
+    render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
+
+    // Click "+ 新增 API" button in sidebar
+    fireEvent.click(screen.getByTestId("add-connection-btn"));
+
+    // Verify detail pane shows API connection editor
+    expect(screen.getByText("💬 仅纯文本对话与讨论")).toBeInTheDocument();
+    expect(screen.getByText("API 端点与网络出站设置")).toBeInTheDocument();
+
+    // Fill in API connection parameters
+    const nameInput = screen.getByDisplayValue("自定义 API 连接");
+    fireEvent.change(nameInput, { target: { value: "OpenAI 兼容网关" } });
+
+    const urlInput = screen.getByPlaceholderText("https://api.openai.com/v1");
+    fireEvent.change(urlInput, { target: { value: "https://api.example.com/v1" } });
+
+    const keyInput = screen.getByPlaceholderText("在此输入 API Key (保存后加密提交，前端不留存)");
+    fireEvent.change(keyInput, { target: { value: "test-secret-key" } });
+
+    fireEvent.click(screen.getByTestId("settings-save"));
+    expect(onSave).toHaveBeenCalled();
+    const patch: HubSettingsPatch = onSave.mock.calls[0][0];
+    expect(patch.connections).toBeDefined();
+
+    const connKeys = Object.keys(patch.connections!);
+    expect(connKeys.length).toBe(1);
+    expect(connKeys[0]).toMatch(/^api-/);
+
+    const savedConn = patch.connections![connKeys[0]];
+    expect(savedConn.name).toBe("OpenAI 兼容网关");
+    expect(savedConn.base_url).toBe("https://api.example.com/v1");
+    expect(savedConn.key_action).toBe("replace");
+    expect(savedConn.api_key).toBe("test-secret-key");
+  });
+
+  it("credentials 3-state: displays has_key without key leaks, supports replace and delete", () => {
+    const viewWithApi: HubSettingsView = {
+      ...baseView,
+      connections: [
+        {
+          id: "api-openai-1",
+          name: "OpenAI 线上",
+          kind: "api",
+          protocol: "openai_responses",
+          base_url: "https://api.openai.com/v1",
+          enabled: true,
+          has_key: true,
+          timeout: 60,
+          allow_private: false,
+        },
+      ],
+    };
+    const onSave = vi.fn();
+    render(<SettingsModal view={viewWithApi} onSave={onSave} onClose={vi.fn()} />);
+
+    // Select the connection in sidebar
+    fireEvent.click(screen.getByTestId("provider-card-api-openai-1"));
+
+    // Verify no secret text or fragment leaked
+    expect(screen.queryByText(/sk-/)).not.toBeInTheDocument();
+    expect(screen.getByText("已配置凭据 (后端安全存储，无明文回传)")).toBeInTheDocument();
+
+    // Test Delete Key
+    fireEvent.click(screen.getByRole("button", { name: "彻底删除" }));
+    expect(screen.getByText("凭据已标记删除 (保存后生效)")).toBeInTheDocument();
+
+    // Revoke delete
+    fireEvent.click(screen.getByRole("button", { name: "撤销删除" }));
+    expect(screen.getByText("已配置凭据 (后端安全存储，无明文回传)")).toBeInTheDocument();
+
+    // Test Replace Key
+    fireEvent.click(screen.getByRole("button", { name: "替换密钥" }));
+    expect(screen.getByText("凭据将被新输入的密钥替换")).toBeInTheDocument();
+    const newKeyInput = screen.getByPlaceholderText("在此输入 API Key (保存后加密提交，前端不留存)");
+    fireEvent.change(newKeyInput, { target: { value: "sk-fresh-new-token" } });
+
+    fireEvent.click(screen.getByTestId("settings-save"));
+    const patch: HubSettingsPatch = onSave.mock.calls[0][0];
+    expect(patch.connections!["api-openai-1"]).toEqual(
+      expect.objectContaining({
+        key_action: "replace",
+        api_key: "sk-fresh-new-token",
+      }),
+    );
+  });
+
+  it("supports fallback context approval and resets upon fallback provider change", () => {
+    const onSave = vi.fn();
+    render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
+
+    const approveCheckbox = screen.getByTestId("agent-fallback-approve-wangye") as HTMLInputElement;
+    expect(approveCheckbox.checked).toBe(false);
+
+    // Check approval
+    fireEvent.click(approveCheckbox);
+    expect(approveCheckbox.checked).toBe(true);
+
+    // Changing fallback resets approval
+    fireEvent.click(screen.getByTestId("agent-fallback-wangye-codex"));
+    expect(approveCheckbox.checked).toBe(false);
+
+    // Re-check approval
+    fireEvent.click(approveCheckbox);
+    expect(approveCheckbox.checked).toBe(true);
+
+    fireEvent.click(screen.getByTestId("settings-save"));
+    const patch: HubSettingsPatch = onSave.mock.calls[0][0];
+    expect(patch.agents!["wangye"].fallback_context_approved).toBe(true);
+  });
+
+  it("confirms before closing when there are unsaved changes", () => {
+    const onClose = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<SettingsModal view={baseView} onSave={vi.fn()} onClose={onClose} />);
+
+    // Make a change
+    fireEvent.click(screen.getByTestId("toggle-claude"));
+
+    // Attempt to close
+    fireEvent.click(screen.getByTestId("settings-close"));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Confirm true
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(screen.getByTestId("settings-close"));
+    expect(onClose).toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
+  });
+});
+
+it("keeps model choices independent for each CLI and saves them with routing", () => {
+  const onSave = vi.fn();
+  render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
+  expect(screen.getByRole("heading", { name: "CLI 接入" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "团队配置" })).toBeInTheDocument();
+  fireEvent.change(screen.getByTestId("agent-default-wangye"), { target: { value: "codex" } });
+  fireEvent.change(screen.getByLabelText("王也 codex 模型"), { target: { value: "gpt-6.1-sol" } });
+  fireEvent.change(screen.getByLabelText("王也 claude 模型"), { target: { value: "sonnet" } });
+  fireEvent.click(screen.getByTestId("settings-save"));
+  expect(onSave.mock.calls[0][0].agents.wangye).toEqual({
+    default_provider_id: "codex",
+    provider_models: { codex: "gpt-6.1-sol", claude: "sonnet" },
   });
 });

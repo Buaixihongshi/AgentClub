@@ -510,6 +510,38 @@ describe("AgentClub app", () => {
     });
   });
 
+  it("renders discussion substance in the conversation and updates it from SSE without a reload", async () => {
+    const stamp = "2026-05-05T00:00:00Z";
+    const initial: MissionDetail = {
+      mission: { id: "m1", goal: "如何判断工具错误已经恢复？", status: "running", created_at: stamp, updated_at: stamp },
+      discussion: { protocol: "deliberation_v2", phase: "independent", participant_ids: ["chulan", "wangye"],
+        turns_used: 2, turns_limit: 9, revision: 1, results: [] }, events: [], artifacts: [],
+    };
+    vi.stubGlobal("fetch", stubFetch((url, init) => {
+      if (url === "/api/health") return new Response(JSON.stringify({ status: "ok", project_skills: ["discuss"], discussion_protocols: ["deliberation_v2"] }));
+      if (url === "/api/conversations/c_1/missions" && init?.method === "POST") {
+        return new Response(JSON.stringify(makeConvDetail({ latest_mission_detail: initial })));
+      }
+      return null;
+    }));
+    render(<App />);
+    await userEvent.type(screen.getByLabelText("任务输入"), "/discuss 如何判断工具错误已经恢复？");
+    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    expect(await screen.findByRole("region", { name: "讨论重点" })).toHaveTextContent("如何判断工具错误已经恢复？");
+    const source = (window.EventSource as unknown as { instances: EventTarget[] }).instances[0];
+    expect(source).toBeDefined();
+    source.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ ...initial,
+      mission: { ...initial.mission, updated_at: "2026-05-05T00:01:00Z" },
+      discussion: { ...initial.discussion, phase: "exchange", revision: 2, results: [
+        { id: "opinion", agent_id: "wangye", phase: "independent", kind: "opinion", data: { position_summary: "应区分求助已发出与故障已恢复。" } },
+      ], issues: [{ id: "issue", problem: "缺少恢复成功的真实证据。", impact: "影响交付判断。", category: "fact", status: "open" }] },
+    }) }));
+    expect(await screen.findByText("缺少恢复成功的真实证据。")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("核对分歧与依据");
+    await userEvent.click(screen.getByText("成员观点 · 1 位"));
+    expect(screen.getByText("应区分求助已发出与故障已恢复。")).toBeVisible();
+  });
+
   it.each(["completed", "blocked", "completed_with_warnings"])(
     "applies SSE snapshots monotonically and closes streams for %s missions",
     async (terminalStatus) => {

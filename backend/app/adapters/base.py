@@ -13,6 +13,8 @@ class TurnOutcome:
     session_id: Optional[str] = None
     failure_code: Optional[str] = None
     exit_code: Optional[int] = None
+    retryable: Optional[bool] = None
+    output_started: bool = False
 
 
 class CLIAdapter(ABC):

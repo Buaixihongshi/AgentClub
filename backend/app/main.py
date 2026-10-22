@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from backend.app.orchestration.roundtable import Roundtable, DiscussionError
 
 from backend.app.api.agents import build_router as build_agents_router
@@ -45,6 +46,14 @@ def create_app(
                 SESSION_POOL.close(app_settings.database_path)
 
     app = FastAPI(title="AgentClub", lifespan=lifespan)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(request, exc):
+        # Validation details can include nested request bodies containing keys.
+        if request.url.path == "/api/hub/settings":
+            return JSONResponse(status_code=422, content={"detail": "invalid settings request"})
+        from fastapi.exception_handlers import request_validation_exception_handler
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(DiscussionError)
     async def discussion_error_handler(request, exc):

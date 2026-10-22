@@ -63,6 +63,8 @@ def _build_mission_adapter(settings: Settings) -> CLIAdapter:
         database_path=settings.database_path,
         artifact_root=settings.artifact_root,
         provider_overrides=settings.provider_overrides,
+        agent_overrides=settings.agent_overrides,
+        api_settings=settings,
     )
 
 

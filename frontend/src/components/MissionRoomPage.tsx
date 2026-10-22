@@ -14,6 +14,7 @@ import {
 } from "../types";
 import { ConversationList } from "./ConversationList";
 import { DiscussionSkillStatus } from "./DiscussionSkillStatus";
+import { DiscussionHighlights } from "./DiscussionHighlights";
 import { MissionComposer } from "./MissionComposer";
 import type { ConfirmedMention } from "../lib/inputConfirmations";
 import { MissionHeader } from "./MissionHeader";
@@ -74,7 +75,12 @@ export function MissionRoomPage(props: {
     />
   ) : null;
   const timeline = <TurnTimeline turns={props.turns} conversationId={props.selectedConversationId}
-    emptyContent={onboardingCard} afterContent={props.turns.length > 0 ? onboardingCard : null} />;
+    contentRevision={discussion?.revision}
+    emptyContent={discussion?.protocol === "deliberation_v2" ? <DiscussionHighlights discussion={discussion} goal={props.detail?.mission.goal ?? ""} /> : onboardingCard}
+    afterContent={<>
+      {props.turns.length > 0 && onboardingCard}
+      {discussion && <DiscussionHighlights discussion={discussion} goal={props.detail?.mission.goal ?? ""} />}
+    </>} />;
   const discussionPanel = discussion ? <DiscussionSkillStatus key={props.detail?.mission.id} discussion={discussion}
     missionStatus={props.detail?.mission.status ?? 'pending'} busy={props.discussionBusy}
     onRequestFinish={props.onRequestFinish} onControl={props.onDiscussionControl}

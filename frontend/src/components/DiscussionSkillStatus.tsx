@@ -7,7 +7,16 @@ import type {
   MissionStatus,
 } from "../types";
 
-/** The skill runs behind the chat; this surface only asks for necessary input. */
+const ACTIVE_STATUS: Record<string, string> = {
+  independent: "团队正在形成独立判断…",
+  exchange: "团队正在核对分歧与依据…",
+  awaiting_synthesizer: "成员观点已就绪，等待选择综合者",
+  synthesis: "正在整理各方观点与建议…",
+  review: "团队正在复核综合建议…",
+  finalizing: "正在按复核意见修订结果…",
+};
+
+/** Run controls stay beside the composer; substantive discussion content lives in the timeline. */
 export function DiscussionSkillStatus(props: {
   discussion: DiscussionView;
   missionStatus: MissionStatus;
@@ -35,7 +44,7 @@ export function DiscussionSkillStatus(props: {
       ? stopped ? "讨论已停止" : failedEnding ? "讨论未完成" : d.end_reason === "input_revised" ? "已按新条件重新开始讨论" : "团队讨论已完成"
       : blocked ? "团队讨论需要处理运行问题"
         : waiting ? "团队需要你的选择"
-          : d.pending_control === "finish" ? "团队正在整理讨论结果…" : "团队正在独立核对这个问题…";
+          : d.pending_control === "finish" ? "团队正在整理讨论结果…" : ACTIVE_STATUS[d.phase] ?? "团队正在讨论这个问题…";
   const control = (action: DiscussionControlAction, fields?: DiscussionControlFields) => props.onControl?.(action, fields);
   const stop = () => v2 ? control("stop") : props.onRequestStop();
 

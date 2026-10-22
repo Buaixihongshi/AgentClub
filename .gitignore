@@ -31,3 +31,6 @@ design-qa.md
 
 # Private bounded CLI incident diagnostics
 data/cli-diagnostics/
+
+# Local API credentials (never export or commit)
+connection-secrets/

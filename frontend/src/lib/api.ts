@@ -1,4 +1,4 @@
-import type { ArtifactContent, Conversation, ConversationDetail, ConversationSummary, DiscussionControlAction, HealthView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, ObservabilityOverviewPayload, ObservabilityTurnDetailPayload, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository, RoomMode } from "../types";
+import type { ArtifactContent, ConnectionCatalogView, Conversation, ConversationDetail, ConversationSummary, DiscussionControlAction, HealthView, HubConnectionView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, ObservabilityOverviewPayload, ObservabilityTurnDetailPayload, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository, RoomMode } from "../types";
 
 const API_ROOT = "";
 
@@ -190,6 +190,23 @@ export async function updateHubSettings(patch: HubSettingsPatch): Promise<HubSet
     body: JSON.stringify(patch),
   });
   return parseJson<HubSettingsView>(response, "更新 Hub 设置失败");
+}
+
+export async function listHubConnections(): Promise<{ connections: HubConnectionView[] }> {
+  const response = await fetch(`${API_ROOT}/api/hub/connections`);
+  return parseJson<{ connections: HubConnectionView[] }>(response, "加载连接列表失败");
+}
+
+export async function fetchConnectionModels(connectionId: string): Promise<ConnectionCatalogView> {
+  const response = await fetch(`${API_ROOT}/api/hub/connections/${encodeURIComponent(connectionId)}/models`);
+  return parseJson<ConnectionCatalogView>(response, "加载模型目录失败");
+}
+
+export async function refreshConnectionModels(connectionId: string): Promise<ConnectionCatalogView> {
+  const response = await fetch(`${API_ROOT}/api/hub/connections/${encodeURIComponent(connectionId)}/models/refresh`, {
+    method: "POST",
+  });
+  return parseJson<ConnectionCatalogView>(response, "刷新模型目录失败");
 }
 
 export interface AgentSummary {
