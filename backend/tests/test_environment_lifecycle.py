@@ -64,6 +64,17 @@ def test_generic_start_cannot_label_a_feature_checkout_as_alpha(source_repo, mon
         cli.launch(args, source_repo, "alpha")
 
 
+def test_protected_or_unmanaged_live_checkout_cannot_be_used_for_development(source_repo, monkeypatch):
+    args = SimpleNamespace(real_cli=False, reload=False)
+    protected = common.home(source_repo) / "releases" / ("a" * 40)
+    with pytest.raises(common.EnvironmentError, match="protected"):
+        cli.launch(args, protected, "development")
+    monkeypatch.setattr(cli, "checkout_listening", lambda _: True)
+    monkeypatch.setattr(cli, "read_record", lambda *a: None)
+    with pytest.raises(common.EnvironmentError, match="serving another instance"):
+        cli.launch(args, source_repo, "development")
+
+
 def test_state_isolation_and_explicit_real_mode(tmp_path, monkeypatch):
     root = tmp_path / "checkout"
     config = root / "config"
