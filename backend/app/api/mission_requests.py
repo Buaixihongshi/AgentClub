@@ -176,6 +176,10 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
                     for agent, candidates in routes.items():
                         eligible = []
                         for pid in dict.fromkeys(candidates):
+                            if pid in settings.api_connections:
+                                if settings.api_connections[pid].get('enabled'):
+                                    eligible.append(pid)
+                                continue
                             try:
                                 provider = get_cli_provider(settings.config_dir, pid, overrides=settings.provider_overrides)
                             except ProviderNotFoundError:
@@ -184,8 +188,12 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
                                 eligible.append(pid)
                         if not eligible:
                             raise DiscussionError(f'isolation_not_supported: no enabled isolated provider for {agent}', 422)
-                        routes[agent] = eligible
-                    if any(pid != 'fake' for route in routes.values() for pid in route) and not isolation_supported():
+                        if candidates[0] not in eligible:
+                            raise DiscussionError(f'configuration: primary provider unavailable for {agent}', 422)
+                        # Never promote an API fallback to primary by filtering
+                        # the configured route: that would bypass export consent.
+                        routes[agent] = list(dict.fromkeys(candidates))
+                    if any(pid != 'fake' and pid not in settings.api_connections for route in routes.values() for pid in route) and not isolation_supported():
                         raise DiscussionError('isolation_not_supported: V2 requires macOS sandbox-exec', 422)
                 config = DiscussionConfig(participant_ids=participants, max_turns=limit, protocol='deliberation_v2',
                     max_exchange_rounds=payload.discussion.max_exchange_rounds, provider_routes=routes,

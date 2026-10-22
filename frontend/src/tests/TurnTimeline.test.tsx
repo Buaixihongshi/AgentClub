@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { TurnTimeline } from "../components/TurnTimeline";
 import type { TurnView } from "../types";
@@ -51,6 +51,21 @@ it("renders without A2A arrow when no invocation", () => {
   render(<TurnTimeline turns={[agentTurn({})]} />);
 
   expect(screen.queryByText(/→/)).not.toBeInTheDocument();
+});
+
+it("follows discussion updates only while the reader stays at the bottom", () => {
+  const turns = [agentTurn({})];
+  const { rerender } = render(<TurnTimeline turns={turns} contentRevision={1} afterContent={<p>初始观点</p>} />);
+  const timeline = screen.getByRole("region", { name: "任务轮次" });
+  Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 900 });
+  Object.defineProperty(timeline, "clientHeight", { configurable: true, value: 400 });
+  rerender(<TurnTimeline turns={turns} contentRevision={2} afterContent={<p>新增分歧</p>} />);
+  expect(timeline.scrollTop).toBe(900);
+  timeline.scrollTop = 100;
+  fireEvent.scroll(timeline);
+  rerender(<TurnTimeline turns={turns} contentRevision={3} afterContent={<p>综合建议</p>} />);
+  expect(timeline.scrollTop).toBe(100);
+  expect(screen.getByText("综合建议")).toBeInTheDocument();
 });
 
 it("keeps V2 raw speech in a closed disclosure instead of duplicating the structured board", () => {

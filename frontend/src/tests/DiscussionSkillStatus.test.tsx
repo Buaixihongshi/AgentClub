@@ -16,12 +16,20 @@ function setup(patch: Partial<DiscussionView> = {}, missionStatus: MissionStatus
 describe("DiscussionSkillStatus", () => {
   it("keeps the run compact without stages, role cards or implementation metadata", async () => {
     const { props } = setup({ rules_version: "internal-version", build_id: "private-build", progress: [{ turn_id: "t1", agent_id: "chulan", phase: "independent", status: "submitted", attempt: 1 }] });
-    expect(screen.getByRole("status")).toHaveTextContent("团队正在独立核对这个问题…");
+    expect(screen.getByRole("status")).toHaveTextContent("团队正在形成独立判断…");
     expect(screen.queryByRole("list", { name: "讨论流程" })).not.toBeInTheDocument();
     expect(screen.queryByText(/张楚岚/)).not.toBeInTheDocument();
     expect(screen.queryByText(/internal-version|private-build|13/)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "停止讨论" }));
     expect(props.onControl).toHaveBeenCalledWith("stop", undefined);
+  });
+
+  it.each([
+    ["exchange", "核对分歧与依据"], ["synthesis", "整理各方观点"],
+    ["review", "复核综合建议"], ["finalizing", "按复核意见修订"],
+  ] as const)("describes the actual %s phase", (phase, label) => {
+    setup({ phase });
+    expect(screen.getByRole("status")).toHaveTextContent(label);
   });
 
   it("explains when phase 2 was skipped without claiming verification", () => {

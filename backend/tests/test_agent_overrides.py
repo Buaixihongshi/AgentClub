@@ -119,3 +119,60 @@ def test_mission_runner_uses_overrides_from_disk(temp_settings):
     wangye = next(a for a in runner.agents if a.id == "wangye")
     assert wangye.default_provider_id == "claude"
     assert wangye.fallback_provider_ids == []
+
+
+def test_agent_models_persist_snapshot_and_reset(temp_settings):
+    from backend.app.settings import snapshot_settings
+    from backend.app.adapters.provider_router import ProviderRouterAdapter
+    client = _make_client(temp_settings)
+    models = {"codex": "gpt-6.1-sol", "claude": "sonnet"}
+    response = client.put('/api/hub/settings', json={"agents": {"wangye": {"provider_models": models}}})
+    assert response.status_code == 200
+    agent = next(a for a in response.json()['agents'] if a['id'] == 'wangye')
+    assert agent['provider_models'] == {"value": models, "source": "user"}
+    snapshot = snapshot_settings(temp_settings)
+    router = ProviderRouterAdapter(snapshot.config_dir, agent_overrides=snapshot.agent_overrides)
+    assert router._model_for('wangye', 'codex') == 'gpt-6.1-sol'
+    assert router._model_for('wangye', 'claude') == 'sonnet'
+    assert router._model_for('baobao', 'codex') == ''
+    assert client.put('/api/hub/settings', json={"agents": {"wangye": {"provider_models": {}}}}).status_code == 200
+    assert snapshot_settings(temp_settings).agent_overrides['wangye'].provider_models == {}
+    client.put('/api/hub/settings', json={"agents": {"wangye": {"clear": True}}})
+    assert 'wangye' not in snapshot_settings(temp_settings).agent_overrides
+
+
+def test_agent_models_reject_invalid_provider_and_control_characters(temp_settings):
+    client = _make_client(temp_settings)
+    for models in ({'bogus': 'abc'}, {'codex': 'abc\nxyz'}, {'fake': 'abc'}):
+        response = client.put('/api/hub/settings', json={"agents": {"wangye": {"provider_models": models}}})
+        assert response.status_code == 400
+
+
+def test_model_argument_overrides_shared_config_without_mutation():
+    from backend.app.adapters.model_selection import with_model
+    from backend.app.domain.models import CLIProvider
+    for provider_id, args in [('codex', ['exec', '--model=old', '--json']), ('claude', ['-m', 'old', '-p'])]:
+        provider = CLIProvider(id=provider_id, label=provider_id, command=provider_id, args=args)
+        selected = with_model(provider, 'gpt-6.1-sol')
+        assert 'old' not in selected.args and '--model=old' not in selected.args
+        assert selected.args[selected.args.index('--model') + 1] == 'gpt-6.1-sol'
+        assert provider.args == args
+        assert with_model(provider, '') is provider
+
+
+def test_both_cli_routes_receive_role_model(temp_settings, monkeypatch):
+    from unittest.mock import Mock
+    from backend.app.adapters import provider_router, deliberation_cli
+    from backend.app.domain.models import CLIProvider
+    router = provider_router.ProviderRouterAdapter(temp_settings.config_dir, agent_overrides={
+        'wangye': AgentOverride(provider_models={'codex': 'gpt-6.1-sol'})})
+    monkeypatch.setattr(provider_router, 'get_cli_provider', lambda *a, **kw: CLIProvider(
+        id='codex', label='Codex', command='codex', args=['exec'], enabled=True))
+    subprocess = Mock()
+    monkeypatch.setattr(provider_router, 'SubprocessCLIAdapter', subprocess)
+    router.run_turn('mission', 'wangye', 'turn', 'codex', 'prompt', Mock())
+    assert subprocess.call_args.args[1] == ['exec', '--model', 'gpt-6.1-sol']
+    isolated = Mock()
+    monkeypatch.setattr(deliberation_cli, 'DeliberationCLIAdapter', isolated)
+    router.run_deliberation_turn('mission', 'wangye', 'turn', 'codex', 'prompt', Mock())
+    assert isolated.call_args.kwargs['model'] == 'gpt-6.1-sol'

@@ -281,12 +281,16 @@ def test_targeted_interrupt_moves_opening_forward(idle_client, repository, temp_
 def test_fallback_uses_one_turn_and_failure_preserves_partial_result(idle_client, repository, temp_settings):
     mid = create(idle_client)
     def callback(adapter, mid, agent, turn, provider, tools):
-        if len(adapter.calls) == 1:
-            return TurnOutcome(status=TurnStatus.BLOCKED, summary='try fallback')
         if len(adapter.calls) == 2:
             with pytest.raises(MCPToolError, match='Provider attempt expired'):
                 tools.publish_message(mid, agent, turn, '过期 provider 的迟到消息', 'claude')
-    adapter = ScriptedAdapter(callback)
+    class BeforeOutputFailure(ScriptedAdapter):
+        def run_turn(self, mid, agent, turn, provider, prompt, tools):
+            if not self.calls:
+                self.calls.append((agent, turn, prompt))
+                return TurnOutcome(status=TurnStatus.BLOCKED, summary='try fallback')
+            return super().run_turn(mid, agent, turn, provider, prompt, tools)
+    adapter = BeforeOutputFailure(callback)
     MissionRunner(repository, temp_settings, adapter).run(mid)
     assert len(adapter.calls) == 8
     assert len({c[1] for c in adapter.calls}) == 7
@@ -300,6 +304,7 @@ def test_fallback_uses_one_turn_and_failure_preserves_partial_result(idle_client
     assert detail['discussion']['turns_used'] == 1
     assert detail['discussion']['summary_message_ids'] == []
     assert len(detail['messages']) > 1
+    assert len(failed.calls) == 1  # Already published: never silently replay on another provider.
 
 
 def test_summary_failure_is_distinct(idle_client, repository, temp_settings):
