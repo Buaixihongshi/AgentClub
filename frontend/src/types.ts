@@ -543,6 +543,30 @@ export interface HubSettingsPatch {
   agents?: Record<string, AgentOverridePatch>;
 }
 
+export interface SourceIdentity {
+  environment?: string;
+  git_sha: string | null;
+  branch?: string | null;
+  dirty: boolean | null;
+  source_digest: string | null;
+  checkout_id: string | null;
+  captured_at?: string | null;
+}
+
+export interface RuntimeIdentity {
+  started: SourceIdentity & {
+    pid: number;
+    python: string;
+    checkout: string;
+    database: string;
+    config: string;
+    artifacts: string;
+    use_fake_cli: boolean;
+  };
+  current: SourceIdentity;
+  source_changed: boolean | null;
+}
+
 export interface HealthView {
   status: "ok";
   version: string;
@@ -552,6 +576,7 @@ export interface HealthView {
   discussion_protocols?: string[];
   project_skills?: string[];
   build_id?: string;
+  runtime?: RuntimeIdentity;
 }
 
 export type OnboardingState =

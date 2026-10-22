@@ -115,6 +115,27 @@ export default function App() {
     void loadOnboarding();
   }, [loadHealth, loadOnboarding]);
 
+  useEffect(() => {
+    // Background identity refresh must not reset onboarding or its loading UI.
+    const refresh = () => {
+      if (document.visibilityState !== "hidden") {
+        void getHealth().then((next) => {
+          setHealth(next);
+          setHealthError(null);
+        }).catch(() => {
+          setHealth(null);
+          setHealthError("后端连接中断，运行身份暂不可核对");
+        });
+      }
+    };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
   const handleSaveSettings = useCallback(async (patch: HubSettingsPatch) => {
     try {
       const updated = await updateHubSettings(patch);

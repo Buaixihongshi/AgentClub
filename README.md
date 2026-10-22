@@ -222,6 +222,10 @@ python3 scripts/privacy-check.py
 
 ## 手动开发
 
+开发前可运行 `./scripts/env.sh status`，只读查看现有服务、工作目录、启动版本与磁盘
+版本是否一致。页面顶部也提供前后端启动/构建身份；旧服务缺少身份时显示未知。
+使用方式与证据边界见 [环境状态说明](docs/ENVIRONMENTS.md#read-only-environment-status)。
+
 ### 后端
 
 ```bash

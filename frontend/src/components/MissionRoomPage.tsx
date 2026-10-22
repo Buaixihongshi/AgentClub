@@ -20,6 +20,7 @@ import { MissionHeader } from "./MissionHeader";
 import { OnboardingCard, type OnboardingCardProps } from "./OnboardingCard";
 import { SettingsButton } from "./SettingsButton";
 import { TurnTimeline } from "./TurnTimeline";
+import { EnvironmentBadge } from "./EnvironmentBadge";
 
 export function MissionRoomPage(props: {
   detail?: MissionDetail;
@@ -99,6 +100,7 @@ export function MissionRoomPage(props: {
           onSave={props.onSaveSettings ?? (() => {})}
         />
       </div>
+      <EnvironmentBadge runtime={props.onboarding?.health?.runtime} loading={props.onboarding?.healthLoading} />
       {props.error ? (
         <div role="alert" className="error-banner">{props.error}</div>
       ) : null}

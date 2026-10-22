@@ -135,6 +135,43 @@ summary:focus-visible {
   color: var(--ink-faint);
 }
 
+.environment-identity {
+  flex: none;
+  padding: 6px 32px;
+  border-bottom: 1px solid var(--ink-line);
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+.environment-identity summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.environment-identity summary span {
+  margin-right: 12px;
+}
+
+.environment-identity-warning summary {
+  color: var(--provider);
+  font-weight: 700;
+}
+
+.environment-identity-detail {
+  max-height: 30vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.environment-identity-detail p {
+  margin: 6px 0;
+}
+
+@media (max-width: 640px) {
+  .environment-identity { padding: 6px 16px; }
+}
+
 .header-status {
   display: flex;
   flex-wrap: wrap;
