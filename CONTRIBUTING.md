@@ -79,23 +79,30 @@ References: [GitHub co-author trailers](https://docs.github.com/en/pull-requests
 
 ## Local verification
 
-Run the same core checks as CI before requesting review:
+Use the canonical check groups shared with CI:
 
 ```bash
-./.venv/bin/python -m pytest backend/tests -q
-cd frontend
-npm test
-npm run build
+./scripts/check.sh all
 ```
 
-CI also runs the offline smoke suite, dependency consistency check, and
-privacy check.
+During development, choose the affected groups (backend, frontend, smoke, eval,
+privacy, hygiene, audit). Full delivery evidence records the actual SHA and source
+digest; a source change during validation invalidates the receipt. Real-model
+checks are separately opt-in. See [SOP](docs/SOP.md) and [environments](docs/ENVIRONMENTS.md).
+
+Read the exact current PR head and approval readiness with
+`./scripts/release.sh prepare --pr <number>`. The required `Owner approval`
+status comes only from the owner's manual workflow on main; PR text is not an
+approval. For stacked PRs, merge the dependency first, retarget the next PR to
+main, reconcile squash history and rerun checks/approval before merging it.
 
 ## Development, testing, and production
 
 Use one shared remote, `https://github.com/Buaixihongshi/AgentClub`, with
-separate development, test, and production checkouts. Create task branches in
-an isolated checkout; never edit the running production checkout. Keep test
+separate task worktrees, a clean main-only alpha checkout, and managed release
+checkouts. Use `scripts/env.sh dev <task>` for task branches; never edit the
+running daily-service checkout. Existing legacy test clones are retained until
+a separate verified migration. Keep test
 and production databases, configuration, ports, and artifact directories separate.
 
 Validate the proposed head commit in the test environment and record its SHA
@@ -107,4 +114,7 @@ the service is idle, retaining the previous version for rollback.
 The owner controls PR release. CI success is a prerequisite, not approval.
 Repository administrators should enforce PR review, stale approval dismissal,
 required CI checks, and no direct or force pushes to `main` in GitHub settings.
-These written rules do not themselves configure server-side protection.
+Use `scripts/release.sh gate status` to inspect actual protection and
+`scripts/release.sh gate install` for the authorized, preserving owner-status
+activation. This does not post approval or merge a PR. Deployment and state
+recovery are separate explicit owner actions; see [release operations](docs/RELEASING.md).

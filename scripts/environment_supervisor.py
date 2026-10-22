@@ -47,13 +47,15 @@ def verify(record):
 def stop(root, profile, real=False, state=None):
     record = read_record(root, profile, real, state)
     if not alive(record): raise EnvironmentError("No live managed supervisor; stale/unmanaged processes are never killed")
+    if record["checkout"] != str(root) or record["environment"] != profile:
+        raise EnvironmentError("State belongs to a different managed checkout/environment")
     verify(record)
     token = json.loads(Path(record["token_file"]).read_text())["token"]
     request(record["backend_port"], "/api/runtime/drain", token=token)
     # Revalidate PID birth after the network roundtrip, not just the PID number.
     if not alive(record): raise EnvironmentError("Supervisor identity changed during drain")
     os.kill(record["supervisor_pid"], signal.SIGTERM)
-    for _ in range(100):
+    for _ in range(300):
         current = read_record(root, profile, real, state)
         if current and current.get("status") == "stopped":
             print(f"Stopped managed {profile}: {root}")
@@ -182,6 +184,8 @@ def supervise(root, profile, *, real=False, providers="codex", backend=None, fro
 def start(root, profile, *, detach=False, **kwargs):
     record = read_record(root, profile, kwargs.get("real", False), kwargs.get("state"))
     if alive(record):
+        if record["checkout"] != str(root) or record["environment"] != profile:
+            raise EnvironmentError("State already belongs to another managed checkout/environment")
         verify(record)
         if kwargs.get("reset_onboarding"):
             token = json.loads(Path(record["token_file"]).read_text())["token"]
