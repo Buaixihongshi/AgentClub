@@ -1,97 +1,133 @@
-# Isolated environments and release gates
+# 开发环境、验收与检查入口
 
-## Read-only environment status
+项目统一通过 `scripts/env.sh` 管理环境，通过 `scripts/check.sh` 执行检查。
+环境默认使用演示 Provider；启动、安装依赖和离线检查不会调用付费模型。
 
-From any checkout containing this change:
+## 环境与端口
+
+端口、热更新默认值的唯一来源是 `config/environments.json`。
+
+| 环境 | 后端 / 前端 | 代码与数据 |
+| --- | --- | --- |
+| local（兼容一键体验） | 8000 / 5173 | 当前 checkout；保留旧版根目录 data/config/artifacts，不隐式搬家 |
+| development | 8100 / 5174 | 每项任务独立 worktree；并行时从 8400/5180 起分配空闲端口 |
+| test（兼容旧入口） | 8200 / 5175 | 显式指定的 checkout 与私有状态 |
+| alpha（主线验收） | 8300 / 5176 | 独立、干净、detached 的 origin/main 镜像，只用演示模式 |
+| runtime（日常发布） | 8000 / 5173 | 保留给所有者发布；不能通过普通 start 命令启动 |
+
+已有 8200/5175 旧测试服务及其中未提交修改继续保留。新 alpha 不占用旧端口，
+也不会自动迁移旧数据库或密钥。当前日常服务不会因 PR 合并、sync 或检查而重启。
+
+环境根目录默认在主仓库同级的 `agentclub-environments/`，通过 Git common-dir
+定位，不依赖执行命令时的工作目录。可以显式设置 `AGENTCLUB_ENV_HOME` 改变位置。
+新功能位于 `features/<task>/`，alpha 位于 `alpha/`，不接管同名的陌生目录。
+
+## 常用命令
 
 ```sh
 ./scripts/env.sh status
 ./scripts/env.sh status --json
-./scripts/env.sh status --checkout ../another-clone --ports 8300:5176
+./scripts/env.sh dev composer
+./scripts/env.sh dev composer --detach
+./scripts/env.sh start development --checkout /absolute/path/to/candidate --detach
+./scripts/env.sh stop development --checkout /absolute/path/to/candidate
+./scripts/env.sh alpha sync
+./scripts/env.sh alpha start --detach
+./scripts/env.sh alpha status
+./scripts/env.sh alpha stop
 ```
 
-The command does not install dependencies, change branches, refresh remotes,
-restart services, recover missions, or delete worktrees. Python 3 is required;
-it uses this checkout's `.venv/bin/python` when present. `lsof` and `ps` add
-listener PID, process start time and working-directory evidence on macOS/Linux.
-If those tools are unavailable, health/identity inspection still works, but
-listener details can be empty. Status is an inventory command, not a CI gate;
-an absent optional environment does not make it exit nonzero.
+`dev` 从刷新后的 origin/main 创建 `codex/task-<task>` 分支。再次调用同名任务复用
+原分支、文件和数据，不 reset。合并前验证工具本身时可显式传 `--ref <candidate-ref>`；
+该候选环境仍叫 development，不能冒充主线 alpha。PR 2 合并前，旧 main 没有新
+生命周期接口，启动器会明确拒绝将它当作已接入的受管环境。
 
-It inspects loopback ports 8000/5173, 8100/5174 and 8200/5175, plus additional
-`--ports backend:frontend` pairs. It inventories registered worktrees, existing
-sibling `agentclub-environments/{development,dev,test,runtime}` clones, listener
-working directories, and explicit `--checkout` paths. Independent clones in
-other locations need `--checkout`; it does not scan the whole machine.
+首次启动检查 Python 与 Node、建立各 checkout 的 .venv、安装锁定依赖。开发机推荐
+Python 3.12、Node 22（仓库提供 .python-version/.nvmrc）；拒绝旧于 Python 3.11 的
+现有虚拟环境，不悄悄回退到系统 Python 3.9。`--no-install` 只使用已就绪依赖。
 
-The local report includes absolute paths and must not be committed or attached
-to public issues without review. It never reads conversation bodies, credentials
-or provider configuration contents into the report, and never prints process
-command arguments or remote URLs.
+默认前台运行；Ctrl-C 后先等现有任务完成，再停止自己启动的进程组。`--detach`
+生成带实例 ID 和进程出生时间的本地记录。`stop` 校验实例、目录及 supervisor 出生时间，
+通过私有令牌执行 drain，拒绝有未完成任务、等待用户的讨论、活跃授权或维护任务时停止。
+不按端口 kill 陌生进程，不用 stale PID 文件杀进程，不提供绕过活跃任务的 force 停止。
+端口冲突直接报错，只有 `dev` 的默认端口会自动分配；显式端口不会被偷偷改写。
 
-### Source identity
+alpha sync 只更新干净且未运行的受管 alpha；未提交修改、陌生目录和正在监听的服务均
+阻止同步。alpha start 在停止状态下先同步主线；已运行时只复用，不自动更新或重启。
+alpha 不开启 reload。功能开发开启后端 reload，前端代理地址随实际后端端口统一下发。
 
-`GET /api/health` retains its existing fields and adds `runtime`:
+## 状态与真实 Provider 隔离
 
-- `started`: a frozen backend module-initialization snapshot: SHA, branch,
-  dirty flag, source digest, checkout ID, environment, capture time, PID, Python,
-  data/config/artifact/maintenance paths and the demo configuration flag.
-- `current`: the current on-disk source snapshot, separate from `started`.
-- `source_changed`: whether the SHA or source digest changed since initialization;
-  `null` means there is insufficient Git/source evidence.
+受管环境状态放在各 checkout 的 `.yiren/<profile>/`，包含 config、data、artifacts、
+maintenance-worktrees 和 runtime（日志、进程记录、私有控制令牌）。角色路由、hub_settings、
+SQLite 及 `data/connection-secrets/` 都随环境隔离；不复制日常聊天和 API 密钥作为种子。
+目录权限为 700，控制文件为 600。环境变量中的旧 YIREN 路径不会意外串入新环境。
 
-The frontend embeds its own snapshot at Vite startup or production build and
-serves the same public metadata at `/__environment`. Production builds emit that
-file alongside the bundle; Vite preview serves the built file rather than
-replacing it with the checkout's latest identity. Custom static hosts must serve
-this file as JSON rather than rewrite it to the app's HTML.
-
-The page compares front/backend SHA, source digest, checkout ID and environment,
-and shows on-disk drift. It refreshes backend health every 30 seconds while the
-page is visible and on window focus. Frontend identity is a startup/build
-snapshot, not a claim about every module after HMR. A backend reloader creates
-a new application snapshot in its worker. A non-reloading backend retains its
-old snapshot even if the branch or files change.
-
-The digest covers first-party `backend/`, `frontend/`, `scripts/`, `config/` and
-`requirements.txt`, including staged, unstaged, deleted and nonignored untracked
-files. Ignored runtime state and docs-only edits do not alter that digest;
-the separate dirty flag covers the entire checkout. This prevents different
-uncommitted code at the same SHA from being labeled the same source. The
-checkout ID is a hash of its canonical path, not a credential.
-
-`YIREN_ENVIRONMENT` sets a label only; it does not isolate state or prove a
-release. Existing isolated launchers set `development`/`test`; `dev-backend.sh`
-defaults to `development`; other launches default to `local`. A deployment may
-explicitly set `alpha`/`runtime`. The demo flag is configuration evidence, not
-proof that a real Provider call succeeded; consult turn records for actual use.
-
-Old services lacking identity remain **unknown**. A healthy response, process
-start time, `checkout-sha` file or current Git HEAD cannot retroactively prove
-the code already loaded in that process. Adopt identity on a later authorized
-restart; do not restart a running service just to populate this report.
-
-The initial inventory and non-destructive cleanup plan are recorded in
-[the PR 1 inventory](plans/2026-10-22-environment-inventory.md).
-
-## Existing isolated launchers
-
-Use separate clones of the same remote for development and test. Never run these commands in the production checkout.
+真实 CLI 必须显式选择，使用独立的 development-real 状态，不改提交配置：
 
 ```sh
-git clone https://github.com/Buaixihongshi/AgentClub.git agentclub-dev
-git clone https://github.com/Buaixihongshi/AgentClub.git agentclub-test
-# In the respective clone, after checking out the proposed PR head:
-bash scripts/start-isolated.sh development
-bash scripts/start-isolated.sh test
+./scripts/env.sh dev provider-probe --real-cli --providers codex --detach
+./scripts/env.sh start development --real-cli --providers codex,claude --detach
+./scripts/env.sh stop development --real-cli
 ```
 
-Development uses backend/frontend ports 8100/5174; test uses 8200/5175. Each has private config, SQLite, artifacts, maintenance paths and runtime logs under `.yiren/<environment>/`. Configuration is copied once; existing config is preserved. Both default to demo mode and disable maintenance execution. `checkout-sha` records the checkout; a test report must also record whether it is dirty. Run the full CI commands before requesting release. No script switches or restarts production.
+真实验证可能消耗额度；alpha 拒绝真实模式。演示环境在读取保存设置及每次任务快照后
+仍强制使用演示适配器，并拦截真实验证/探测，不能被旧设置中的 use_fake_cli=false 放开。
+日常 local 兼容模式保留用户在设置页明确完成的真实 Provider 接入方式。
 
-## Owner release
+旧脚本 start.sh、start-isolated.sh、dev-backend.sh、dev-real.sh 保留为新入口别名。
+start.sh 保留 local 的旧数据位置；dev-backend.sh 默认改用开发端口 8100 并隔离数据。
+只有显式传入 --reset-onboarding 才重置引导，且先校验目标实例；日常启动不清理旧状态。
 
-Only Buaixihongshi may run the **Owner release** workflow. Enter the PR number and full reviewed head SHA. It writes the required `Owner approval` status only for an open PR against main at that SHA. New commits require a new approval. Backend and frontend CI must independently pass. Agents must never invoke this workflow or post approval statuses on the owner's behalf.
+## 版本识别与停止协议
 
-This workflow must first be merged into main to become dispatchable. Activate its required status rule only after bootstrap merge; otherwise bootstrap cannot pass. GitHub native reviews cannot approve one's own PR, so the explicit owner workflow also supports PRs opened by the owner's account. The shared account's credentials cannot technically distinguish a human from an agent: credential separation is needed for that security boundary.
+`GET /api/health` 的 runtime 保留 PR 1 的 started/current/source_changed，并新增
+实例 ID、日志路径、activity 计数与 draining 状态，响应禁止缓存。started 是后端模块
+加载时冻结的源码身份，current 是磁盘当前身份；同 SHA 的未提交代码也通过摘要区分。
+前端在启动/构建时记录自己的身份，`/__environment` 随生产产物保存。页面对照前后端
+版本与目录，不能把当前 Git HEAD 当成长期运行进程的版本。
 
-Production remains at its current deployment. A future switch requires idle-service verification, an exact approved SHA, isolated production state, and a recorded previous SHA for rollback. No automatic deployment is configured by this change.
+`POST /api/runtime/drain`、`POST /api/runtime/resume` 只接受本实例私有
+X-AgentClub-Control 令牌。普通写请求保持并发；drain 先暂关新写入口，等待已接入请求
+完成，再确认没有活跃工作并持续拒绝写入（503，带 Retry-After），读取仍可用。
+存在工作返回 409，且继续接受请求；缺少/错误令牌返回 403。令牌不出现在健康信息、
+前端构建或 PR 中。重载后的 worker 仍属于同一实例，停止不依赖旧 worker PID。
+
+status 是只读盘点，不安装、同步、重启或清理；额外 clone 用 --checkout，额外端口用
+--ports backend:frontend。它读取固定环境端口及受管实例登记，不全盘搜索用户文件。
+lsof/ps 缺失时监听进程证据可为空；旧服务缺少启动身份时如实显示未知。
+完整绝对路径、日志和本地 JSON 报告不能直接上传公开 issue。
+
+## 本地与 CI 共用检查
+
+```sh
+./scripts/check.sh backend
+./scripts/check.sh frontend
+./scripts/check.sh smoke
+./scripts/check.sh eval
+./scripts/check.sh privacy
+./scripts/check.sh hygiene
+./scripts/check.sh audit
+./scripts/check.sh all
+./scripts/release-check.sh --real-cli
+```
+
+唯一命令清单在 scripts/checks.py。backend 包含 pip check 和后端全量测试；frontend
+包含前端测试、类型检查和生产构建；smoke 包含引导、连续会话、多 Agent 和圆桌四项离线
+检查；eval 使用 fixture。all 包含以上全部及 npm audit，网络不可用时不能假装审计通过。
+只有 --real-cli 会追加真实模型验收。CI 调用相同分组，保留 Backend tests 与
+Frontend tests and build 检查名称，并支持 codex/** 作为连续 PR 的基分支。
+
+隐私检查在开发/CI 中扫描 tracked 及非忽略候选文件，不把正常本地 runtime 目录当成
+发布内容；直接扫描导出目录仍使用原有严格模式。报告默认保存在系统临时目录，也可
+--output 指定私有位置；记录 SHA、源码摘要、分组、退出码和起止时间。验证期间源码或
+SHA 变化时整份报告失败，不能将混合版本的绿色结果用于交付。
+
+## 所有者放行与日常发布
+
+只有所有者 Buaixihongshi 可以操作 Owner release workflow，批准准确的 PR head SHA。
+Agent 不得代为执行或伪造 Owner approval。新增提交需要重新放行；CI 成功不代表批准。
+合并与激活日常服务分开，日常切换需在任务空闲时执行并保留准确的前版及恢复记录。
+共用人类账号凭据无法技术上区分人和 Agent；权限隔离需要独立凭据，不能由审批文案冒充。
+
+初始盘点见 [PR 1 清单](plans/2026-10-22-environment-inventory.md)。PR 2 不删除其中任何目录。

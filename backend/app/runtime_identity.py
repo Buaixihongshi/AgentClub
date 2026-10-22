@@ -81,12 +81,14 @@ def capture_runtime(settings: Settings, root: Path | None = None) -> dict:
     return {
         **(frontend_identity(root) if root else PROCESS_IDENTITY),
         "pid": os.getpid(),
+        "instance_id": os.environ.get("YIREN_INSTANCE_ID"),
         "python": sys.version.split()[0],
         "checkout": str((root or ROOT).resolve()),
         "database": str(settings.database_path.resolve()),
         "config": str(settings.config_dir.resolve()),
         "artifacts": str(settings.artifact_root.resolve()),
         "maintenance": str(settings.maintenance_worktree_root.resolve()),
+        "runtime_dir": str(Path(os.environ.get("YIREN_RUNTIME_DIR", ROOT / ".yiren")).resolve()),
         # This is a configuration flag, not proof that a real call succeeded.
         "use_fake_cli": settings.use_fake_cli,
     }

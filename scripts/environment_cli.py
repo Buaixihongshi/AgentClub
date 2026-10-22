@@ -1,0 +1,139 @@
+"""One lifecycle entrypoint. Existing launch scripts are compatibility aliases."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import urllib.error
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.environment_common import EnvironmentError, checkout_listening, git, home, lock, profiles, state_path
+from scripts.environment_supervisor import alive, read_record, start, stop, supervise
+
+
+def managed_checkout(path):
+    if path.is_symlink(): raise EnvironmentError("Managed checkout may not be a symlink")
+    if path.exists():
+        if not (path / ".git").is_file(): raise EnvironmentError(f"Refusing to adopt unrelated existing directory: {path}")
+        if Path(git(path, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve() != Path(git(ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve():
+            raise EnvironmentError("Checkout belongs to another repository")
+
+
+def sync_alpha():
+    path = home() / "alpha"
+    with lock(home() / ".alpha-sync.lock"):
+        managed_checkout(path)
+        if path.exists():
+            record = read_record(path, "alpha")
+            if alive(record) or checkout_listening(path): raise EnvironmentError("Alpha is running; stop its managed instance before syncing")
+            if git(path, "status", "--porcelain", "--untracked-files=all"):
+                raise EnvironmentError("Alpha has local modifications; preserve them before syncing")
+        git(ROOT, "fetch", "origin", "main")
+        sha = git(ROOT, "rev-parse", "origin/main")
+        if not path.exists():
+            git(ROOT, "worktree", "add", "--detach", str(path), sha)
+        else:
+            git(path, "checkout", "--detach", sha)
+        print(f"Alpha synced to origin/main: {sha}")
+    return path
+
+
+def feature(name, ref=None):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,59}", name):
+        raise EnvironmentError("Task name must be 1..60 lowercase letters/digits/_/-")
+    path = home() / "features" / name
+    with lock(home() / ".feature-worktrees.lock"):
+        managed_checkout(path)
+        branch = "codex/task-" + name
+        if path.exists():
+            if git(path, "branch", "--show-current") != branch:
+                raise EnvironmentError("Task directory has an unexpected branch")
+        else:
+            git(ROOT, "fetch", "origin", "main")
+            git(ROOT, "worktree", "add", "-b", branch, str(path), ref or "origin/main")
+    return path
+
+
+def options(parser, checkout=True):
+    if checkout: parser.add_argument("--checkout", type=lambda v: Path(v).expanduser().resolve(), default=ROOT)
+    parser.add_argument("--backend-port", type=int)
+    parser.add_argument("--frontend-port", type=int)
+    parser.add_argument("--real-cli", action="store_true", help="Explicit opt-in, separate private real-CLI state")
+    parser.add_argument("--providers", default="codex")
+    parser.add_argument("--no-install", action="store_true")
+    parser.add_argument("--no-open", action="store_true", help="Compatibility: browser is opened only with --open")
+    parser.add_argument("--open", action="store_true")
+    parser.add_argument("--detach", action="store_true")
+    parser.add_argument("--backend-only", action="store_true")
+    parser.add_argument("--reload", action="store_true", default=None)
+    parser.add_argument("--reset-onboarding", action="store_true")
+
+
+def launch(args, root, profile, allocate=False):
+    if profile == "runtime": raise EnvironmentError("Runtime activation is reserved for the owner release command")
+    if profile == "alpha" and args.real_cli: raise EnvironmentError("Alpha is demo-only; use a separate feature --real-cli instance")
+    if profile == "alpha" and args.reload: raise EnvironmentError("Alpha must not reload mutable source")
+    if not (root / "backend/app/runtime_control.py").exists():
+        raise EnvironmentError("Checkout does not include the managed lifecycle yet; merge PR 2 before using alpha/main features")
+    record = start(root, profile, detach=args.detach,
+        real=args.real_cli, providers=args.providers, backend=args.backend_port, frontend=args.frontend_port,
+        allocate=allocate, install=not args.no_install, backend_only=args.backend_only, reload=args.reload,
+        open_browser=args.open and not args.no_open, reset_onboarding=args.reset_onboarding)
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"status", "identity"}:
+        from scripts.environment_status import main as status
+        status()
+        return
+    if argv and argv[0] == "_supervise":
+        spec = json.loads(Path(argv[1]).read_text())
+        spec["root"] = Path(spec["root"])
+        if spec.get("state"): spec["state"] = Path(spec["state"])
+        supervise(**spec)
+        return
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="action", required=True)
+    commands.add_parser("status", help="Read-only service/worktree inventory; supports --json/--checkout/--ports")
+    commands.add_parser("identity", help="Public source metadata used by the frontend")
+    start_parser = commands.add_parser("start")
+    start_parser.add_argument("profile", choices=profiles())
+    options(start_parser)
+    dev = commands.add_parser("dev")
+    dev.add_argument("task")
+    dev.add_argument("--ref", help="Candidate ref for pre-merge validation; defaults to refreshed origin/main")
+    options(dev, checkout=False)
+    end = commands.add_parser("stop")
+    end.add_argument("profile", choices=profiles())
+    end.add_argument("--checkout", type=lambda v: Path(v).expanduser().resolve(), default=ROOT)
+    end.add_argument("--real-cli", action="store_true")
+    alpha = commands.add_parser("alpha")
+    alpha.add_argument("operation", choices=("sync", "start", "stop", "status"))
+    options(alpha, checkout=False)
+    args = parser.parse_args(argv)
+    if args.action == "dev": launch(args, feature(args.task, args.ref), "development", allocate=True)
+    elif args.action == "start": launch(args, args.checkout, args.profile)
+    elif args.action == "stop": stop(args.checkout, args.profile, args.real_cli)
+    elif args.operation == "sync": sync_alpha()
+    elif args.operation == "stop": stop(home() / "alpha", "alpha")
+    elif args.operation == "status":
+        print(json.dumps(read_record(home() / "alpha", "alpha"), ensure_ascii=False, indent=2))
+    else:
+        path = home() / "alpha"
+        if path.exists() and alive(read_record(path, "alpha")):
+            print("Alpha is already running; use status, or stop + sync to update explicitly")
+            return
+        launch(args, sync_alpha(), "alpha")
+
+
+if __name__ == "__main__":
+    try: main()
+    except (EnvironmentError, subprocess.CalledProcessError, urllib.error.URLError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)

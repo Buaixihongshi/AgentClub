@@ -152,7 +152,7 @@ cd AgentClub
 ```bash
 ./scripts/start.sh --no-open          # 不自动打开浏览器
 ./scripts/start.sh --no-install       # 跳过依赖安装检查
-./scripts/start.sh --reset-onboarding # 重置首次使用引导
+./scripts/env.sh status              # 查看环境与启动版本
 ```
 
 端口冲突时可以指定其他端口：
@@ -224,7 +224,10 @@ python3 scripts/privacy-check.py
 
 开发前可运行 `./scripts/env.sh status`，只读查看现有服务、工作目录、启动版本与磁盘
 版本是否一致。页面顶部也提供前后端启动/构建身份；旧服务缺少身份时显示未知。
-使用方式与证据边界见 [环境状态说明](docs/ENVIRONMENTS.md#read-only-environment-status)。
+使用方式与证据边界见 [环境状态说明](docs/ENVIRONMENTS.md)。
+
+推荐使用 `./scripts/env.sh dev <任务名>` 创建隔离工作目录；主线验收使用 `./scripts/env.sh alpha start --detach`。
+完整端口、旧数据兼容与共用检查说明见 [环境文档](docs/ENVIRONMENTS.md)。
 
 ### 后端
 
@@ -251,13 +254,13 @@ Vite 默认运行在 `http://127.0.0.1:5173/`，并将 `/api` 代理到本地后
 
 ## 测试与发布验收
 
-运行离线发布门禁：
+运行统一发布检查（包含联网依赖审计，演示 smoke 不调用模型）：
 
 ```bash
 ./scripts/release-check.sh
 ```
 
-它会执行完整后端测试、前端测试、生产构建，以及首次引导、连续会话和多 Agent 任务冒烟测试，不会调用付费模型。
+它执行前后端全量测试、构建、引导/连续会话/多 Agent/圆桌离线 smoke、fixture eval、隐私与依赖检查，不调用付费模型。
 
 真实 CLI 验收需要本机已经完成对应 CLI 登录，并可能产生模型费用：
 

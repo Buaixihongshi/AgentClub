@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from backend.app.runtime_identity import frontend_identity, git, source_snapshot
 
-DEFAULT_PAIRS = [(8000, 5173), (8100, 5174), (8200, 5175)]
+DEFAULT_PAIRS = list(dict.fromkeys((p["backend_port"], p["frontend_port"]) for p in
+    json.loads((ROOT / "config/environments.json").read_text()).values()))
 
 
 def command(*args: str) -> str:
@@ -104,6 +105,15 @@ def inventory(extra: list[str], pairs: list[tuple[int, int]]) -> dict:
             path = Path(row["path"]).parent / "agentclub-environments" / name
             if (path / ".git").exists(): candidates[str(path)] = False
     candidates.update({str(Path(p).expanduser().resolve()): False for p in extra})
+    from scripts.environment_common import home
+    pairs = list(pairs)
+    for pointer in (home() / ".instances").glob("*.json"):
+        try:
+            record = json.loads(Path(json.loads(pointer.read_text())["record"]).read_text())
+            candidates.setdefault(record["checkout"], False)
+            pair = (record["backend_port"], record["frontend_port"])
+            if record.get("status") != "stopped" and pair[1] and pair not in pairs: pairs.append(pair)
+        except (OSError, ValueError, KeyError): pass
     listening = listeners()
     with ThreadPoolExecutor(max_workers=4) as pool:
         services = list(pool.map(lambda pair: inspect_service(pair, listening), pairs))
@@ -128,6 +138,8 @@ def render(report: dict) -> str:
                       f"  目录：{started['checkout']}",
                       f"  当前磁盘 SHA：{runtime['current'].get('git_sha') or '未知'}；dirty：{runtime['current'].get('dirty')}；启动后源码变化：{runtime['source_changed']}",
                       f"  状态路径：DB={started['database']}；config={started['config']}；artifacts={started['artifacts']}"]
+            if started.get("runtime_dir"): lines += [f"  日志：{started['runtime_dir']}"]
+            if runtime.get("activity") is not None: lines += [f"  活跃工作：{runtime['activity']}；停止接收写操作：{runtime.get('draining')}"]
         else:
             lines += ["  启动身份未知（旧服务或未运行）；磁盘 HEAD 不能证明运行版本。"]
         front = service["frontend"]

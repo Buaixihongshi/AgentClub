@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from backend.app.config.providers import load_cli_providers
 from backend.app.settings import Settings
@@ -14,7 +14,8 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
     started = capture_runtime(settings)
 
     @router.get("")
-    def get_health():
+    def get_health(request: Request, response: Response):
+        response.headers["Cache-Control"] = "no-store"
         try:
             # Exercise the database rather than only reporting that the file exists.
             repository.list_conversations()
@@ -31,6 +32,10 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
                 detail="AgentClub is not ready: fake provider is missing",
             )
 
+        from backend.app.runtime_control import activity
+        runtime = runtime_view(started)
+        runtime["activity"] = activity(repository)
+        runtime["draining"] = request.app.state.draining or request.app.state.drain_pending
         return {
             "status": "ok",
             "version": "0.1.0",
@@ -42,7 +47,7 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
             "discussion_rules_version": RULES_VERSION,
             "discussion_rules_hash": digest(COMMON_DISCUSSION_RULES),
             "build_id": BUILD_ID,
-            "runtime": runtime_view(started),
+            "runtime": runtime,
         }
 
     return router
