@@ -1,4 +1,6 @@
 """Existing-file delivery and saved notices survive an unpublished/timed-out turn."""
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -141,3 +143,34 @@ def test_persistent_transport_import_is_idempotent(repository, temp_settings, tm
     assert dispatch(repository, temp_settings.artifact_root, "w", frame) == first
     assert (temp_settings.artifact_root / "m_delivery/demo.bin").read_bytes() == b"\x00\xff\r\n"
     assert len(build_mission_detail(repository, temp_settings, "m_delivery")["artifact_events"]) == 1
+
+
+def test_detail_omits_atomic_write_staging_files(repository, temp_settings, tmp_path):
+    setup_delivery(repository, temp_settings, tmp_path)
+    folder = temp_settings.artifact_root / "m_delivery"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in ("ready.md", ".notes", "report.tmp", ".ready.md." + "a" * 32 + ".tmp"):
+        (folder / name).write_text("content")
+    detail = build_mission_detail(repository, temp_settings, "m_delivery")
+    assert {a["path"] for a in detail["artifacts"]} == {"ready.md", ".notes", "report.tmp"}
+
+
+def test_detail_survives_artifact_removed_after_file_check(repository, temp_settings, tmp_path, monkeypatch):
+    setup_delivery(repository, temp_settings, tmp_path)
+    folder = temp_settings.artifact_root / "m_delivery"
+    folder.mkdir(parents=True, exist_ok=True)
+    transient = folder / "transient.md"
+    transient.write_text("being replaced")
+    (folder / "ready.md").write_text("ready")
+    original = Path.is_file
+
+    def removed_after_check(path):
+        result = original(path)
+        if path == transient and result:
+            path.unlink()
+        return result
+
+    # Reproduce a writer replacing a path between its type check and metadata read.
+    monkeypatch.setattr(Path, "is_file", removed_after_check)
+    detail = build_mission_detail(repository, temp_settings, "m_delivery")
+    assert "ready.md" in {a["path"] for a in detail["artifacts"]}

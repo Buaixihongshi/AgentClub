@@ -46,6 +46,8 @@ def create_app(
                 SESSION_POOL.close(app_settings.database_path)
 
     app = FastAPI(title="AgentClub", lifespan=lifespan)
+    from backend.app.runtime_control import install as install_runtime_control
+    install_runtime_control(app, repository, app_settings)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(request, exc):

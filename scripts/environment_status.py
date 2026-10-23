@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from backend.app.runtime_identity import frontend_identity, git, source_snapshot
 
-DEFAULT_PAIRS = [(8000, 5173), (8100, 5174), (8200, 5175)]
+DEFAULT_PAIRS = list(dict.fromkeys((p["backend_port"], p["frontend_port"]) for p in
+    json.loads((ROOT / "config/environments.json").read_text()).values()))
 
 
 def command(*args: str) -> str:
@@ -80,8 +81,8 @@ def checkout_info(path: Path, prunable: bool = False) -> dict:
 def inspect_service(pair: tuple[int, int], listening: dict) -> dict:
     backend, frontend = pair
     health = get_json(backend, "/api/health")
-    front = get_json(frontend, "/__environment")
-    via_front = get_json(frontend, "/api/health")
+    front = get_json(frontend, "/__environment") if frontend is not None else None
+    via_front = get_json(frontend, "/api/health") if frontend is not None else None
     # Keep only identity fields; do not archive conversations or provider config.
     return {
         "backend_port": backend, "frontend_port": frontend,
@@ -104,6 +105,15 @@ def inventory(extra: list[str], pairs: list[tuple[int, int]]) -> dict:
             path = Path(row["path"]).parent / "agentclub-environments" / name
             if (path / ".git").exists(): candidates[str(path)] = False
     candidates.update({str(Path(p).expanduser().resolve()): False for p in extra})
+    from scripts.environment_common import home
+    pairs = list(pairs)
+    for pointer in (home() / ".instances").glob("*.json"):
+        try:
+            record = json.loads(Path(json.loads(pointer.read_text())["record"]).read_text())
+            candidates.setdefault(record["checkout"], False)
+            pair = (record["backend_port"], record["frontend_port"])
+            if record.get("status") != "stopped" and pair not in pairs: pairs.append(pair)
+        except (OSError, ValueError, KeyError): pass
     listening = listeners()
     with ThreadPoolExecutor(max_workers=4) as pool:
         services = list(pool.map(lambda pair: inspect_service(pair, listening), pairs))
@@ -128,14 +138,17 @@ def render(report: dict) -> str:
                       f"  目录：{started['checkout']}",
                       f"  当前磁盘 SHA：{runtime['current'].get('git_sha') or '未知'}；dirty：{runtime['current'].get('dirty')}；启动后源码变化：{runtime['source_changed']}",
                       f"  状态路径：DB={started['database']}；config={started['config']}；artifacts={started['artifacts']}"]
+            if started.get("runtime_dir"): lines += [f"  日志：{started['runtime_dir']}"]
+            if runtime.get("activity") is not None: lines += [f"  活跃工作：{runtime['activity']}；停止接收写操作：{runtime.get('draining')}"]
         else:
             lines += ["  启动身份未知（旧服务或未运行）；磁盘 HEAD 不能证明运行版本。"]
         front = service["frontend"]
-        lines += [f"  前端启动/构建 SHA：{front.get('git_sha') or '未知'}" if front else "  前端启动/构建身份未知。"]
+        lines += ["  仅后端实例，未启用前端。" if service["frontend_port"] is None else
+                  f"  前端启动/构建 SHA：{front.get('git_sha') or '未知'}" if front else "  前端启动/构建身份未知。"]
         proxy = service["proxy_runtime"]
         if runtime and proxy:
             lines += [f"  前端代理命中本后端：{proxy['started'] == runtime['started']}"]
-        else:
+        elif service["frontend_port"] is not None:
             lines += [f"  前端代理健康：{service['proxy_healthy']}（缺少身份时不能确认版本一致）"]
         for kind in ("backend", "frontend"):
             for proc in service[f"{kind}_processes"]:

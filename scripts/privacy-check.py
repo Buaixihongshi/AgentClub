@@ -7,6 +7,8 @@ Only category and relative path are printed. Matched values are never echoed.
 from __future__ import annotations
 
 import re
+import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -49,8 +51,16 @@ def iter_files() -> list[Path]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--git", action="store_true", help="Scan tracked and nonignored candidate files, excluding local runtime state")
+    args = parser.parse_args()
+    if args.git:
+        paths = subprocess.check_output(["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+        files = [ROOT / p.decode() for p in set(paths.split(b"\0")) if p and (ROOT / p.decode()).is_file()]
+    else:
+        files = iter_files()
     findings: list[tuple[str, str]] = []
-    for path in iter_files():
+    for path in files:
         relative = path.relative_to(ROOT)
         parts = set(relative.parts)
         if parts & FORBIDDEN_DIRS:

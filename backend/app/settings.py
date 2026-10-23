@@ -22,6 +22,7 @@ class Settings(BaseModel):
     artifact_root: Path = Path("artifacts")
     config_dir: Path = Path("config")
     use_fake_cli: bool = True
+    demo_only: bool = False
     max_turns: int = 6
     roundtable_max_turns: int = Field(default=12, ge=3, le=12)
     deliberation_max_turns: int = Field(default=16, ge=5, le=16)
@@ -56,6 +57,7 @@ def get_settings() -> Settings:
         artifact_root=_env_path("YIREN_ARTIFACT_ROOT", default=Path("artifacts")),
         config_dir=_env_path("YIREN_CONFIG_DIR", default=Path("config")),
         use_fake_cli=_env_bool("YIREN_USE_FAKE_CLI", default=True),
+        demo_only=_env_bool("YIREN_DEMO_ONLY", default=False),
         max_turns=_env_int("YIREN_MAX_TURNS", default=6),
         roundtable_max_turns=_env_int("YIREN_ROUNDTABLE_MAX_TURNS", default=12),
         deliberation_max_turns=_env_int("YIREN_DELIBERATION_MAX_TURNS", default=16),
@@ -105,6 +107,9 @@ def get_settings() -> Settings:
     kwargs["agent_overrides"] = agent_overrides
 
     kwargs["api_connections"] = file_data.get("connections") or {}
+    if kwargs["demo_only"]:
+        kwargs["use_fake_cli"] = True
+        kwargs["maintenance_enabled"] = False
     return Settings(**kwargs)
 
 
@@ -127,6 +132,7 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
         "artifact_root": app_settings.artifact_root,
         "config_dir": app_settings.config_dir,
         "use_fake_cli": app_settings.use_fake_cli,
+        "demo_only": app_settings.demo_only,
         "max_turns": app_settings.max_turns,
         "roundtable_max_turns": app_settings.roundtable_max_turns,
         "deliberation_max_turns": app_settings.deliberation_max_turns,
@@ -162,6 +168,9 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
     kwargs["agent_overrides"] = agent_overrides
 
     kwargs["api_connections"] = file_data.get("connections") or {}
+    if app_settings.demo_only:
+        kwargs["use_fake_cli"] = True
+        kwargs["maintenance_enabled"] = False
     return Settings(**kwargs)
 
 
