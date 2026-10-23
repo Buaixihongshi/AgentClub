@@ -80,6 +80,7 @@ def environment(checkout, profile, *, real=False, providers="codex", backend=0, 
     state = state or state_path(checkout, profile, real)
     private_dir(state)
     config = private_dir(state / "config")
+    existing_runtime_config = profile == "runtime" and (config / "cli-providers.json").exists()
     for name in ("agents.json", "cli-providers.json"):
         if not (config / name).exists(): shutil.copyfile(checkout / "config" / name, config / name)
     requested = {x.strip() for x in providers.split(",") if x.strip()}
@@ -93,7 +94,7 @@ def environment(checkout, profile, *, real=False, providers="codex", backend=0, 
     for p in data:
         p["enabled"] = p["id"] == "fake" or (real and p["id"] in requested)
         if real and p["id"] in requested: p["mcp_enabled"] = True
-    write_json(pp, data)
+    if not existing_runtime_config: write_json(pp, data)
     for name in ("data", "artifacts", "runtime", "maintenance-worktrees"):
         private_dir(state / name)
     env = {k: v for k, v in os.environ.items() if not k.startswith("YIREN_")}

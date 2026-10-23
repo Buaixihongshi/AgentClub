@@ -21,11 +21,11 @@ fi
 
 mkdir -p "$TARGET/docs/architecture" "$TARGET/artifacts"
 
-for file in .gitignore LICENSE README.md README_EN.md CHANGELOG.md requirements.txt; do
+for file in .gitignore LICENSE README.md README_EN.md CHANGELOG.md requirements.txt CONTRIBUTING.md AGENTS.md .python-version .nvmrc; do
   cp "$ROOT/$file" "$TARGET/$file"
 done
 
-for directory in backend config frontend scripts; do
+for directory in backend config frontend scripts docs .github; do
   rsync -a \
     --exclude '.DS_Store' \
     --exclude '__pycache__/' \
@@ -37,9 +37,6 @@ for directory in backend config frontend scripts; do
 done
 
 cp "$ROOT/artifacts/.gitkeep" "$TARGET/artifacts/.gitkeep"
-cp "$ROOT/docs/ACCEPTANCE.md" "$TARGET/docs/ACCEPTANCE.md"
-cp "$ROOT/docs/RELEASE_CHECKLIST.md" "$TARGET/docs/RELEASE_CHECKLIST.md"
-cp "$ROOT/docs/architecture/iron-laws.md" "$TARGET/docs/architecture/iron-laws.md"
 
 python3 "$TARGET/scripts/privacy-check.py"
 git -C "$TARGET" init -b main >/dev/null

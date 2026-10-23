@@ -1,0 +1,35 @@
+name: 开发任务
+description: 用问题、验收条件和风险定义一项可交付工作
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 用户问题与期望结果
+      description: 说明触发场景和用户最终应得到什么。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 可观察的验收条件
+      description: 列出可实际操作或验证的结果。
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围与明确暂缓的内容
+  - type: dropdown
+    id: risks
+    attributes:
+      label: 涉及的风险
+      multiple: true
+      options:
+        - 文档或局部界面
+        - 用户可见行为
+        - Provider、调度或协议
+        - 数据、持久化或迁移
+        - 凭据、安全或权限
+        - 启动、门禁或发布
+    validations:
+      required: true

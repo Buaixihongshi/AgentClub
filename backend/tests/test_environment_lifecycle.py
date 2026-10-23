@@ -116,7 +116,7 @@ def test_stale_supervisor_cannot_stop_another_service(tmp_path, monkeypatch):
 
 
 def test_busy_stop_does_not_signal_supervisor(tmp_path, monkeypatch):
-    record = {"backend_port": 8100, "token_file": str(tmp_path / "token.json")}
+    record = {"backend_port": 8100, "token_file": str(tmp_path / "token.json"), "checkout": str(tmp_path), "environment": "development"}
     (tmp_path / "token.json").write_text(json.dumps({"token": "private"}))
     monkeypatch.setattr(supervisor, "read_record", lambda *a, **k: record)
     monkeypatch.setattr(supervisor, "alive", lambda _: True)

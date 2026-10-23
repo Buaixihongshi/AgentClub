@@ -1,9 +1,10 @@
 import threading
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.domain.models import Mission, MissionStatus
+from backend.app.domain.models import DiscussionConfig, Mission, MissionStatus
 from backend.app.main import create_app
 from backend.app.runtime_control import activity
 from backend.app.settings import get_settings, snapshot_settings
@@ -82,3 +83,34 @@ def test_demo_only_survives_saved_runtime_overrides_and_blocks_real_verification
     client = TestClient(create_app(settings))
     assert client.post("/api/onboarding/providers/codex/verify").status_code == 409
     assert client.post("/api/providers/codex/probe").status_code == 409
+
+
+def test_historical_blocked_task_is_idle_but_its_live_grant_still_blocks_drain(temp_settings, monkeypatch):
+    from backend.app.storage.repository import Repository
+    from backend.app.storage.execution import ExecutionLedger
+    client, _ = client_for(temp_settings, monkeypatch)
+    repo = Repository(temp_settings.database_path)
+    mission = Mission(id="history", title="old task", goal="old task", status=MissionStatus.BLOCKED)
+    repo.create_mission(mission)
+    headers = {"X-AgentClub-Control": "test-private-control"}
+    assert client.post("/api/runtime/drain", headers=headers).status_code == 200
+    assert client.post("/api/runtime/resume", headers=headers).status_code == 200
+    repo.update_mission(mission.model_copy(update={"status": MissionStatus.RUNNING}))
+    ledger = ExecutionLedger(repo)
+    ledger.register("worker")
+    ledger.begin("worker", mission.id, "chulan", "turn", "fake", timeout=30)
+    repo.update_mission(mission)
+    assert activity(repo) == {"active_missions": 0, "active_maintenance": 0, "active_grants": 1}
+    assert client.post("/api/runtime/drain", headers=headers).status_code == 409
+
+
+@pytest.mark.parametrize("phase,expected", [("independent", 409), ("ended", 200)])
+def test_blocked_v2_discussion_requires_ended_state_before_drain(temp_settings, monkeypatch, phase, expected):
+    from backend.app.storage.repository import Repository
+    client, _ = client_for(temp_settings, monkeypatch)
+    repo = Repository(temp_settings.database_path)
+    repo.create_mission(Mission(id="discussion", title="paused", goal="paused", room_mode="roundtable",
+                               status=MissionStatus.BLOCKED, discussion=DiscussionConfig(
+                                   protocol="deliberation_v2", participant_ids=["chulan", "wangye"], max_turns=7)))
+    repo.add_event("discussion", "discussion.v2.state", {"phase": phase})
+    assert client.post("/api/runtime/drain", headers={"X-AgentClub-Control": "test-private-control"}).status_code == expected

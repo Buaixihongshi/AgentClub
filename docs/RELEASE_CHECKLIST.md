@@ -31,3 +31,18 @@
 - 发布前不要把 `config/cli-providers.json` 中真实 Provider 改为默认启用。
 - 不要提交 `data/*.sqlite3`、`artifacts/`、`.yiren/` 或 Provider 临时 MCP 配置。
 - 如果真实 CLI 验证失败，保留演示模式并记录诊断；不要用 stdout 合成角色消息。
+
+
+## 后续版本通用流程
+
+上面的数字与勾选是 0.1.0 历史记录，不能作为后续提交的测试证据。每次发布重新核对：
+
+- [ ] prepare 读取准确 PR head；真实 CI 与所有者放行覆盖该 head。
+- [ ] 已合并到 main，并在 alpha 对准确合并结果核对用户路径。
+- [ ] stage 建立 approved head → merge commit → 候选 SHA 的来源链和完整检查/产物校验。
+- [ ] 首次迁移已由所有者停止旧服务、检查空闲并显式导入；未用空库替换旧数据。
+- [ ] 所有者明确执行 activate，expected-current 与实际部署一致。
+- [ ] 日常实例身份、current.json、前版及备份记录一致。
+- [ ] 如需回滚，明确 --restore-state 的数据边界，并保留切换后的新状态备份。
+
+命令与恢复细节以 [发布说明](RELEASING.md) 为准；检查实现以 scripts/checks.py 为准。

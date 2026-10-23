@@ -306,7 +306,7 @@ AgentClub/
 
 **如何查看启动失败原因？**
 
-检查 `.yiren/backend.log` 和 `.yiren/frontend.log`。端口被占用时，启动脚本也会显示占用进程。
+运行 `./scripts/env.sh status` 查看目标环境日志目录，通常为 `.yiren/<profile>/runtime/`。端口冲突不会自动停止已有服务。
 
 **归档会删除历史聊天吗？**
 
@@ -322,11 +322,13 @@ AgentClub/
 
 ## 参与贡献
 
+开发入口见 [SOP](docs/SOP.md)、[环境与统一检查](docs/ENVIRONMENTS.md)和[审批、发布与恢复](docs/RELEASING.md)。
+
+
 欢迎通过 issue 提交问题、复现步骤和改进建议。提交代码前请至少运行：
 
 ```bash
-./scripts/release-check.sh
-python3 scripts/privacy-check.py
+./scripts/check.sh all
 ```
 
 发布记录见 [CHANGELOG.md](CHANGELOG.md)，验收状态见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
