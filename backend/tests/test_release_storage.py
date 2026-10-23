@@ -85,3 +85,29 @@ def test_runtime_restart_preserves_existing_provider_configuration(tmp_path):
     env = environment(root, "runtime", backend=8000, frontend=5173, state=state)
     assert json.loads((state / "config/cli-providers.json").read_text()) == providers
     assert env["YIREN_DEMO_ONLY"] == "false"
+
+
+def test_offline_migration_keeps_historical_blocked_tasks_without_rewriting_them(tmp_path):
+    state = make_state(tmp_path / "source")
+    database = state / "data/yirenhub.sqlite3"
+    with sqlite3.connect(database) as db:
+        db.execute("UPDATE missions SET data=?", ('{"status":"blocked"}',))
+    storage.require_idle_database(database)
+    with sqlite3.connect(database) as db:
+        assert json.loads(db.execute("SELECT data FROM missions").fetchone()[0])["status"] == "blocked"
+
+
+@pytest.mark.parametrize("phase", ["independent", "ended", None])
+def test_offline_blocked_v2_discussion_needs_verified_ended_state(tmp_path, phase):
+    state = make_state(tmp_path / "source")
+    database = state / "data/yirenhub.sqlite3"
+    with sqlite3.connect(database) as db:
+        db.execute("UPDATE missions SET data=?", (json.dumps({"status": "blocked", "discussion": {"protocol": "deliberation_v2"}}),))
+        if phase is not None:
+            db.execute("CREATE TABLE events(id INTEGER PRIMARY KEY, mission_id TEXT, event_type TEXT, payload TEXT)")
+            db.execute("INSERT INTO events VALUES(1,'old','discussion.v2.state',?)", (json.dumps({"phase": phase}),))
+    if phase == "ended":
+        storage.require_idle_database(database)
+    else:
+        with pytest.raises(EnvironmentError, match="unfinished work"):
+            storage.require_idle_database(database)

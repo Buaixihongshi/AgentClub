@@ -11,6 +11,7 @@ import sqlite3
 import uuid
 
 from scripts.environment_common import EnvironmentError, private_dir, write_json
+from backend.app.runtime_activity import activity_counts
 
 STATE_DIRS = ("data", "config", "artifacts")
 
@@ -112,14 +113,6 @@ def initialize(state, *, empty=False, database=None, config=None, artifacts=None
 def require_idle_database(database):
     if not database.exists(): return
     with sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True) as db:
-        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if "missions" not in tables: raise EnvironmentError("Cannot verify idle state of an unknown database")
-        count = db.execute("SELECT count(*) FROM missions WHERE json_extract(data,'$.status') NOT IN ('completed','failed','completed_with_warnings')").fetchone()[0]
-        if "events" in tables:
-            count += db.execute("""SELECT count(*) FROM missions WHERE json_extract(data,'$.discussion.protocol')='deliberation_v2'
-                AND coalesce((SELECT json_extract(e.payload,'$.phase') FROM events e WHERE e.mission_id=missions.id
-                  AND e.event_type='discussion.v2.state' ORDER BY e.id DESC LIMIT 1),'unknown')!='ended'""").fetchone()[0]
-        if "execution_grants" in tables: count += db.execute("SELECT count(*) FROM execution_grants WHERE state='active'").fetchone()[0]
-        if "maintenance_runs" in tables:
-            count += db.execute("SELECT count(*) FROM maintenance_runs WHERE json_extract(data,'$.phase') NOT IN ('completed','blocked','failed','cancelled')").fetchone()[0]
-        if count: raise EnvironmentError("State contains unfinished work; finish or stop it through its application before migrating/releasing")
+        try: counts = activity_counts(db)
+        except ValueError as exc: raise EnvironmentError(str(exc)) from exc
+        if any(counts.values()): raise EnvironmentError("State contains unfinished work; finish or stop it through its application before migrating/releasing")

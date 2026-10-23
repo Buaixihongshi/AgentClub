@@ -10,21 +10,14 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from backend.app.runtime_activity import activity_counts
+
 
 def activity(repository) -> dict:
-    # Counts only, never message bodies or credentials. Non-terminal discussions
-    # and workers matter even when a mission is waiting for human input.
+    # Counts only, never message bodies or credentials. The cold-migration
+    # checker uses these same lifecycle rules.
     with repository._transaction() as db:
-        missions = db.execute("""SELECT count(*) FROM missions WHERE
-            json_extract(data, '$.status') NOT IN ('completed','failed','completed_with_warnings')
-            OR (json_extract(data, '$.discussion.protocol')='deliberation_v2'
-                AND coalesce((SELECT json_extract(e.payload, '$.phase') FROM events e
-                    WHERE e.mission_id=missions.id AND e.event_type='discussion.v2.state'
-                    ORDER BY e.id DESC LIMIT 1), 'unknown')!='ended')""").fetchone()[0]
-        maintenance = db.execute("""SELECT count(*) FROM maintenance_runs WHERE
-            json_extract(data, '$.phase') NOT IN ('completed','blocked','failed','cancelled')""").fetchone()[0]
-        grants = db.execute("SELECT count(*) FROM execution_grants WHERE state='active'").fetchone()[0]
-    return {"active_missions": missions, "active_maintenance": maintenance, "active_grants": grants}
+        return activity_counts(db)
 
 
 def install(app, repository, settings):

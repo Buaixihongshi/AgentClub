@@ -48,7 +48,8 @@ Python 3.12、Node 22（仓库提供 .python-version/.nvmrc）；拒绝旧于 Py
 
 默认前台运行；Ctrl-C 后先等现有任务完成，再停止自己启动的进程组。`--detach`
 生成带实例 ID 和进程出生时间的本地记录。`stop` 校验实例、目录及 supervisor 出生时间，
-通过私有令牌执行 drain，拒绝有未完成任务、等待用户的讨论、活跃授权或维护任务时停止。
+通过私有令牌执行 drain，拒绝有运行/待执行任务、等待输入或未结束的 V2 讨论、活跃授权或维护任务时停止。
+普通任务的历史 blocked 属于停止终态，保留记录且不妨碍切换；其仍有活跃执行授权时仍拒绝停止。
 不按端口 kill 陌生进程，不用 stale PID 文件杀进程，不提供绕过活跃任务的 force 停止。
 端口冲突直接报错，只有 `dev` 的默认端口会自动分配；显式端口不会被偷偷改写。
 
@@ -90,7 +91,8 @@ start.sh 保留 local 的旧数据位置；dev-backend.sh 默认改用开发端�
 `POST /api/runtime/drain`、`POST /api/runtime/resume` 只接受本实例私有
 X-AgentClub-Control 令牌。普通写请求保持并发；drain 先暂关新写入口，等待已接入请求
 完成，再确认没有活跃工作并持续拒绝写入（503，带 Retry-After），读取仍可用。
-存在工作返回 409，且继续接受请求；缺少/错误令牌返回 403。令牌不出现在健康信息、
+活跃工作判定统一在 backend/app/runtime_activity.py，在线 drain 与离线迁移共用；
+缺失 V2 状态证据时按未结束处理。存在工作返回 409，且继续接受请求；缺少/错误令牌返回 403。令牌不出现在健康信息、
 前端构建或 PR 中。重载后的 worker 仍属于同一实例，停止不依赖旧 worker PID。
 
 status 是只读盘点，不安装、同步、重启或清理；额外 clone 用 --checkout，额外端口用

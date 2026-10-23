@@ -53,6 +53,10 @@ release-history 都留在私有环境根目录，不提交到仓库。
    获取一致快照，复制设置、连接密钥、角色配置和产物；保留原目录与原始数据。
 3. 核对导入内容及 stage 候选，再明确激活。原服务仍占用端口时工具拒绝，不按端口杀进程。
 
+普通任务的历史 blocked 与现有调度器一致，视为已停止并原样保留，不必改写记录才能迁移。
+等待输入、未结束的 V2 讨论、活跃执行授权及维护任务仍阻止迁移；缺少 V2 结束证据也拒绝。
+在线 drain 与离线检查共用 backend/app/runtime_activity.py 的判定。
+
 ```sh
 ./scripts/release.sh import-state --from-checkout /absolute/path/to/old-checkout
 ./scripts/release.sh activate --sha <候选SHA> --expected-current none
