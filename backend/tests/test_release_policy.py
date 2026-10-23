@@ -29,7 +29,12 @@ class API:
 
     def get(self, suffix):
         if "check-runs" in suffix: result = {"check_runs": self.checks}
-        elif suffix.endswith("/status"): result = {"statuses": self.statuses if SHA in suffix else []}
+        elif suffix.endswith("/status"):
+            # GitHub's combined status omits creator; only the list endpoint
+            # provides the author needed to authenticate an approval status.
+            result = {"statuses": [{k: v for k, v in s.items() if k != "creator"}
+                                   for s in self.statuses] if SHA in suffix else []}
+        elif suffix.endswith("/statuses?per_page=100"): result = self.statuses if SHA in suffix else []
         elif suffix.startswith("actions/runs/"):
             result = {"event": "workflow_dispatch", "head_branch": "main", "actor": {"login": "owner"},
                       "conclusion": "success", "path": ".github/workflows/owner-release.yml"}
@@ -86,6 +91,14 @@ def test_squash_release_maps_approved_head_to_actual_main_commit():
     assert result["source_pr"] == 1
     api.pr["merge_commit_sha"] = "c" * 40
     with pytest.raises(EnvironmentError, match="exact merged"): policy.release_provenance(api, MERGE)
+
+
+@pytest.mark.parametrize("state", ["pending", "failure", "error"])
+def test_newer_unsuccessful_owner_status_invalidates_previous_approval(state):
+    api = API()
+    api.statuses.append({**api.statuses[0], "created_at": "2026-10-23T00:00:00Z", "state": state})
+    with pytest.raises(EnvironmentError, match="no successful Owner approval"):
+        policy.owner_evidence(api, SHA)
 
 
 def test_stacked_pr_is_not_ready_for_owner_main_approval():

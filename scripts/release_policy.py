@@ -54,7 +54,9 @@ def ci_result(api, sha):
 
 
 def owner_evidence(api, sha):
-    statuses = api.get(f"commits/{check_sha(sha)}/status").get("statuses", [])
+    # The combined /status response omits creator. Read individual statuses so
+    # an otherwise valid Actions approval can still be authenticated.
+    statuses = api.get(f"commits/{check_sha(sha)}/statuses?per_page=100")
     matching = sorted((s for s in statuses if s["context"] == OWNER_CONTEXT),
                       key=lambda s: s.get("created_at", ""), reverse=True)
     if not matching or matching[0]["state"] != "success": raise EnvironmentError("Current head has no successful Owner approval")
