@@ -64,6 +64,7 @@ def options(parser, checkout=True):
     parser.add_argument("--backend-port", type=int)
     parser.add_argument("--frontend-port", type=int)
     parser.add_argument("--real-cli", action="store_true", help="Explicit opt-in, separate private real-CLI state")
+    parser.add_argument("--inherit-runtime-cli", action="store_true", help="Use daily CLI routes/models with isolated task state; alpha does this by default")
     parser.add_argument("--providers", default="codex")
     parser.add_argument("--no-install", action="store_true")
     parser.add_argument("--no-open", action="store_true", help="Compatibility: browser is opened only with --open")
@@ -76,10 +77,11 @@ def options(parser, checkout=True):
 
 def launch(args, root, profile, allocate=False):
     if profile == "runtime": raise EnvironmentError("Runtime activation is reserved for the owner release command")
+    if getattr(args, "inherit_runtime_cli", False) and profile not in {"development", "test", "alpha"}:
+        raise EnvironmentError("Daily CLI inheritance is only available to isolated development/test/alpha")
     protected = home() / "releases"
     if root.resolve().is_relative_to(protected.resolve()) or (profile != "alpha" and root.resolve() == (home() / "alpha").resolve()):
         raise EnvironmentError("Release/alpha source is protected; create a feature worktree instead")
-    if profile == "alpha" and args.real_cli: raise EnvironmentError("Alpha is demo-only; use a separate feature --real-cli instance")
     if profile == "alpha" and args.reload: raise EnvironmentError("Alpha must not reload mutable source")
     if profile == "alpha":
         if root.resolve() != (home() / "alpha").resolve():
@@ -94,6 +96,7 @@ def launch(args, root, profile, allocate=False):
         raise EnvironmentError("Checkout does not include the managed lifecycle yet; merge PR 2 before using alpha/main features")
     record = start(root, profile, detach=args.detach,
         real=args.real_cli, providers=args.providers, backend=args.backend_port, frontend=args.frontend_port,
+        inherit_cli=profile == "alpha" or getattr(args, "inherit_runtime_cli", False),
         allocate=allocate, install=not args.no_install, backend_only=args.backend_only, reload=args.reload,
         open_browser=args.open and not args.no_open, reset_onboarding=args.reset_onboarding)
 

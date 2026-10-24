@@ -72,10 +72,11 @@ def profiles():
 
 
 def state_path(checkout, profile, real=False):
-    return checkout / ".yiren" / (profile + ("-real" if real else ""))
+    return checkout / ".yiren" / (profile + ("-real" if real and profile != "alpha" else ""))
 
 
-def environment(checkout, profile, *, real=False, providers="codex", backend=0, frontend=0, state=None):
+def environment(checkout, profile, *, real=False, providers="codex", backend=0, frontend=0, state=None,
+                inherit_cli=False):
     if profile not in profiles(): raise EnvironmentError("Unknown environment")
     state = state or state_path(checkout, profile, real)
     private_dir(state)
@@ -87,14 +88,18 @@ def environment(checkout, profile, *, real=False, providers="codex", backend=0, 
     pp = config / "cli-providers.json"
     data = json.loads(pp.read_text())
     known = {p["id"] for p in data}
-    if real and (not requested or requested - (known - {"fake"})):
+    if real and not inherit_cli and (not requested or requested - (known - {"fake"})):
         raise EnvironmentError("--providers must name known real CLI providers")
     # Explicit mode lives in a separate state namespace; no committed config or
     # existing hub settings are rewritten to turn real providers on/off.
     for p in data:
         p["enabled"] = p["id"] == "fake" or (real and p["id"] in requested)
         if real and p["id"] in requested: p["mcp_enabled"] = True
-    if not existing_runtime_config: write_json(pp, data)
+    if not existing_runtime_config and not inherit_cli: write_json(pp, data)
+    inherited = None
+    if inherit_cli:
+        from scripts.environment_cli_config import inherit_runtime_cli
+        inherited = inherit_runtime_cli(checkout, state)
     for name in ("data", "artifacts", "runtime", "maintenance-worktrees"):
         private_dir(state / name)
     env = {k: v for k, v in os.environ.items() if not k.startswith("YIREN_")}
@@ -105,8 +110,8 @@ def environment(checkout, profile, *, real=False, providers="codex", backend=0, 
         "YIREN_ARTIFACT_ROOT": str(state / "artifacts"),
         "YIREN_RUNTIME_DIR": str(state / "runtime"),
         "YIREN_MAINTENANCE_WORKTREE_ROOT": str(state / "maintenance-worktrees"),
-        "YIREN_USE_FAKE_CLI": "false" if real else "true",
-        "YIREN_DEMO_ONLY": "false" if real or profile in {"local", "runtime"} else "true",
+        "YIREN_USE_FAKE_CLI": ("true" if inherited["runtime"]["use_fake_cli"] else "false") if inherited else ("false" if real else "true"),
+        "YIREN_DEMO_ONLY": "false" if inherited or real or profile in {"local", "runtime"} else "true",
         "YIREN_MAINTENANCE_ENABLED": "false",
         "YIREN_BACKEND_ORIGIN": f"http://127.0.0.1:{backend}",
         "PYTHONPATH": str(checkout),

@@ -187,7 +187,7 @@ export function MissionComposer(props: {
   }
 
   const submitLabel =
-    props.submitLabel ?? (props.hasActiveMission ? "发送插话" : "创建任务");
+    props.submitLabel ?? (props.hasActiveMission ? "发送插话" : "发送");
 
   return (
     <form className="mission-composer" onSubmit={submit}>
@@ -211,7 +211,7 @@ export function MissionComposer(props: {
           </select>
         </div>
       ) : null}
-      <label htmlFor="mission-input">任务输入</label>
+      <label htmlFor="mission-input">消息输入</label>
       <div className="composer-input-wrapper">
         <textarea
           ref={textareaRef}
@@ -220,7 +220,7 @@ export function MissionComposer(props: {
           disabled={props.disabled}
           onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={props.disabled ? "归档会话只读；恢复后可继续对话" : props.placeholder ?? (mentionsEnabled ? "输入任务，@ 选择 Agent · / 选择技能 · Enter 发送" : "聊点什么，Enter 发送 · Shift + Enter 换行")}
+          placeholder={props.disabled ? "归档会话只读；恢复后可继续对话" : props.placeholder ?? (mentionsEnabled ? "说说你的想法，@ 选择伙伴 · Enter 发送" : "聊点什么，Enter 发送 · Shift + Enter 换行")}
           rows={2}
           role="combobox"
           aria-expanded={menu !== null}

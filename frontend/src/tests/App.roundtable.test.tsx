@@ -67,8 +67,8 @@ function lastBody(calls: RecordedCall[], matcher: (url: string, init?: RequestIn
   const call = [...calls].reverse().find((entry) => matcher(entry.url, entry.init));
   return call ? JSON.parse(String(call.init?.body)) : undefined;
 }
-async function submitText(user: ReturnType<typeof userEvent.setup>, value: string, button = "创建任务") {
-  await user.type(screen.getByLabelText("任务输入"), value);
+async function submitText(user: ReturnType<typeof userEvent.setup>, value: string, button = "发送") {
+  await user.type(screen.getByLabelText("消息输入"), value);
   await user.click(screen.getByRole("button", { name: button }));
 }
 
@@ -93,7 +93,7 @@ describe("discussion as a project skill in chat", () => {
     const user = userEvent.setup(); const calls = stubSkillFetch(); render(<App />);
     await submitText(user, "/discuss");
     expect(await screen.findByRole("alert")).toHaveTextContent(/议题|问题|内容/);
-    expect(screen.getByLabelText("任务输入")).toHaveValue("/discuss");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("/discuss");
     expect(calls.some((call) => isMissionCreate(call.url, call.init))).toBe(false);
     expect(calls.some((call) => call.url === "/api/conversations" && call.init?.method === "POST")).toBe(false);
   });
@@ -115,7 +115,7 @@ describe("discussion as a project skill in chat", () => {
     const user = userEvent.setup(); const calls = stubSkillFetch({ health }); render(<App />);
     await submitText(user, `/discuss ${GOAL}`);
     expect(await screen.findByRole("alert")).toHaveTextContent(/后端|重启|技能|Skill/i);
-    expect(screen.getByLabelText("任务输入")).toHaveValue(`/discuss ${GOAL}`);
+    expect(screen.getByLabelText("消息输入")).toHaveValue(`/discuss ${GOAL}`);
     expect(calls.some((call) => isMissionCreate(call.url, call.init))).toBe(false);
     expect(calls.some((call) => call.url === "/api/conversations" && call.init?.method === "POST")).toBe(false);
   });
@@ -124,9 +124,9 @@ describe("discussion as a project skill in chat", () => {
     const user = userEvent.setup(); const calls = stubSkillFetch(); render(<App />);
     await submitText(user, `/discuss ${GOAL}`);
     await screen.findByRole("button", { name: "发送插话" });
-    await waitFor(() => expect(screen.getByLabelText("任务输入")).toHaveValue(""));
+    await waitFor(() => expect(screen.getByLabelText("消息输入")).toHaveValue(""));
     expect(screen.queryByLabelText("点名先回应（可选）")).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText("任务输入"), "@王也 只有一周开发时间");
+    await user.type(screen.getByLabelText("消息输入"), "@王也 只有一周开发时间");
     expect(screen.queryByRole("listbox", { name: "Agent 候选" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "发送插话" }));
     const body = lastBody(calls, isInterrupt);
@@ -169,10 +169,10 @@ describe("discussion as a project skill in chat", () => {
     const calls = stubSkillFetch({ interrupt: () => json({ detail: "Discussion is closing or stopping; save this input for the next discussion" }, 409) }); render(<App />);
     await submitText(user, `/discuss ${GOAL}`);
     await screen.findByRole("button", { name: "发送插话" });
-    await waitFor(() => expect(screen.getByLabelText("任务输入")).toHaveValue(""));
+    await waitFor(() => expect(screen.getByLabelText("消息输入")).toHaveValue(""));
     await submitText(user, "预算砍半", "发送插话");
     expect(await screen.findByRole("alert")).toHaveTextContent("输入仍保留");
-    expect(screen.getByLabelText("任务输入")).toHaveValue("预算砍半");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("预算砍半");
     await waitFor(() => expect(calls.some((call) => call.url === "/api/conversations/c_1" && (!call.init || call.init.method === "GET"))).toBe(true));
   });
 
@@ -181,7 +181,7 @@ describe("discussion as a project skill in chat", () => {
     const calls = stubSkillFetch({ missionCreate: () => json({ detail: "Conversation already has an active mission" }, 409) }); render(<App />);
     await submitText(user, `/discuss ${GOAL}`);
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.getByLabelText("任务输入")).toHaveValue(`/discuss ${GOAL}`);
+    expect(screen.getByLabelText("消息输入")).toHaveValue(`/discuss ${GOAL}`);
     expect(calls.filter((call) => isMissionCreate(call.url, call.init))).toHaveLength(1);
   });
 

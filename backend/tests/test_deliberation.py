@@ -58,6 +58,21 @@ def test_host_can_renew_only_its_current_discussion_capability(repository, temp_
         policy.renew_turn_lease(mission.id, auth['agent_id'], auth['turn_id'], 'other', auth['token'], 3000)
 
 
+def test_submission_winning_renewal_race_is_terminal_and_does_not_extend_lease(repository, temp_settings):
+    mission = create(repository, temp_settings)
+    policy = Deliberation(repository)
+    lease = policy.claim_batch(mission.id, temp_settings.artifact_root)[0]
+    _, _, auth = submit(repository, temp_settings, mission.id, lease, opinion())
+    before = policy.state(repository.get_mission(mission.id))
+    assert policy.renew_turn_lease(mission.id, auth['agent_id'], auth['turn_id'], 'fake', auth['token'], 3000) is False
+    assert policy.state(repository.get_mission(mission.id)) == before
+    for agent, provider, token in [('wangye', 'fake', auth['token']),
+                                    (auth['agent_id'], 'other', auth['token']),
+                                    (auth['agent_id'], 'fake', 'wrong-capability')]:
+        with pytest.raises(DiscussionError):
+            policy.renew_turn_lease(mission.id, agent, auth['turn_id'], provider, token, 3000)
+
+
 def control(repo, settings, mid, action, **fields):
     policy = Deliberation(repo)
     state = policy.state(repo.get_mission(mid))

@@ -22,6 +22,7 @@ import { OnboardingCard, type OnboardingCardProps } from "./OnboardingCard";
 import { SettingsButton } from "./SettingsButton";
 import { TurnTimeline } from "./TurnTimeline";
 import { EnvironmentBadge } from "./EnvironmentBadge";
+import { SharedWorkWorkspace } from "./SharedWorkWorkspace";
 
 export function MissionRoomPage(props: {
   detail?: MissionDetail;
@@ -37,6 +38,7 @@ export function MissionRoomPage(props: {
   confirmations?: ConfirmedMention[];
   onConfirmationsChange?: (mentions: ConfirmedMention[]) => void;
   onSubmit: () => void;
+  hasAutonomousWork?: boolean;
   conversations: ConversationSummary[];
   selectedConversationId?: string;
   onSelectConversation: (id: string) => void;
@@ -54,9 +56,10 @@ export function MissionRoomPage(props: {
   onDiscussionControl?: (action: import("../types").DiscussionControlAction, fields?: import("../types").DiscussionControlFields) => void;
   onRequestStop: () => void;
   onContinueDiscussion: () => void;
+  onWorkUpdate?: () => void;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const showOnboarding = props.onboarding?.onboarding?.state !== "completed";
+  const showOnboarding = props.turns.length === 0 && props.onboarding?.onboarding?.state !== "completed" && !props.hasAutonomousWork;
   const hasActiveMission = Boolean(
     props.detail && (!isTerminalMissionStatus(props.detail.mission.status) ||
       (props.detail.discussion?.protocol === 'deliberation_v2' && props.detail.discussion.phase !== 'ended')),
@@ -64,7 +67,7 @@ export function MissionRoomPage(props: {
   const discussion = props.detail?.discussion ?? null;
   const submitLabel = hasActiveMission
     ? "发送插话"
-    : "创建任务";
+    : "发送";
   const onboardingCard = props.onboarding && showOnboarding && !(discussion?.protocol === 'deliberation_v2' && props.turns.length > 0) ? (
     <OnboardingCard
       {...props.onboarding}
@@ -85,13 +88,18 @@ export function MissionRoomPage(props: {
     missionStatus={props.detail?.mission.status ?? 'pending'} busy={props.discussionBusy}
     onRequestFinish={props.onRequestFinish} onControl={props.onDiscussionControl}
     onRequestStop={props.onRequestStop} onContinue={props.onContinueDiscussion} /> : null;
+  const composer = <div className="discussion-panels composer-layout-compact">
+    {discussionPanel && <div className="composer-discussion-status">{discussionPanel}</div>}
+    <MissionComposer value={props.input} busy={props.busy} hasActiveMission={hasActiveMission}
+      disabled={props.conversationScope === "archived"} submitLabel={submitLabel}
+      mentionsEnabled={!(hasActiveMission && discussion)} onChange={props.onInputChange}
+      confirmations={props.confirmations} onConfirmationsChange={props.onConfirmationsChange} onSubmit={props.onSubmit}
+      />
+  </div>;
   return (
-    <main className="mission-room">
+    <main className="mission-room task-room">
       <div className="mission-header-bar">
-        <MissionHeader
-          runtimeSummary={props.runtimeSummary}
-          streamState={props.streamState}
-        />
+        <MissionHeader runtimeSummary={props.runtimeSummary} streamState={props.streamState} />
         <SettingsButton
           view={props.hubSettings ?? null}
           providerStatus={props.providerStatus}
@@ -123,24 +131,10 @@ export function MissionRoomPage(props: {
         />
         <div className="conversation-layout">
           <section className="conversation-main" aria-label="任务对话">
-            {timeline}
-            <div className="discussion-panels composer-layout-compact">
-              {discussionPanel ? (
-                <div className="composer-discussion-status">{discussionPanel}</div>
-              ) : null}
-              <MissionComposer
-                value={props.input}
-                busy={props.busy}
-                hasActiveMission={hasActiveMission}
-                disabled={props.conversationScope === "archived"}
-                submitLabel={submitLabel}
-                mentionsEnabled={!(hasActiveMission && discussion)}
-                onChange={props.onInputChange}
-                confirmations={props.confirmations}
-                onConfirmationsChange={props.onConfirmationsChange}
-                onSubmit={props.onSubmit}
-              />
-            </div>
+            {props.selectedConversationId ? <SharedWorkWorkspace key={props.selectedConversationId}
+              conversationId={props.selectedConversationId} goal={props.detail?.mission.goal ?? ''}
+              archived={props.conversationScope === 'archived'} onUpdate={props.onWorkUpdate}
+              chat={timeline} composer={composer} /> : <>{timeline}{composer}</>}
           </section>
         </div>
       </div>

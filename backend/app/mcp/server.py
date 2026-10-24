@@ -3,8 +3,7 @@
 Spawned by an MCP-aware CLI (e.g. Codex). Reads runtime context from env vars
 set by `MCPSubprocessAdapter`, then handles JSON-RPC 2.0 over stdin/stdout.
 
-Exposes seven tools: `publish_message`, `read_context`, `write_artifact`,
-`read_artifact`, `update_status`, `invoke_agent`, `log_thought`. All
+Exposes tools for messages, artifacts, status, A2A and durable shared work. All
 handlers are thin wrappers around `MCPTools`.
 """
 from __future__ import annotations
@@ -107,6 +106,21 @@ def _load_context() -> _Context:
 
 
 _TOOL_DESCRIPTORS = [
+    {
+        'name': 'shared_work',
+        'description': '持久自主工作。先 read 获取 revision、工作约定和证据。普通对话澄清需求后，用 propose_work(data:{title,owner_id,agreement:{source,goal,scope,non_goals?,delivery:document|development|online,criteria:[{id,text}],validation_commands?:[],risks?:[local]}}) 保存待用户确认的提议。它不会创建可执行任务或授权；仅用户确认后启动。只要方案用 document，开发才用 development，上线仍须独立版本审批。新协议 adaptive_v1：progress/continue_work(data:{task_id,text,next_action,evidence_ids?:[]}) 保存检查点；submit(data:{task_id,kind:code|design|document,summary,artifact_paths:[相对路径],observations:[{id:验收项ID,text:实际观察}],limitations?,reviewer_id?}) 提交产物，kind 必填：设计候选用 design，最终代码用 code，文档用 document，宿主采集真实验证；request_decision(data:{task_id,question,options:[{id,text}],kind:design|direction,artifact_paths:[],recommendation}) 请求必要决定；raise_risk(data:{task_id,risks:[security|data|migration|contract|governance]}) 增加风险；block(data:{task_id,reason,waiting_for}) 记录阻塞。需要协作仍用 invoke_agent，系统持久化子任务。独立审核 review(data:{task_id,candidate_id,criterion_ids,decision:approved|changes_requested,note})。不能自审或自行扩大授权。写入携带稳定 operation_id 与最新 expected_revision。旧协议才使用 propose_contract/create_task 和 commit_sha 审核。',
+        'inputSchema': {
+            'type': 'object',
+            'properties': {
+                'action': {'type': 'string', 'enum': ['read', 'read_evidence', 'propose_work', 'propose_contract', 'create_task', 'progress', 'submit', 'review', 'block', 'continue_work', 'request_decision', 'raise_risk', 'propose_revision', 'propose_transfer', 'refine_agreement', 'accept_transfer']},
+                'expected_revision': {'type': 'integer', 'minimum': 0},
+                'operation_id': {'type': 'string', 'minLength': 1, 'maxLength': 120},
+                'data': {'type': 'object'},
+            },
+            'required': ['action'],
+            'additionalProperties': False,
+        },
+    },
     {
         "name": "publish_message",
         "description": (
@@ -481,7 +495,14 @@ def _handle_read_discussion_result(ctx: _Context, arguments: Dict[str, Any]) -> 
     return {'content': [{'type': 'text', 'text': _json_text(result)}], 'isError': False}
 
 
+def _handle_shared_work(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    result = ctx.tools.shared_work(ctx.mission_id, ctx.agent_id, ctx.turn_id, ctx.provider_id,
+        arguments.get('action', 'read'), arguments.get('data'), arguments.get('expected_revision'), arguments.get('operation_id'))
+    return {'content': [{'type': 'text', 'text': _json_text(result)}], 'isError': False}
+
+
 _TOOL_HANDLERS: Dict[str, Callable[[_Context, Dict[str, Any]], Dict[str, Any]]] = {
+    'shared_work': _handle_shared_work,
     "read_discussion_result": _handle_read_discussion_result,
     "submit_discussion_result": _handle_submit_discussion_result,
     "publish_message": _handle_publish_message,

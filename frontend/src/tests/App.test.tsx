@@ -120,10 +120,10 @@ describe("AgentClub app", () => {
   });
   it("creates a mission from the composer via conversation API", async () => {
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "设计一个多 Agent 任务室");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "设计一个多 Agent 任务室");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
     expect(screen.queryByRole("region", { name: "Agent 参与状态" })).not.toBeInTheDocument();
-    expect(await screen.findByText("创建任务后，Agent 轮次会显示在这里。")).toBeInTheDocument();
+    expect(await screen.findByText("从对话开始，和团队一起把想法变成结果。")).toBeInTheDocument();
   });
 
   it("keeps historical thoughts and tools after a follow-up without duplicating the live mission", async () => {
@@ -153,8 +153,8 @@ describe("AgentClub app", () => {
     }));
     render(<App />);
     for (const n of [1, 2]) {
-      await userEvent.type(screen.getByLabelText("任务输入"), `问题${n}`);
-      await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+      await userEvent.type(screen.getByLabelText("消息输入"), `问题${n}`);
+      await userEvent.click(screen.getByRole("button", { name: "发送" }));
       expect(await screen.findByText(`回复${n}`)).toBeInTheDocument();
     }
     const toggles = screen.getAllByRole("button", { name: "展开思考过程" });
@@ -271,8 +271,8 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "实现 Alpha 集成");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "实现 Alpha 集成");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("已完成实现并通过验证。")).toBeInTheDocument();
     const timeline = screen.getByRole("region", { name: "任务轮次" });
@@ -305,16 +305,16 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "先做规划");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "先做规划");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
     await screen.findByRole("button", { name: "发送插话" });
     await waitFor(() =>
-      expect(screen.getByLabelText("任务输入")).toHaveValue(""),
+      expect(screen.getByLabelText("消息输入")).toHaveValue(""),
     );
-    await userEvent.type(screen.getByLabelText("任务输入"), "@王");
+    await userEvent.type(screen.getByLabelText("消息输入"), "@王");
     await userEvent.keyboard("{Tab}");
     await flushRaf();
-    await userEvent.type(screen.getByLabelText("任务输入"), "看风险");
+    await userEvent.type(screen.getByLabelText("消息输入"), "看风险");
     await userEvent.click(screen.getByRole("button", { name: "发送插话" }));
 
     const interruptCall = calls.find(
@@ -343,13 +343,13 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "第一轮");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
-    await waitFor(() => expect(screen.getByLabelText("任务输入")).toHaveValue(""));
-    await waitFor(() => expect(screen.getByRole("button", { name: "创建任务" })).toBeInTheDocument());
+    await userEvent.type(screen.getByLabelText("消息输入"), "第一轮");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(screen.getByLabelText("消息输入")).toHaveValue(""));
+    await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument());
 
-    await userEvent.type(screen.getByLabelText("任务输入"), "第二轮");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "第二轮");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
 
     const convMissionCalls = calls.filter(c =>
       c.url.match(/\/api\/conversations\/[^/]+\/missions/) && c.init?.method === "POST"
@@ -378,11 +378,11 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "@王");
+    await userEvent.type(screen.getByLabelText("消息输入"), "@王");
     await userEvent.keyboard("{Tab}");
     await flushRaf();
-    await userEvent.type(screen.getByLabelText("任务输入"), "看风险");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "看风险");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
 
     const missionCall = calls.find(c =>
       c.url.match(/\/api\/conversations\/[^/]+\/missions/) && c.init?.method === "POST"
@@ -402,10 +402,10 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "@王");
+    await userEvent.type(screen.getByLabelText("消息输入"), "@王");
     await userEvent.keyboard("{Tab}");
 
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("仅 @成员 不能作为任务内容");
     expect(
@@ -424,10 +424,10 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), " @王");
+    await userEvent.type(screen.getByLabelText("消息输入"), " @王");
     await userEvent.keyboard("{Tab}");
 
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("仅 @成员 不能作为任务内容");
     expect(
@@ -452,8 +452,8 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "依据经验复盘@张楚岚 @冯宝宝 @王也");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "依据经验复盘@张楚岚 @冯宝宝 @王也");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
 
     const missionCall = calls.find(c =>
       c.url.match(/\/api\/conversations\/[^/]+\/missions/) && c.init?.method === "POST"
@@ -488,12 +488,12 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "先做规划");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "先做规划");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
     await screen.findByRole("button", { name: "发送插话" });
-    await waitFor(() => expect(screen.getByLabelText("任务输入")).toHaveValue(""));
+    await waitFor(() => expect(screen.getByLabelText("消息输入")).toHaveValue(""));
 
-    await userEvent.type(screen.getByLabelText("任务输入"), "@冯宝宝 补一刀");
+    await userEvent.type(screen.getByLabelText("消息输入"), "@冯宝宝 补一刀");
     await userEvent.click(screen.getByRole("button", { name: "发送插话" }));
 
     const interruptCall = calls.find(c => c.url === "/api/missions/m1/interruptions");
@@ -525,8 +525,8 @@ describe("AgentClub app", () => {
       return null;
     }));
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "/discuss 如何判断工具错误已经恢复？");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "/discuss 如何判断工具错误已经恢复？");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
     expect(await screen.findByRole("region", { name: "讨论重点" })).toHaveTextContent("如何判断工具错误已经恢复？");
     const source = (window.EventSource as unknown as { instances: EventTarget[] }).instances[0];
     expect(source).toBeDefined();
@@ -559,8 +559,8 @@ describe("AgentClub app", () => {
     }));
 
     render(<App />);
-    await userEvent.type(screen.getByLabelText("任务输入"), "先做规划");
-    await userEvent.click(screen.getByRole("button", { name: "创建任务" }));
+    await userEvent.type(screen.getByLabelText("消息输入"), "先做规划");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
     await screen.findByRole("button", { name: "发送插话" });
 
     const EventSourceMock = window.EventSource as unknown as {
@@ -634,7 +634,7 @@ describe("AgentClub app", () => {
     expect(within(sseTimeline).getByText("王也（Claude）")).toBeInTheDocument();
     expect(within(sseTimeline).queryByText("via Claude Code")).not.toBeInTheDocument();
     await waitFor(() => expect(source.close).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "创建任务" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
     },
   );
 });

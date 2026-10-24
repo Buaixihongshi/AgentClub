@@ -459,6 +459,8 @@ export interface ConversationSummary extends Conversation {
 }
 
 export interface ConversationDetail {
+  has_autonomous_work?: boolean;
+  work_status_label?: string | null;
   artifact_events?: ThreadEvent[];
   conversation: Conversation;
   missions: Mission[];
@@ -871,4 +873,56 @@ export interface ObservabilityOverviewPayload {
 export interface ObservabilityTurnDetailPayload {
   mission: { id: string; title: string };
   turn: ObservabilityTurn;
+}
+
+export interface WorkCriterion { id: string; text: string }
+export interface WorkContract {
+  id: string; version: number; source: string; goal: string; scope: string; non_goals: string;
+  criteria: WorkCriterion[]; validation_commands: string[][]; digest: string; activated_at: string | null;
+  delivery?: 'document' | 'development' | 'online'; risks?: string[];
+}
+export interface WorkEvidence {
+  id: string; contract_id: string; contract_digest: string; commit_sha: string; passed: boolean;
+  criterion_ids: string[]; mission_id: string; agent_id: string; created_at: string;
+  checks: { command: string[]; exit_code: number; output: string; output_sha256: string; truncated: boolean; log_id: string }[];
+  candidate_id?: string; observations?: WorkCriterion[]; method?: string; artifact_paths?: string[];
+}
+export interface WorkReview {
+  id: string; contract_id: string; criterion_ids: string[]; commit_sha: string; evidence_id: string;
+  reviewer_id: string; mission_id: string; decision: 'approved' | 'changes_requested'; note: string;
+  candidate_id?: string; created_at?: string;
+}
+export interface SharedWorkTask {
+  id: string; title: string; contract_id: string; owner_id: string; reviewer_id: string;
+  criterion_ids: string[]; depends_on: string[]; status: 'ready' | 'running' | 'validating' | 'review' | 'done' | 'blocked' | 'waiting' | 'cancelled';
+  progress: string; blocker: string | null; active_mission_id: string | null;
+  candidate_sha: string | null; evidence: WorkEvidence[]; reviews: WorkReview[];
+  attempts: { mission_id: string; agent_id: string; stage: string; outcome?: string }[];
+  parent_id?: string | null; root_id?: string; next_action?: string; waiting_reason?: string | null;
+  waiting_for?: string | null; paused?: boolean; attempts_used?: number; max_attempts?: number;
+  risks?: string[]; authors?: string[]; review_required?: boolean;
+  candidate?: { id: string; base_sha: string; artifact_paths?: string[] } | null;
+  submission?: { kind?: string; summary: string; artifact_paths: string[]; limitations: string } | null;
+  release?: { status: string; environment: string; candidate_id: string; log_id?: string };
+  transfer?: { from: string; to: string; reason: string; status: string };
+  deliveries?: { contract_id: string; candidate_id: string; summary: string; created_at: string }[];
+}
+export interface WorkDecision {
+  id: string; task_id: string; kind: string; question: string; options: WorkCriterion[];
+  recommendation?: string; artifact_paths: string[]; contract_id: string; candidate_id?: string;
+  status: 'pending' | 'answered' | 'stale'; option_id?: string; note?: string; environment?: string;
+  created_at?: string; answered_at?: string; actor?: string;
+}
+export interface WorkProposal {
+  id: string; title: string; owner_id: string; agreement: WorkContract;
+  status: 'pending' | 'accepted' | 'rejected' | 'superseded';
+  created_by: string; mission_id: string; turn_id: string; created_at: string; digest: string;
+  task_id?: string;
+}
+export interface SharedWorkBoardView {
+  proposals?: WorkProposal[];
+  protocol?: 'adaptive_v1'; decisions?: WorkDecision[]; legacy_board?: SharedWorkBoardView;
+  conversation_id: string; revision: number; enabled: boolean; active_contract_id: string | null;
+  contracts: WorkContract[]; tasks: SharedWorkTask[]; workspace_root: string; current_head?: string;
+  events: { id: string; action: string; actor: string; created_at: string; task_id?: string; mission_id?: string; reason?: string }[];
 }

@@ -33,14 +33,23 @@ def create_app(
     from backend.app.storage.execution import ExecutionLedger
     ExecutionLedger(repository).recover()
     Roundtable(repository).recover()
+    from backend.app.work.service import SharedWork
+    SharedWork(repository).recover()
     MaintenanceService(repository, app_settings).recover_interrupted_runs()
     app_settings.artifact_root.mkdir(parents=True, exist_ok=True)
 
     @asynccontextmanager
     async def lifespan(_app):
+        import threading
+        from backend.app.api.shared_work import pump
+        stopped = threading.Event()
+        dispatcher = threading.Thread(target=pump, args=(repository, app_settings, stopped, mission_adapter), daemon=True)
+        dispatcher.start()
         try:
             yield
         finally:
+            stopped.set()
+            dispatcher.join(timeout=.2)
             if app_settings.antigravity_persistent:
                 from backend.app.adapters.antigravity_session import SESSION_POOL
                 SESSION_POOL.close(app_settings.database_path)
@@ -67,6 +76,8 @@ def create_app(
     app.include_router(build_conversations_router(app_settings, repository, adapter_override=mission_adapter))
     app.include_router(build_hub_settings_router(app_settings))
     app.include_router(build_missions_router(app_settings, repository, adapter_override=mission_adapter))
+    from backend.app.api.shared_work import build_router as build_work_router
+    app.include_router(build_work_router(app_settings, repository, mission_adapter))
     app.include_router(
         build_onboarding_router(
             app_settings,

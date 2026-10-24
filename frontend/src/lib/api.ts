@@ -49,6 +49,7 @@ export interface MissionCreatePayload {
   room_mode?: RoomMode;
   discussion?: { participant_ids: string[]; max_turns?: number; protocol?: "roundtable_v1" | "deliberation_v2"; max_exchange_rounds?: number };
   request_id?: string;
+  work_mode?: 'document' | 'development' | 'online';
 }
 
 /** Stable client-side idempotency key; the backend replays same-id requests. */
@@ -66,6 +67,7 @@ function missionCreateBody(payload: MissionCreatePayload): string {
   const body: Record<string, unknown> = { goal: payload.goal };
   if (payload.title) body.title = payload.title;
   if (payload.skill) body.skill = payload.skill;
+  if (payload.work_mode) body.work_mode = payload.work_mode;
   if (payload.room_mode) body.room_mode = payload.room_mode;
   if (payload.discussion) body.discussion = payload.discussion;
   if (payload.target_agent_ids && payload.target_agent_ids.length > 0) {
@@ -319,4 +321,15 @@ export async function resumeMaintenanceRun(runId: string): Promise<MaintenanceRu
     method: "POST",
   });
   return parseJson<MaintenanceRunDetail>(response, "恢复维护任务失败");
+}
+
+export async function fetchSharedWork(conversationId: string): Promise<import('../types').SharedWorkBoardView> {
+  return parseJson(await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/work`), '加载共享任务失败');
+}
+
+export async function updateSharedWork(conversationId: string, action: string, expectedRevision: number, data: Record<string, unknown> = {}): Promise<import('../types').SharedWorkBoardView> {
+  return parseJson(await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/work`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, expected_revision: expectedRevision, data, operation_id: newRequestId('work') }),
+  }), '更新共享任务失败');
 }

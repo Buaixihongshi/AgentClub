@@ -147,7 +147,7 @@ class MCPTools:
         self.receipt_id = receipt_id
         self._current_step_origin = current_step_origin
         self.lease_token = lease_token
-        self.workspace_root = (workspace_root or Path.cwd()).resolve()
+        self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
 
     @property
     def current_step_origin(self) -> Optional[str]:
@@ -200,6 +200,9 @@ class MCPTools:
             "mission": mission.model_dump(mode="json"),
             "messages": [message.model_dump(mode="json") for message in messages],
         }
+        if conversation_id:
+            from backend.app.work.service import SharedWork
+            result['shared_work'] = SharedWork(self.repository).read(conversation_id)
         if agent_id and turn_id:
             record_tool_result(
                 self.repository,
@@ -212,6 +215,41 @@ class MCPTools:
                 output=_mission_context_digest(result),
             )
         return result
+
+    @roundtable_guard
+    def shared_work(self, mission_id, agent_id, turn_id, provider_id, action='read',
+                    data=None, expected_revision=None, operation_id=None):
+        from backend.app.work.models import WorkCommand
+        from backend.app.work.service import SharedWork, WorkError
+        from pydantic import ValidationError
+        mission = self._require_mission(mission_id)
+        if not mission.conversation_id or is_provider_verification_mission(mission):
+            raise MCPToolError('共享开发任务需要普通会话上下文')
+        service = SharedWork(self.repository, self.workspace_root)
+        try:
+            if action == 'read':
+                board = service.read(mission.conversation_id)
+                if board.get('protocol') == 'adaptive_v1' and any(t['active_mission_id'] == mission_id for t in board['tasks']):
+                    from backend.app.work.adaptive import AdaptiveWork
+                    return AdaptiveWork(self.repository, self.workspace_root).agent_view(mission_id)
+                return board
+            if action == 'read_evidence':
+                value = data or {}
+                offset = value.get('offset', 0)
+                if not isinstance(offset, int) or offset < 0:
+                    raise MCPToolError('证据分页 offset 无效')
+                raw = service.read_log(mission.conversation_id, value.get('log_id')).decode(errors='replace')
+                return {'content': raw[offset:offset + 8000], 'next_offset': offset + 8000 if offset + 8000 < len(raw) else None}
+            command = WorkCommand.model_validate({'action': action, 'data': data or {}, 'expected_revision': expected_revision})
+            record_tool_call(self.repository, mission_id, turn_id, agent_id, 'shared_work',
+                             {'action': action, 'task_id': command.data.get('task_id')}, provider_id)
+            result = service.command(mission.conversation_id, action, command.data, expected_revision,
+                                     actor=agent_id, mission_id=mission_id, turn_id=turn_id, operation_id=operation_id)
+            record_tool_result(self.repository, mission_id, turn_id, agent_id, 'shared_work',
+                               summary=action, provider_id=provider_id)
+            return result
+        except (WorkError, ValidationError) as exc:
+            raise MCPToolError(str(exc)) from exc
 
     @roundtable_guard
     def publish_message(
@@ -285,6 +323,11 @@ class MCPTools:
         source_path: Optional[str] = None,
     ) -> Path:
         self._require_mission(mission_id)
+        from backend.app.work.service import SharedWork
+        work = SharedWork(self.repository, self.workspace_root).execution_context(mission_id)
+        if work and (work['task']['status'] == 'cancelled'
+                     or work['task']['attempts'][-1]['stage'] in {'review', 'reconcile', 'handoff'}):
+            raise MCPToolError('当前工作动作只读或已取消，不能写入产物')
         record_tool_call(
             self.repository,
             mission_id,
@@ -676,6 +719,9 @@ class MCPTools:
         provider_id: Optional[str] = None,
     ) -> None:
         mission = self._require_mission(mission_id)
+        from backend.app.work.service import SharedWork
+        if agent_id and status != 'running' and SharedWork(self.repository, self.workspace_root).execution_context(mission_id):
+            raise MCPToolError('自主工作的生命周期由宿主控制，请提交结构化结果')
         if agent_id and turn_id:
             record_tool_call(
                 self.repository,
@@ -713,6 +759,17 @@ class MCPTools:
         mode: str = "fire_and_forget",
     ) -> Dict[str, int]:
         mission = self._require_mission(mission_id)
+        from backend.app.work.service import SharedWork, WorkError
+        work_context = SharedWork(self.repository, self.workspace_root).execution_context(mission_id)
+        if work_context:
+            from backend.app.work.adaptive import AdaptiveWork, digest
+            try:
+                return AdaptiveWork(self.repository, self.workspace_root).delegate(
+                    mission.conversation_id, mission_id, sender_agent_id, sender_turn_id,
+                    target_agent_id, purpose, mode,
+                    digest({'mission': mission_id, 'turn': sender_turn_id, 'target': target_agent_id, 'purpose': purpose, 'mode': mode}))
+            except WorkError as exc:
+                raise MCPToolError(str(exc)) from exc
         if mission.room_mode == 'roundtable':
             from backend.app.orchestration.roundtable import Roundtable
             record_tool_call(self.repository, mission_id, sender_turn_id, sender_agent_id, 'invoke_agent', {'target_agent_id': target_agent_id, 'purpose': purpose, 'mode': mode}, provider_id)

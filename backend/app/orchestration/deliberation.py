@@ -168,11 +168,19 @@ class Deliberation:
     def renew_turn_lease(self, mission_id, agent_id, turn_id, provider_id, token, seconds):
         """Host-only extension; the phase, provider and capability remain fenced."""
         with self.transaction(mission_id) as (mission, state):
+            # A tool submission can commit after the adapter reads "running"
+            # but before this transaction. A completed capability needs no renewal.
+            existing = state['leases'].get(turn_id)
+            if (state['phase'] != 'ended' and existing and existing['status'] == 'submitted'
+                    and existing['agent_id'] == agent_id and existing['provider_id'] == provider_id
+                    and token and secrets.compare_digest(existing.get('token', ''), token)):
+                return False
             lease = self._lease(state, agent_id, turn_id, provider_id, token)
             expiry = max(datetime.fromisoformat(lease['expires_at']),
                          utc_now() + timedelta(seconds=seconds))
             lease['expires_at'] = expiry.isoformat()
             self.save(mission, state)
+            return True
 
     def read_context(self, mission_id, agent_id, turn_id, provider_id, token, *, record_access=True,
                      material_offset=0, history_offset=0, issue_offset=0):

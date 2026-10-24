@@ -89,6 +89,12 @@ class MissionRunner:
         if mission is None:
             raise ValueError("Unknown mission: {mission_id}".format(mission_id=mission_id))
 
+        if any(e.event_type in {'adaptive.queued', 'adaptive.control_received'} for e in self.repository.list_events_after(mission_id, 0)):
+            return self.repository.get_mission(mission_id)
+
+        if any(e.event_type == 'adaptive.claimed' for e in self.repository.list_events_after(mission_id, 0)):
+            return self._run_adaptive(mission)
+
         from backend.app.orchestration.deliberation import is_v2
         if is_v2(mission):
             from backend.app.orchestration.deliberation_runner import run_deliberation
@@ -352,6 +358,49 @@ class MissionRunner:
             mission_id, final_status.value,
             summary="Mission completed with warnings" if has_warnings else "Mission completed",
         )
+        return mission
+
+    def _run_adaptive(self, mission):
+        """One necessary action per mission; durable work controls continuation."""
+        from backend.app.work.service import SharedWork
+        import json
+        work = SharedWork(self.repository)
+        context = work.execution_context(mission.id)
+        if not context or context['task']['status'] == 'cancelled':
+            return mission
+        agent_id = mission.target_agent_id
+        agent = next(a for a in self.agents if a.id == agent_id)
+        mission = mission.model_copy(update={'status': MissionStatus.RUNNING, 'updated_at': utc_now()})
+        self.repository.update_mission(mission)
+        turn_id = 'turn_work_' + uuid4().hex[:12]
+        tools = MCPTools(self.repository, self.settings.artifact_root, valid_agent_ids={a.id for a in self.agents},
+                         workspace_root=context['workspace_root'], current_step_origin='adaptive')
+        prompt = (
+            f'你是{agent.display_name}。人格：{agent.persona}\n'
+            '你负责推进持久工作卡的一项必要动作。按实际缺口决定调查、设计、实现、验证或协作，简单工作可本轮完成。'
+            '先 shared_work(read) 读取最新 revision。读取持久约定、已记录的人类决定及子任务结果，不依赖聊天记忆。'
+            '通过 CLI 原生工具在授权目录工作；文档工作只能写 docs/，审核只能只读，不允许自行提交、合并或发布。'
+            '本轮必须用 shared_work 写结构化结果并通过 publish_message 给出简洁进度。'
+            '首次接单可用 refine_agreement(data:{task_id,agreement:{criteria:[{id,text}],validation_commands:[[命令参数]]}}) '
+            '把原始目标整理为可测试约定；不得改变 source/goal/scope/delivery，实质变更须请用户决定。'
+            '可提交 submit；必须明确 kind 为 code、design 或 document：设计候选用 design，最终代码用 code，文档用 document。'
+            '设计候选作者可以审核他人实现的最终代码；不能把设计交付误报成代码交付。'
+            '尚有必要工作用 continue_work；需要人类选择用 request_decision；真正阻塞用 block。'
+            '新写操作使用稳定 operation_id 与最新 expected_revision，冲突后重读。'
+            '需要另一角色时只使用 invoke_agent，purpose 写清独立交付物；宿主保存子任务，父责任不解除。'
+            '发现 security/data/migration/contract/governance 风险调用 raise_risk，不能自行免除必须审核。'
+            '审核阶段对照原始约定、真实候选和证据，用 review 引用 candidate_id、criterion_ids、decision、note。'
+            'handoff 阶段只读交接资料，目标角色确认能接手后调用 accept_transfer(data:{task_id})。'
+            '不能用成功退出、聊天声明或模拟结果代替验证，不能为凑流程增加角色。\n'
+            '可协作角色：\n' + json.dumps([{'id': a.id, 'name': a.display_name, 'role': a.role} for a in self.agents], ensure_ascii=False)
+            + '\n持久工作上下文：\n' + json.dumps(context, ensure_ascii=False)
+        )
+        outcome = self._run_turn_with_fallbacks(mission, agent_id, turn_id,
+                                               _providers_by_agent([agent])[agent_id], prompt, tools)
+        status = MissionStatus.COMPLETED if outcome.status == TurnStatus.COMPLETED else MissionStatus.BLOCKED
+        mission = self.repository.get_mission(mission.id).model_copy(update={'status': status, 'updated_at': utc_now()})
+        self.repository.update_mission(mission)
+        self.repository.add_event(mission.id, 'status', {'status': status.value, 'summary': outcome.summary or status.value})
         return mission
 
     def _run_roundtable(self, mission_id):
@@ -657,6 +706,13 @@ class MissionRunner:
                 return TurnOutcome(status=TurnStatus.BLOCKED, summary="Fallback API context export requires endpoint-bound approval",
                                    failure_code="configuration", retryable=False)
             prior_events = self.repository.list_events_after(mission.id, 0)
+            if any(e.event_type == 'adaptive.claimed' for e in prior_events):
+                from backend.app.work.adaptive import AdaptiveWork
+                from backend.app.work.service import WorkError
+                try:
+                    AdaptiveWork(self.repository, tools.workspace_root).authorize_provider(mission.id, provider_id)
+                except WorkError as exc:
+                    return TurnOutcome(status=TurnStatus.BLOCKED, summary=str(exc), retryable=False)
             event_offset = len(prior_events)
             attempt = index + 1
             if mission.room_mode == 'roundtable':
@@ -893,7 +949,7 @@ def _build_prompt(
             "聊天室模式：你正在 AgentClub 的房间里独立完成用户请求。\n"
             "你是{display_name}，主要职责是{role}。人格与交流习惯：{persona}\n"
             "【工作方式】本轮由你独立完成，不需要征求其他角色意见，也不要假装有别的角色在场。"
-            "直接给出完整、可执行的最终答案。\n"
+            "需求清楚时直接给出完整、可执行的答案；信息不足时先澄清。\n"
             "只输出本轮该给用户的回复，不要输出 Markdown 标题。\n"
             "【交付边界】讨论、比较、解释、评审修改意见时，直接在聊天中给观点、实例和建议，不主动创建或登记文件。\n"
             "只有用户明确要求文件交付，或完成已获授权的执行任务确实需要文件时，才读写相应文件；"
@@ -926,6 +982,17 @@ def _build_prompt(
                 persona=agent.persona,
             ),
         ]
+    if mission.conversation_id and mission.room_mode == 'task':
+        parts.append(
+            '【对话式需求协作】用户通过聊天和 @成员 提出想法；信息不足时先问少量关键问题，'
+            '不要让用户填需求表，不把“给我一版方案”理解为开发或上线授权。'
+            '方案可先在聊天中完成；需要跨轮持续交付时，澄清目标、范围和验收条件，'
+            '再用 shared_work(read) 和 propose_work 保存结构化提议，等待用户在对话中的提议卡确认。'
+            '用户只要设计或文档时 delivery=document，明确需要开发才用 development。'
+            'propose_work 不能自行启动；不得把提议或聊天承诺说成已经开始执行。'
+            '调用时 owner_id 使用有效角色 ID，operation_id 稳定，expected_revision 来自最新 read；'
+            '提议之后用 publish_message 简要说明需要确认的内容。'
+        )
     parts.append(COMMON_DISCUSSION_RULES)
     if agent.trigger_points:
         bullets = "\n".join("- {tp}".format(tp=tp) for tp in agent.trigger_points)

@@ -21,6 +21,14 @@ class FakeCLIAdapter(CLIAdapter):
         from backend.app.orchestration.deliberation import is_v2
         if is_v2(tools.repository.get_mission(mission_id)):
             return self._discussion_turn(mission_id, agent_id, turn_id, provider_id, tools)
+        if any(event.event_type in {'work.claimed', 'adaptive.claimed'} for event in tools.repository.list_events_after(mission_id, 0)):
+            board = tools.shared_work(mission_id, agent_id, turn_id, provider_id)
+            task = next(task for task in board['tasks'] if task['active_mission_id'] == mission_id)
+            reason = '演示模式不执行代码或审核。请接入真实 Provider 后重试，共享任务与责任分工已保留。'
+            tools.shared_work(mission_id, agent_id, turn_id, provider_id, 'block',
+                              {'task_id': task['id'], 'reason': reason}, board['revision'], operation_id='demo-block:' + mission_id)
+            tools.publish_message(mission_id, agent_id, turn_id, reason, provider_id)
+            return TurnOutcome(status=TurnStatus.COMPLETED)
         content = self.response or "[演示:{agent_id}] {prompt}".format(
             agent_id=agent_id,
             prompt=prompt,

@@ -35,6 +35,22 @@ class Repository:
                     id TEXT PRIMARY KEY,
                     data TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS work_boards (
+                    conversation_id TEXT PRIMARY KEY,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS work_check_logs (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL,
+                    output BLOB NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS work_operations (
+                    conversation_id TEXT NOT NULL,
+                    operation_id TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL,
+                    result TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, operation_id)
+                );
                 CREATE TABLE IF NOT EXISTS discussion_results (
                     id TEXT PRIMARY KEY,
                     mission_id TEXT NOT NULL,

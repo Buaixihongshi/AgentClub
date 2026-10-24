@@ -312,6 +312,7 @@ def test_tools_list_includes_all_tools(temp_settings, seeded_mission):
 
     tool_names = {t["name"] for t in response["result"]["tools"]}
     assert tool_names == {
+        "shared_work",
         "publish_message",
         "read_context",
         "write_artifact",

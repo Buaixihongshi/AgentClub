@@ -34,3 +34,4 @@ data/cli-diagnostics/
 
 # Local API credentials (never export or commit)
 connection-secrets/
+.agenthub/

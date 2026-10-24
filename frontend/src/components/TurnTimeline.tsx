@@ -83,7 +83,7 @@ export function TurnTimeline({
       );
     }
     return (
-      <div className="empty-state">创建任务后，Agent 轮次会显示在这里。</div>
+      <div className="empty-state">从对话开始，和团队一起把想法变成结果。</div>
     );
   }
 

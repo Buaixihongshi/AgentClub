@@ -10,7 +10,7 @@ from backend.app.mcp.tools import MCPTools, MCPToolError
 from backend.app.storage.execution import ExecutionLedger
 from backend.app.storage.repository import Repository
 
-MUTATIONS = {'publish_message', 'write_artifact', 'update_status', 'invoke_agent', 'log_thought'}
+MUTATIONS = {'publish_message', 'write_artifact', 'update_status', 'invoke_agent', 'log_thought', 'shared_work'}
 
 
 def dispatch(repo, root, worker_id, frame):
@@ -28,7 +28,8 @@ def dispatch(repo, root, worker_id, frame):
             schema.setdefault('required', []).append('context_token')
             if item['name'] in MUTATIONS:
                 schema['properties']['operation_id'] = {'type': 'string', 'description': '本轮操作的稳定编号；同一操作重试须复用编号。'}
-                schema['required'].append('operation_id')
+                if item['name'] != 'shared_work':
+                    schema['required'].append('operation_id')
             if item['name'] == 'update_status':
                 schema['properties']['status']['enum'] = ['running']
         return server._ok(request_id, {'tools': descriptors})
@@ -43,8 +44,11 @@ def dispatch(repo, root, worker_id, frame):
     token = args.pop('context_token', None)
     operation_id = args.pop('operation_id', None)
     try:
-        if name in MUTATIONS and operation_id is None:
+        mutating = name in MUTATIONS and not (name == 'shared_work' and args.get('action') in {'read', 'read_evidence'})
+        if mutating and operation_id is None:
             raise MCPToolError('Mutation requires a stable operation_id')
+        if not mutating:
+            operation_id = None
         if name == 'update_status' and args.get('status') != 'running':
             raise MCPToolError('The host owns task lifecycle; publish a conclusion instead')
         def invoke(grant):
@@ -54,7 +58,8 @@ def dispatch(repo, root, worker_id, frame):
                              max_a2a_invocations=metadata.get('max_a2a_invocations', 0),
                              workspace_root=Path(os.environ.get('YIREN_MCP_WORKSPACE_ROOT', os.getcwd())))
             ctx = server._Context(grant['mission_id'], grant['agent_id'], grant['turn_id'], grant['provider_id'], tools)
-            return server._TOOL_HANDLERS[name](ctx, args)
+            handler_args = {**args, 'operation_id': operation_id} if name == 'shared_work' else args
+            return server._TOOL_HANDLERS[name](ctx, handler_args)
         result = ExecutionLedger(repo).call(worker_id, token, name, args, operation_id, invoke)
         return server._ok(request_id, result)
     except (MCPToolError, ValueError) as exc:
