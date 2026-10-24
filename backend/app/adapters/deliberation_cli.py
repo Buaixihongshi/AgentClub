@@ -368,12 +368,13 @@ class DeliberationCLIAdapter:
                         extension = progress.check()
                         if (not self.work_context and extension and not cancelled and progress.remaining() > 0
                                 and state['leases'][turn_id]['status'] == 'running'):
-                            policy.renew_turn_lease(mission_id, agent_id, turn_id, provider_id,
-                                                    tools.lease_token, progress.remaining() + 30)
-                            tools.repository.add_event(mission_id, 'turn.deadline_extended', {
-                                'turn_id': turn_id, 'agent_id': agent_id, 'provider_id': provider_id,
-                                **extension,
-                            })
+                            renewed = policy.renew_turn_lease(mission_id, agent_id, turn_id, provider_id,
+                                                             tools.lease_token, progress.remaining() + 30)
+                            if renewed:
+                                tools.repository.add_event(mission_id, 'turn.deadline_extended', {
+                                    'turn_id': turn_id, 'agent_id': agent_id, 'provider_id': provider_id,
+                                    **extension,
+                                })
                         if cancelled or progress.remaining() <= 0:
                             from backend.app.adapters.subprocess_cli import kill_process_tree
                             kill_process_tree(proc)
