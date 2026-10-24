@@ -86,10 +86,12 @@ def _load_context() -> _Context:
     except ValueError:
         max_a2a_invocations = 0
 
+    memory_root = os.environ.get("YIREN_MCP_MEMORY_ROOT")
     repository = Repository(Path(db_path))
     tools = MCPTools(
         repository,
         Path(artifact_root),
+        memory_root=Path(memory_root) if memory_root else Path(db_path).resolve().parent / "memory",
         valid_agent_ids=valid_agent_ids,
         max_a2a_invocations=max_a2a_invocations,
         receipt_id=receipt_id,
@@ -122,6 +124,49 @@ _TOOL_DESCRIPTORS = [
         },
     },
     {
+        "name": "memory",
+        "description": (
+            "你的跨会话长期记忆，只属于你本人；Markdown 权威存储，所有会话共享。"
+            "action=read 列出全部有效条目，传 entry_id 读单条全文。"
+            "action=data:{action:'write',title,body,tags?:[],source_refs?:[消息ID]} 新增；"
+            "值得记的是用户偏好、长期约定、项目事实和纠正，不要存一次性闲聊。"
+            "action=data:{action:'revise',entry_id,title?,body?,tags?} 修订（revision 递增）；"
+            "事实变化时修订而不是另存一条。action=data:{action:'forget',entry_id} 忘记："
+            "不再进入任何后续上下文。source_refs 填相关消息 ID，便于之后原文补读。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["read", "write", "revise", "forget"]},
+                "entry_id": {"type": "string", "description": "revise/forget/read 单条时的条目 ID。"},
+                "title": {"type": "string", "maxLength": 120},
+                "body": {"type": "string", "maxLength": 8000},
+                "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+                "source_refs": {"type": "array", "items": {"type": "string"}, "maxItems": 40},
+            },
+            "required": ["action"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "save_checkpoint",
+        "description": (
+            "保存你在本会话的短期检查点（滚动覆盖，仅本会话）：当前结论、约束和下一步要点，"
+            "会注入你后续轮次的 prompt，供中断或换模型后接续。text 限 4000 字符；"
+            "source_message_ids 填支撑结论的消息 ID，便于用 read_context(message_ids) 原文补读。"
+            "这是会话内进展状态，不是长期事实；跨会话要记住的用 memory 写入。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "minLength": 1, "maxLength": 4000},
+                "source_message_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 40},
+            },
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "publish_message",
         "description": (
             "把当前 agent 在本回合要说的话发布到 AgentClub 聊天室。"
@@ -145,6 +190,9 @@ _TOOL_DESCRIPTORS = [
             "读取当前会话的正式对话与当前 mission 元数据；无会话时仅读取当前 mission。"
             "优先保留最新用户输入和插话，再补充近期发言，按事件顺序返回正文全文。"
             "可选参数 limit 控制最多返回消息条数（默认 20，上限 100）。"
+            "带会话时同时返回你的长期记忆摘要、短期检查点和待处理模型交接。"
+            "可选参数 message_ids 用于原文补读：按消息 ID 精确取未截断全文（最多 50 条），"
+            "prompt 节选或检查点里出现 [id=...] 被截断时用它回读原文。"
         ),
         "inputSchema": {
             "type": "object",
@@ -153,7 +201,13 @@ _TOOL_DESCRIPTORS = [
                     "type": "integer",
                     "description": "最多返回的消息条数，默认 20，最大 100。",
                     "default": 20,
-                }
+                },
+                "message_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 50,
+                    "description": "原文补读：按消息 ID 精确取全文，绕过条数窗口。",
+                },
             },
             "required": [],
             "additionalProperties": False,
@@ -336,6 +390,7 @@ def _handle_read_context(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, 
         turn_id=ctx.turn_id,
         provider_id=ctx.provider_id,
         **{key: arguments[key] for key in ('material_offset', 'history_offset', 'issue_offset') if key in arguments},
+        message_ids=arguments.get("message_ids") if isinstance(arguments.get("message_ids"), list) else None,
     )
     return {
         "content": [
@@ -343,6 +398,28 @@ def _handle_read_context(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, 
         ],
         "isError": False,
     }
+
+
+def _handle_memory(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    data = {key: arguments[key] for key in ('entry_id', 'title', 'body', 'tags', 'source_refs')
+            if key in arguments}
+    result = ctx.tools.memory(ctx.mission_id, ctx.agent_id, ctx.turn_id, ctx.provider_id,
+                              action=arguments.get('action', 'read'), data=data)
+    return {"content": [{"type": "text", "text": _json_text(result)}], "isError": False}
+
+
+def _handle_save_checkpoint(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    text = arguments.get("text")
+    if not isinstance(text, str):
+        return _err_for_tool("save_checkpoint 需要 text")
+    refs = arguments.get("source_message_ids")
+    result = ctx.tools.save_checkpoint(ctx.mission_id, ctx.agent_id, ctx.turn_id, ctx.provider_id,
+                                       text, refs if isinstance(refs, list) else None)
+    return {"content": [{"type": "text", "text": _json_text(result)}], "isError": False}
+
+
+def _err_for_tool(message: str) -> Dict[str, Any]:
+    return {"content": [{"type": "text", "text": message}], "isError": True}
 
 
 def _handle_write_artifact(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -506,6 +583,8 @@ _TOOL_HANDLERS: Dict[str, Callable[[_Context, Dict[str, Any]], Dict[str, Any]]] 
     "read_discussion_result": _handle_read_discussion_result,
     "submit_discussion_result": _handle_submit_discussion_result,
     "publish_message": _handle_publish_message,
+    "memory": _handle_memory,
+    "save_checkpoint": _handle_save_checkpoint,
     "read_context": _handle_read_context,
     "write_artifact": _handle_write_artifact,
     "read_artifact": _handle_read_artifact,

@@ -333,3 +333,47 @@ export async function updateSharedWork(conversationId: string, action: string, e
     body: JSON.stringify({ action, expected_revision: expectedRevision, data, operation_id: newRequestId('work') }),
   }), '更新共享任务失败');
 }
+export async function fetchMemoryOverview(): Promise<import('../types').MemoryOverviewView> {
+  return parseJson(await fetch(`/api/memory/overview`), '加载记忆状态失败');
+}
+
+export async function fetchAgentMemory(agentId: string, includeForgotten = false): Promise<{ entries: import('../types').MemoryEntryView[] }> {
+  const query = includeForgotten ? '?include_forgotten=true' : '';
+  return parseJson(await fetch(`/api/memory/agents/${encodeURIComponent(agentId)}/entries${query}`), '加载记忆条目失败');
+}
+
+export async function updateMemoryEntry(entryId: string, patch: { title?: string; body?: string; tags?: string[] }): Promise<{ id: string; revision: number; updated_at: string }> {
+  return parseJson(await fetch(`/api/memory/entries/${encodeURIComponent(entryId)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+  }), '更新记忆条目失败');
+}
+
+export async function setMemoryEntryStatus(entryId: string, status: 'active' | 'forgotten'): Promise<{ id: string; status: string }> {
+  return parseJson(await fetch(`/api/memory/entries/${encodeURIComponent(entryId)}/${status === 'forgotten' ? 'forget' : 'restore'}`, {
+    method: 'POST',
+  }), '更新记忆条目状态失败');
+}
+
+export async function purgeMemoryEntry(entryId: string): Promise<{ id: string; purged: boolean }> {
+  return parseJson(await fetch(`/api/memory/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE' }), '清除记忆条目失败');
+}
+
+export async function rebuildMemoryIndex(): Promise<import('../types').MemoryConsistency> {
+  return parseJson(await fetch(`/api/memory/rebuild`, { method: 'POST' }), '重建记忆索引失败');
+}
+
+export async function fetchMemoryCheckpoints(conversationId: string): Promise<{ checkpoints: import('../types').MemoryCheckpointView[] }> {
+  return parseJson(await fetch(`/api/memory/conversations/${encodeURIComponent(conversationId)}/checkpoints`), '加载会话检查点失败');
+}
+
+export async function clearMemoryCheckpoints(conversationId: string, agentId?: string): Promise<{ removed: number }> {
+  const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : '';
+  return parseJson(await fetch(`/api/memory/conversations/${encodeURIComponent(conversationId)}/checkpoints${query}`, {
+    method: 'DELETE',
+  }), '清除会话检查点失败');
+}
+
+export async function fetchMemoryHandovers(agentId?: string): Promise<{ handovers: import('../types').MemoryHandoverView[] }> {
+  const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : '';
+  return parseJson(await fetch(`/api/memory/handovers${query}`), '加载模型交接记录失败');
+}

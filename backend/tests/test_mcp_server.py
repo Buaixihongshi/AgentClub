@@ -314,6 +314,8 @@ def test_tools_list_includes_all_tools(temp_settings, seeded_mission):
     assert tool_names == {
         "shared_work",
         "publish_message",
+        "memory",
+        "save_checkpoint",
         "read_context",
         "write_artifact",
         "read_artifact",

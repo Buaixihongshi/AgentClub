@@ -10,6 +10,7 @@ def temp_settings(tmp_path: Path) -> Settings:
     return Settings(
         database_path=tmp_path / "yirenhub.sqlite3",
         artifact_root=tmp_path / "artifacts",
+        memory_root=tmp_path / "memory",
         config_dir=Path("config"),
         use_fake_cli=True,
         max_turns=6,

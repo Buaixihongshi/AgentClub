@@ -111,6 +111,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         *,
         db_path: Path,
         artifact_root: Path,
+        memory_root: Optional[Path] = None,
         mcp_python: Optional[str] = None,
         mcp_module: str = "backend.app.mcp.server",
         timeout: int = 300,
@@ -126,6 +127,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         self.args = list(args or [])
         self.db_path = Path(db_path).resolve()
         self.artifact_root = Path(artifact_root).resolve()
+        self.memory_root = Path(memory_root).resolve() if memory_root else None
         self.mcp_python = mcp_python or sys.executable
         self.mcp_module = mcp_module
         self.timeout = timeout
@@ -683,6 +685,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         env: dict = {
             "YIREN_MCP_DB_PATH": str(self.db_path),
             "YIREN_MCP_ARTIFACT_ROOT": str(self.artifact_root),
+            **({"YIREN_MCP_MEMORY_ROOT": str(self.memory_root)} if self.memory_root else {}),
             "YIREN_MCP_WORKSPACE_ROOT": str(Path.cwd().resolve()),
             "YIREN_MCP_MISSION_ID": mission_id,
             "YIREN_MCP_AGENT_ID": agent_id,

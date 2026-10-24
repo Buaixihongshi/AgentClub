@@ -108,6 +108,7 @@ def environment(checkout, profile, *, real=False, providers="codex", backend=0, 
         "YIREN_CONFIG_DIR": str(config),
         "YIREN_DATABASE_PATH": str(state / "data/yirenhub.sqlite3"),
         "YIREN_ARTIFACT_ROOT": str(state / "artifacts"),
+        "YIREN_MEMORY_ROOT": str(state / "data/memory"),
         "YIREN_RUNTIME_DIR": str(state / "runtime"),
         "YIREN_MAINTENANCE_WORKTREE_ROOT": str(state / "maintenance-worktrees"),
         "YIREN_USE_FAKE_CLI": ("true" if inherited["runtime"]["use_fake_cli"] else "false") if inherited else ("false" if real else "true"),
@@ -119,7 +120,7 @@ def environment(checkout, profile, *, real=False, providers="codex", backend=0, 
     # Quick-start compatibility: retain local users' existing data/config;
     # managed development/alpha/runtime always use fully isolated state.
     if profile == "local":
-        for key, value in {"DATABASE_PATH": "data/yirenhub.sqlite3", "CONFIG_DIR": "config", "ARTIFACT_ROOT": "artifacts"}.items():
+        for key, value in {"DATABASE_PATH": "data/yirenhub.sqlite3", "CONFIG_DIR": "config", "ARTIFACT_ROOT": "artifacts", "MEMORY_ROOT": "data/memory"}.items():
             env["YIREN_" + key] = str(checkout / value)
     return env
 

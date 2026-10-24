@@ -926,3 +926,27 @@ export interface SharedWorkBoardView {
   contracts: WorkContract[]; tasks: SharedWorkTask[]; workspace_root: string; current_head?: string;
   events: { id: string; action: string; actor: string; created_at: string; task_id?: string; mission_id?: string; reason?: string }[];
 }
+export interface MemoryEntryView {
+  id: string; agent_id: string; title: string; tags: string[];
+  status: 'active' | 'forgotten' | string; revision: number;
+  created_at: string; updated_at: string; source_refs: string[]; body: string;
+}
+export interface MemoryAgentSummary {
+  id: string; display_name: string; role: string; active: number; forgotten: number;
+}
+export interface MemoryConsistency {
+  files: number; indexed: number; stale: number; missing_files: number;
+  applied: boolean; active_by_agent: Record<string, number>;
+}
+export interface MemoryOverviewView {
+  memory_root: string; consistency: MemoryConsistency; agents: MemoryAgentSummary[];
+}
+export interface MemoryCheckpointView {
+  conversation_id: string; agent_id: string; text: string;
+  source_message_ids: string[]; cursor_event_id: number; updated_at: string;
+}
+export interface MemoryHandoverView {
+  id: string; agent_id: string; reason: string; previous: string; current: string;
+  mission_id: string | null; conversation_id: string | null;
+  acknowledged: boolean; created_at: string; acknowledged_at: string | null;
+}
