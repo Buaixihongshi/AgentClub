@@ -10,6 +10,7 @@ import pytest
 from scripts import environment_cli as cli
 from scripts import environment_common as common
 from scripts import environment_supervisor as supervisor
+from scripts import environment_cli_config as cli_config
 
 
 def git(root, *args):
@@ -91,6 +92,80 @@ def test_state_isolation_and_explicit_real_mode(tmp_path, monkeypatch):
     assert dev["YIREN_DEMO_ONLY"] == "true" and real["YIREN_DEMO_ONLY"] == "false"
     assert json.loads((config / "cli-providers.json").read_text()) == providers
     assert real["YIREN_BACKEND_ORIGIN"] == "http://127.0.0.1:8400"
+
+
+@pytest.fixture
+def daily_cli(source_repo):
+    config = source_repo / 'config'
+    config.mkdir()
+    agents = {'agents': [{'id': 'planner', 'default_provider_id': 'codex', 'fallback_provider_ids': []},
+                         {'id': 'designer', 'default_provider_id': 'codex', 'fallback_provider_ids': []}]}
+    providers = [{'id': 'fake', 'label': 'Demo', 'command': 'fake', 'enabled': True},
+                 {'id': 'codex', 'label': 'Codex', 'command': 'codex', 'args': ['exec'], 'enabled': False},
+                 {'id': 'antigravity', 'label': 'AGY', 'command': 'agy', 'args': ['-p'], 'enabled': False}]
+    for path, data in ((config / 'agents.json', agents), (config / 'cli-providers.json', providers)):
+        path.write_text(json.dumps(data))
+    state = common.home(source_repo) / 'runtime-state'
+    common.write_json(state / 'config/agents.json', agents)
+    common.write_json(state / 'config/cli-providers.json', providers)
+    overrides = {'runtime': {'use_fake_cli': False, 'cli_timeout': 600},
+        'providers': {'codex': {'enabled': True}, 'antigravity': {'enabled': True}},
+        'agents': {'designer': {'default_provider_id': 'antigravity', 'fallback_provider_ids': ['codex'],
+            'provider_models': {'antigravity': 'daily-model', 'api-private': 'private-model'}}},
+        'connections': {'api-private': {'key_ref': 'private-key-reference', 'base_url': 'https://private.invalid'}}}
+    common.write_json(state / 'data/hub_settings.json', overrides)
+    (state / 'data/daily-conversations.sqlite3').write_bytes(b'daily data must never be copied')
+    return source_repo, state
+
+
+def test_alpha_inherits_effective_daily_cli_without_copying_data_or_connections(daily_cli):
+    root, source = daily_cli
+    before = {p: p.read_bytes() for p in source.rglob('*') if p.is_file()}
+    env = common.environment(root, 'alpha', inherit_cli=True, backend=8300, frontend=5176)
+    state = root / '.yiren/alpha'
+    settings = json.loads((state / 'data/hub_settings.json').read_text())
+    assert env['YIREN_USE_FAKE_CLI'] == 'false' and env['YIREN_DEMO_ONLY'] == 'false'
+    assert env['YIREN_DATABASE_PATH'] != str(source / 'data/yirenhub.sqlite3')
+    assert settings['agents']['designer']['default_provider_id'] == 'antigravity'
+    assert settings['agents']['designer']['fallback_provider_ids'] == ['codex']
+    assert settings['agents']['designer']['provider_models'] == {'antigravity': 'daily-model'}
+    assert settings['runtime']['cli_timeout'] == 600
+    assert settings['runtime']['maintenance_enabled'] is False
+    assert 'connections' not in settings
+    assert not (state / 'data/daily-conversations.sqlite3').exists()
+    assert all(p.read_bytes() == raw for p, raw in before.items())
+    assert (state / 'data/hub_settings.json').stat().st_mode & 0o777 == 0o600
+
+
+def test_alpha_refreshes_daily_routes_on_next_launch_but_keeps_its_own_state(daily_cli):
+    root, source = daily_cli
+    common.environment(root, 'alpha', inherit_cli=True)
+    state = root / '.yiren/alpha'
+    (state / 'data/keep.sqlite3').write_bytes(b'alpha history')
+    settings_path = source / 'data/hub_settings.json'
+    settings = json.loads(settings_path.read_text())
+    settings['agents']['designer']['default_provider_id'] = 'codex'
+    common.write_json(settings_path, settings)
+    common.environment(root, 'alpha', inherit_cli=True)
+    assert json.loads((state / 'data/hub_settings.json').read_text())['agents']['designer']['default_provider_id'] == 'codex'
+    assert (state / 'data/keep.sqlite3').read_bytes() == b'alpha history'
+    assert common.state_path(root, 'alpha', real=True) == state
+
+
+def test_cli_inheritance_refuses_unknown_api_route_without_replacing_it_with_codex(daily_cli):
+    root, source = daily_cli
+    path = source / 'data/hub_settings.json'
+    settings = json.loads(path.read_text())
+    settings['agents']['designer']['default_provider_id'] = 'api-private'
+    common.write_json(path, settings)
+    with pytest.raises(common.EnvironmentError, match='non-CLI connection'):
+        common.environment(root, 'alpha', inherit_cli=True)
+    assert not (root / '.yiren/alpha/data/hub_settings.json').exists()
+
+
+def test_cli_inheritance_refuses_missing_daily_config(source_repo):
+    with pytest.raises(common.EnvironmentError, match='missing'):
+        cli_config.runtime_cli_snapshot(source_repo)
 
 
 def test_conflicting_listener_is_never_killed_and_parallel_ports_are_distinct():

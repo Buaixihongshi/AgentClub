@@ -15,7 +15,7 @@ import sys
 import tempfile
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -207,12 +207,14 @@ def claude_provider_environment(env):
 
 
 class DeliberationCLIAdapter:
-    def __init__(self, config_dir, timeout, provider_overrides, *, model="", progress_check_interval=PROGRESS_CHECK_SECONDS):
+    def __init__(self, config_dir, timeout, provider_overrides, *, model="", progress_check_interval=PROGRESS_CHECK_SECONDS,
+                 work_context=None):
         self.config_dir = config_dir
         self.timeout = timeout
         self.provider_overrides = provider_overrides
         self.model = model
         self.progress_check_interval = progress_check_interval
+        self.work_context = work_context
 
     def run_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):
         progress = ToolResultDeadline(self.timeout, check_interval=self.progress_check_interval)
@@ -226,7 +228,7 @@ class DeliberationCLIAdapter:
         basename = Path(provider.command).name
         if basename not in {"codex", "claude", "agy"}:
             return TurnOutcome(status=TurnStatus.BLOCKED, summary="isolation_not_supported for this CLI")
-        with tempfile.TemporaryDirectory(prefix="acv2-", dir="/tmp") as temp:
+        with tempfile.TemporaryDirectory(prefix="acv2-", dir="/tmp") as temp, ExitStack() as cleanup:
             directory = Path(temp).resolve()
             with mcp_bridge(directory, tools, mission_id, agent_id, turn_id, provider_id,
                             on_tool_return=lambda: progress.record_result()) as server:
@@ -244,7 +246,7 @@ class DeliberationCLIAdapter:
                     config.write_text(json.dumps({"mcpServers": {"yiren_hub": server}}))
                     settings = directory / 'claude-settings.json'
                     settings.write_text(json.dumps({'disableAllHooks': True}))
-                    args = ["--mcp-config", str(config), "--strict-mcp-config", "--tools", "",
+                    args = ["--mcp-config", str(config), "--strict-mcp-config", "--tools", ("default" if self.work_context else ""),
                             '--setting-sources', '', '--settings', str(settings), *args]
                     if '--no-session-persistence' not in args:
                         args.append('--no-session-persistence')
@@ -269,7 +271,7 @@ class DeliberationCLIAdapter:
                         shutil.copy2(credentials, directory / "auth.json")
                     config = directory / "config.toml"
                     config.write_text(
-                        f'[projects.{json.dumps(str(directory))}]\ntrust_level="trusted"\n'
+                        f'[projects.{json.dumps(str(Path(self.work_context["workspace_root"]) if self.work_context else directory))}]\ntrust_level="trusted"\n'
                         f'[mcp_servers.yiren_hub]\ncommand={json.dumps(server["command"])}\n'
                         f'args={json.dumps(server["args"])}\n'
                     )
@@ -316,13 +318,37 @@ class DeliberationCLIAdapter:
                     basename in {'claude', 'agy'} and any(a in {'-c', '-r'} for a in args)
                 ):
                     return TurnOutcome(status=TurnStatus.BLOCKED, summary='V2 cannot resume an existing CLI conversation')
-                profile.write_text(sandbox_profile(directory, provider.command, auth_paths=auth, protected_paths=[
-                    tools.repository.database_path.resolve().parent, tools.artifact_root.resolve(), Path.cwd().resolve()],
-                    loopback_ports=loopback_ports))
+                if self.work_context:
+                    from backend.app.work.runtime import profile as work_profile
+                    work = self.work_context
+                    readonly = work['task']['attempts'][-1]['stage'] in {'review', 'reconcile', 'handoff'}
+                    db_path = tools.repository.database_path.resolve()
+                    profile.write_text(work_profile(directory, provider.command, Path(work['workspace_root']),
+                        delivery=work['authorization']['delivery'], readonly=readonly,
+                        protected_paths=[db_path, str(db_path) + '-wal', str(db_path) + '-shm', tools.artifact_root.resolve()],
+                        auth_paths=auth, loopback_ports=loopback_ports))
+                else:
+                    profile.write_text(sandbox_profile(directory, provider.command, auth_paths=auth, protected_paths=[
+                        tools.repository.database_path.resolve().parent, tools.artifact_root.resolve(), Path.cwd().resolve()],
+                        loopback_ports=loopback_ports))
                 command = ["/usr/bin/sandbox-exec", "-f", str(profile), provider.command,
                            *prompt_arguments(basename, args, prompt)]
-                proc = subprocess.Popen(command, cwd=directory, env=env, stdin=subprocess.DEVNULL,
+                proc = subprocess.Popen(command, cwd=Path(self.work_context['workspace_root']) if self.work_context else directory,
+                                        env=env, stdin=subprocess.DEVNULL,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                if self.work_context:
+                    from backend.app.adapters.subprocess_cli import kill_process_tree
+                    cleanup.callback(kill_process_tree, proc)
+                    read_fd, write_fd = os.pipe()
+                    try:
+                        subprocess.Popen([sys.executable, str(Path(__file__).with_name('process_watchdog.py')),
+                                          str(read_fd), str(proc.pid)], pass_fds=(read_fd,), stdin=subprocess.DEVNULL,
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                    finally:
+                        os.close(read_fd)
+                    cleanup.callback(os.close, write_fd)
+                    from backend.app.work.adaptive import AdaptiveWork
+                    AdaptiveWork(tools.repository, self.work_context['workspace_root']).record_process(mission_id, proc.pid)
                 progress = ToolResultDeadline(self.timeout, check_interval=self.progress_check_interval)
                 terminated = None
                 while True:
@@ -330,12 +356,17 @@ class DeliberationCLIAdapter:
                         stdout, stderr = proc.communicate(timeout=min(.25, max(.01, progress.remaining())))
                         break
                     except subprocess.TimeoutExpired:
-                        from backend.app.orchestration.deliberation import Deliberation
-                        policy = Deliberation(tools.repository)
-                        state = policy.state(tools.repository.get_mission(mission_id))
-                        cancelled = state['pending_control'] == 'stop' or state['phase'] == 'ended'
+                        if self.work_context:
+                            from backend.app.work.service import SharedWork
+                            current_work = SharedWork(tools.repository).execution_context(mission_id)
+                            cancelled = not current_work or current_work['task']['status'] == 'cancelled'
+                        else:
+                            from backend.app.orchestration.deliberation import Deliberation
+                            policy = Deliberation(tools.repository)
+                            state = policy.state(tools.repository.get_mission(mission_id))
+                            cancelled = state['pending_control'] == 'stop' or state['phase'] == 'ended'
                         extension = progress.check()
-                        if (extension and not cancelled and progress.remaining() > 0
+                        if (not self.work_context and extension and not cancelled and progress.remaining() > 0
                                 and state['leases'][turn_id]['status'] == 'running'):
                             policy.renew_turn_lease(mission_id, agent_id, turn_id, provider_id,
                                                     tools.lease_token, progress.remaining() + 30)
@@ -368,15 +399,24 @@ class DeliberationCLIAdapter:
                             errors = [errors]
                         stream_errors.extend(str(item) for item in errors if item)
                 _emit_turn_usage(tools.repository, mission_id, agent_id, provider_id, turn_id, usage)
-                from backend.app.orchestration.deliberation import Deliberation
-                accepted = Deliberation(tools.repository).state(tools.repository.get_mission(mission_id))['leases'][turn_id]['status'] == 'submitted'
+                if self.work_context:
+                    from backend.app.work.service import SharedWork
+                    current_work = SharedWork(tools.repository).execution_context(mission_id)
+                    accepted = bool(current_work and current_work['task']['attempts'][-1].get('structured'))
+                    published = any(m.turn_id == turn_id and m.agent_id == agent_id
+                                    for m in tools.repository.list_messages(mission_id))
+                    if not published:
+                        accepted = False
+                else:
+                    from backend.app.orchestration.deliberation import Deliberation
+                    accepted = Deliberation(tools.repository).state(tools.repository.get_mission(mission_id))['leases'][turn_id]['status'] == 'submitted'
                 diagnostic = terminated or '\n'.join([stderr.decode(errors='replace'), *stream_errors])
                 if not accepted and basename == 'agy':
                     log = directory / 'agy.log'
                     if log.is_file():
                         diagnostic += '\n' + log.read_text(errors='replace')[-8000:]
                 code = None if accepted else failure_code(terminated or diagnostic, exit_code=proc.returncode)
-                tools.repository.add_event(mission_id, "discussion.provider_execution", {
+                tools.repository.add_event(mission_id, "adaptive.provider_execution" if self.work_context else "discussion.provider_execution", {
                     **progress.diagnostic(),
                     "turn_id": turn_id, "provider_id": provider_id, "exit_code": proc.returncode,
                     "isolation": "macos-sandbox+host-mcp-bridge", "usage_available": usage is not None,
@@ -385,5 +425,5 @@ class DeliberationCLIAdapter:
                 # Success requires an accepted structured submission, checked by
                 # the runner. stdout never becomes a chat message or a result.
                 error = 'Structured result accepted' if accepted else (private_error_tail(diagnostic) or 'No structured result submitted')
-                return TurnOutcome(status=TurnStatus.COMPLETED if not proc.returncode and not terminated else TurnStatus.BLOCKED,
+                return TurnOutcome(status=TurnStatus.COMPLETED if not proc.returncode and not terminated and (accepted or not self.work_context) else TurnStatus.BLOCKED,
                                    summary=error, failure_code=code, exit_code=proc.returncode)

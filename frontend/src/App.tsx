@@ -221,8 +221,9 @@ export default function App() {
     [turns],
   );
   const runtimeSummary = useMemo(
-    () => buildMissionRuntimeSummary(latestMissionDetail, turns),
-    [latestMissionDetail, turns],
+    () => ({ ...buildMissionRuntimeSummary(latestMissionDetail, turns),
+      ...(convDetail?.work_status_label ? { statusLabel: convDetail.work_status_label } : {}) }),
+    [latestMissionDetail, turns, convDetail?.work_status_label],
   );
 
   async function handleSelectConversation(convId: string) {
@@ -532,6 +533,8 @@ export default function App() {
 
   return (
     <MissionRoomPage
+      hasAutonomousWork={convDetail?.has_autonomous_work}
+      onWorkUpdate={refreshConversationState}
       detail={latestMissionDetail}
       turns={turns}
       agentParticipants={agentParticipants}

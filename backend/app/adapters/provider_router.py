@@ -104,6 +104,20 @@ class ProviderRouterAdapter(CLIAdapter):
         prompt: str,
         tools: MCPTools,
     ) -> TurnOutcome:
+        from backend.app.work.service import SharedWork
+        work_context = (SharedWork(tools.repository, tools.workspace_root).execution_context(mission_id)
+                        if self.database_path is not None else None)
+        if work_context and provider_id != 'fake':
+            if self._api_adapter(agent_id, provider_id):
+                return TurnOutcome(status=TurnStatus.BLOCKED, summary='纯文本 API 尚不支持受管工作工具',
+                                   failure_code='configuration', retryable=False)
+            from backend.app.adapters.deliberation_cli import DeliberationCLIAdapter, isolation_supported
+            if not isolation_supported():
+                tools.repository.add_event(mission_id, 'adaptive.capability_unavailable', {'reason': 'isolation_not_supported'})
+                return TurnOutcome(status=TurnStatus.BLOCKED, summary='当前平台不支持受限工作执行', retryable=False)
+            return DeliberationCLIAdapter(self.config_dir, remaining_timeout(self.cli_timeout), self.provider_overrides,
+                model=self._model_for(agent_id, provider_id), work_context=work_context).run_turn(
+                    mission_id, agent_id, turn_id, provider_id, prompt, tools)
         api = self._api_adapter(agent_id, provider_id)
         if api:
             return api.run_turn(mission_id, agent_id, turn_id, provider_id, prompt, tools)

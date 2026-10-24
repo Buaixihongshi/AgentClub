@@ -1,4 +1,5 @@
 import logging
+import json
 import re
 import threading
 from typing import Optional
@@ -99,6 +100,9 @@ def _conversation_summary(repo: Repository, conversation: Conversation) -> dict:
 
 
 def _conversation_detail(repo: Repository, settings: Settings, conversation: Conversation) -> dict:
+    with repo._transaction() as db:
+        work_row = db.execute("SELECT data FROM work_boards WHERE conversation_id=? AND json_extract(data, '$.protocol')='adaptive_v1'",
+                              (conversation.id,)).fetchone()
     all_missions = repo.list_missions_for_conversation(conversation.id)
     verification_missions = [
         mission for mission in all_missions if is_provider_verification_mission(mission)
@@ -131,7 +135,25 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
         for event in repo.list_events_after(mission.id, 0)
     ]
     annotate_discussion_messages(message_events, missions, history_events, repo)
+    work_status_label = None
+    if work_row:
+        board = json.loads(work_row['data'])
+        roots = [t for t in board['tasks'] if not t['parent_id']]
+        work_missions = {a['mission_id'] for t in board['tasks'] for a in t['attempts']}
+        if roots and latest_mission and latest_mission.id in work_missions:
+            if any(t['active_mission_id'] for t in board['tasks']):
+                work_status_label = '工作执行中'
+            elif any(d['status'] == 'pending' for d in board['decisions']):
+                work_status_label = '等待你的决定'
+            elif all(t['status'] in {'done', 'cancelled'} for t in roots):
+                work_status_label = '工作已交付' if any(t['status'] == 'done' for t in roots) else '工作已取消'
+            elif any(t['paused'] for t in roots):
+                work_status_label = '工作已暂停'
+            else:
+                work_status_label = '工作等待条件'
     return {
+        "has_autonomous_work": bool(work_row),
+        "work_status_label": work_status_label,
         "conversation": conversation.model_dump(mode="json"),
         "missions": [_mission_payload(m) for m in missions],
         "messages": message_events,
@@ -146,28 +168,8 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
 
 
 def _run_mission_in_background(repo: Repository, settings: Settings, mission_id: str, adapter: Optional[CLIAdapter] = None) -> None:
-    from backend.app.api.missions import _build_mission_adapter
-    from backend.app.orchestration.runner import MissionRunner
-    from backend.app.domain.models import MissionStatus
-
-    try:
-        MissionRunner(repo, settings, adapter or _build_mission_adapter(settings)).run(mission_id)
-    except Exception as exc:
-        logger.exception("Mission runner failed for %s", mission_id)
-        mission = repo.get_mission(mission_id)
-        if mission is None:
-            return
-        if mission.room_mode == 'roundtable':
-            Roundtable(repo).fail(mission_id)
-            return
-        failed = mission.model_copy(update={"status": MissionStatus.FAILED, "updated_at": utc_now()})
-        repo.update_mission(failed)
-        repo.add_event(
-            mission_id,
-            "status",
-            {"mission_id": mission_id, "status": MissionStatus.FAILED.value,
-             "summary": "Mission runner failed: {e}".format(e=exc)},
-        )
+    from backend.app.api.missions import _run_mission_in_background as run
+    return run(repo, settings, mission_id, adapter)
 
 
 def build_router(settings: Settings, repository: Repository, adapter_override: Optional[CLIAdapter] = None) -> APIRouter:
@@ -225,7 +227,8 @@ def build_router(settings: Settings, repository: Repository, adapter_override: O
             conversation = repo.get_conversation(conversation_id)
             if update_data.get('status') == ConversationStatus.ARCHIVED:
                 from backend.app.orchestration.deliberation import occupies_conversation
-                if any(occupies_conversation(m) for m in repo.list_missions_for_conversation(conversation_id)):
+                if any(occupies_conversation(m) and not any(e.event_type == 'adaptive.claimed' for e in repo.list_events_after(m.id, 0))
+                       for m in repo.list_missions_for_conversation(conversation_id)):
                     raise DiscussionError('Stop the active mission before archiving')
             updated = conversation.model_copy(update={**update_data, 'updated_at': utc_now()})
             repo.update_conversation(updated)

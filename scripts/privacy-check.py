@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {".git", ".venv", "node_modules", "dist", "__pycache__", ".pytest_cache"}
 FORBIDDEN_DIRS = {
+    ".agenthub",
     ".yiren",
     ".trellis",
     ".claude",

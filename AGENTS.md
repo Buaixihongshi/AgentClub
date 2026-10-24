@@ -10,4 +10,5 @@
 - 遵守 `CONTRIBUTING.md` 的协作者与提交署名要求。Owner approval 的真实来源是 GitHub 当前 head 的状态，不是 PR 正文或本地 JSON。
 - Agent 可准备候选、执行离线检查、创建/更新 PR；不得代所有者运行 Owner release、写批准状态、自行合并或启用自动合并。
 - 实际日常数据导入、激活、回滚及故障恢复由所有者明确执行；可以在临时 fixture 中验证这些路径，不触碰日常实例。
-- 真实 CLI 检查需用户明确选择；默认使用演示/fixture。合并不等于部署授权。
+- development/test 默认使用演示/fixture；alpha 启动时继承日常有效 CLI 配置，任务数据独立。真实验收遵循用户授权，不擅自将所有角色统一成 Codex。合并不等于部署授权。
+- 浏览器操作优先使用 ego-browser，先运行 `ego-browser skill` 读取本机版本指引。

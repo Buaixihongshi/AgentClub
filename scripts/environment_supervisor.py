@@ -78,7 +78,8 @@ def terminate(children):
 
 
 def supervise(root, profile, *, real=False, providers="codex", backend=None, frontend=None,
-              allocate=False, backend_only=False, install=True, reload=None, state=None, open_browser=False, reset_onboarding=False):
+              allocate=False, backend_only=False, install=True, reload=None, state=None, open_browser=False,
+              reset_onboarding=False, inherit_cli=False):
     state = state or state_path(root, profile, real)
     private_dir(state / "runtime")
     with lock(state / "runtime/owner.lock"):
@@ -86,7 +87,7 @@ def supervise(root, profile, *, real=False, providers="codex", backend=None, fro
         with lock(home(root) / ".port-allocation.lock", wait=True):
             backend, frontend = choose_ports(profile, backend, frontend, allocate=allocate, backend_only=backend_only)
             env = environment(root, profile, real=real, providers=providers,
-                              backend=backend, frontend=frontend, state=state)
+                              backend=backend, frontend=frontend, state=state, inherit_cli=inherit_cli)
             instance_id = uuid.uuid4().hex
             token_file = state / "runtime/control.json"
             token = secrets.token_urlsafe(32)
@@ -97,7 +98,8 @@ def supervise(root, profile, *, real=False, providers="codex", backend=None, fro
                 "backend_port": backend, "frontend_port": None if backend_only else frontend,
                 "supervisor_pid": os.getpid(), "supervisor_started_at": process_start(os.getpid()),
                 "token_file": str(token_file), "status": "starting", "state": str(state),
-                "real_cli": real,
+                "real_cli": env["YIREN_USE_FAKE_CLI"] == "false",
+                "cli_config_source": "runtime" if inherit_cli else "isolated",
             }
             path = record_path(root, profile, real, state)
             write_json(path, record)

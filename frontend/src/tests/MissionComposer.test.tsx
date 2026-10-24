@@ -73,7 +73,7 @@ describe("MissionComposer mention autocomplete", () => {
   it("shows all three agents when @ is typed", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.type(screen.getByLabelText("任务输入"), "@");
+    await user.type(screen.getByLabelText("消息输入"), "@");
 
     const listbox = screen.getByRole("listbox", { name: "Agent 候选" });
     const options = within(listbox).getAllByRole("option");
@@ -86,7 +86,7 @@ describe("MissionComposer mention autocomplete", () => {
   it("filters to 王也 when @王 is typed", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.type(screen.getByLabelText("任务输入"), "@王");
+    await user.type(screen.getByLabelText("消息输入"), "@王");
 
     const listbox = screen.getByRole("listbox", { name: "Agent 候选" });
     const options = within(listbox).getAllByRole("option");
@@ -98,12 +98,12 @@ describe("MissionComposer mention autocomplete", () => {
     const user = userEvent.setup();
     const onConfirmationsChange = vi.fn();
     render(<Harness onConfirmationsChange={onConfirmationsChange} />);
-    await user.type(screen.getByLabelText("任务输入"), "@");
+    await user.type(screen.getByLabelText("消息输入"), "@");
 
     const listbox = screen.getByRole("listbox", { name: "Agent 候选" });
     await user.click(within(listbox).getAllByRole("option")[2]);
 
-    expect(screen.getByLabelText("任务输入")).toHaveValue("@王也 ");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("@王也 ");
     expect(onConfirmationsChange).toHaveBeenLastCalledWith([
       { agentId: "wangye", text: "@王也 ", start: 0, end: 4 },
     ]);
@@ -113,19 +113,19 @@ describe("MissionComposer mention autocomplete", () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);
-    await user.type(screen.getByLabelText("任务输入"), "@");
+    await user.type(screen.getByLabelText("消息输入"), "@");
 
     await user.keyboard("{ArrowDown}");
     await user.keyboard("{Enter}");
 
-    expect(screen.getByLabelText("任务输入")).toHaveValue("@冯宝宝 ");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("@冯宝宝 ");
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("Escape closes the menu", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.type(screen.getByLabelText("任务输入"), "@");
+    await user.type(screen.getByLabelText("消息输入"), "@");
     expect(screen.getByRole("listbox")).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
@@ -136,10 +136,10 @@ describe("MissionComposer mention autocomplete", () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);
-    await user.type(screen.getByLabelText("任务输入"), "@");
+    await user.type(screen.getByLabelText("消息输入"), "@");
 
     await user.keyboard("{Tab}");
-    expect(screen.getByLabelText("任务输入")).toHaveValue("@张楚岚 ");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("@张楚岚 ");
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -148,7 +148,7 @@ describe("MissionComposer mention autocomplete", () => {
     const onSubmit = vi.fn();
     const onChange = vi.fn();
     render(<Harness onSubmit={onSubmit} onChange={onChange} />);
-    const textarea = screen.getByLabelText("任务输入");
+    const textarea = screen.getByLabelText("消息输入");
     await user.type(textarea, "@");
     expect(screen.getByRole("listbox")).toBeInTheDocument();
     const changeCountBefore = onChange.mock.calls.length;
@@ -165,7 +165,7 @@ describe("MissionComposer mention autocomplete", () => {
     const onSubmit = vi.fn();
     render(<Harness initialValue="hello" onSubmit={onSubmit} />);
 
-    await user.click(screen.getByRole("button", { name: "创建任务" }));
+    await user.click(screen.getByRole("button", { name: "发送" }));
     expect(onSubmit).toHaveBeenCalled();
   });
 
@@ -174,7 +174,7 @@ describe("MissionComposer mention autocomplete", () => {
     const onSubmit = vi.fn();
     render(<Harness initialValue="hello" onSubmit={onSubmit} />);
 
-    screen.getByLabelText("任务输入").focus();
+    screen.getByLabelText("消息输入").focus();
     await user.keyboard("{Enter}");
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
@@ -184,7 +184,7 @@ describe("MissionComposer mention autocomplete", () => {
     const onSubmit = vi.fn();
     render(<Harness initialValue="hello" onSubmit={onSubmit} />);
 
-    screen.getByLabelText("任务输入").focus();
+    screen.getByLabelText("消息输入").focus();
     await user.keyboard("{Shift>}{Enter}{/Shift}");
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -197,7 +197,7 @@ describe("MissionComposer mention autocomplete", () => {
   it("shows the skill menu when / is typed at the start", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.type(screen.getByLabelText("任务输入"), "/");
+    await user.type(screen.getByLabelText("消息输入"), "/");
 
     const listbox = screen.getByRole("listbox", { name: "技能命令" });
     expect(within(listbox).getAllByRole("option")).toHaveLength(1);
@@ -207,7 +207,7 @@ describe("MissionComposer mention autocomplete", () => {
   it("does not open the skill menu after a member mention", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.type(screen.getByLabelText("任务输入"), "@王也/");
+    await user.type(screen.getByLabelText("消息输入"), "@王也/");
 
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
@@ -216,10 +216,10 @@ describe("MissionComposer mention autocomplete", () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);
-    await user.type(screen.getByLabelText("任务输入"), "/");
+    await user.type(screen.getByLabelText("消息输入"), "/");
 
     await user.keyboard("{Tab}");
-    expect(screen.getByLabelText("任务输入")).toHaveValue("/discuss ");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("/discuss ");
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -227,17 +227,17 @@ describe("MissionComposer mention autocomplete", () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);
-    await user.type(screen.getByLabelText("任务输入"), "/");
+    await user.type(screen.getByLabelText("消息输入"), "/");
 
     await user.keyboard("{Enter}");
-    expect(screen.getByLabelText("任务输入")).toHaveValue("/discuss ");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("/discuss ");
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("renders the demo-styled member option with avatar, pinyin and role", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.type(screen.getByLabelText("任务输入"), "@");
+    await user.type(screen.getByLabelText("消息输入"), "@");
 
     const listbox = screen.getByRole("listbox", { name: "Agent 候选" });
     const first = within(listbox).getAllByRole("option")[0];
@@ -249,7 +249,7 @@ describe("MissionComposer mention autocomplete", () => {
   it("renders the demo-styled skill option with confirm key", async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.type(screen.getByLabelText("任务输入"), "/");
+    await user.type(screen.getByLabelText("消息输入"), "/");
 
     const listbox = screen.getByRole("listbox", { name: "技能命令" });
     const option = within(listbox).getByRole("option");
@@ -268,14 +268,14 @@ describe("MissionComposer mention autocomplete", () => {
         onConfirmationsChange={(m) => confirmationsLog.push(m)}
       />,
     );
-    const textarea = screen.getByLabelText("任务输入");
+    const textarea = screen.getByLabelText("消息输入");
 
     await user.type(textarea, "@王");
     await user.keyboard("{Tab}");
-    expect(screen.getByLabelText("任务输入")).toHaveValue("@王也 ");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("@王也 ");
 
     await user.click(screen.getByRole("button", { name: "send" }));
-    expect(screen.getByLabelText("任务输入")).toHaveValue("");
+    expect(screen.getByLabelText("消息输入")).toHaveValue("");
     expect(sent[0].confirmations).toEqual([
       { agentId: "wangye", text: "@王也 ", start: 0, end: 4 },
     ]);

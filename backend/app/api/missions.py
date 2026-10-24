@@ -100,6 +100,12 @@ def _run_mission_in_background(
                 "summary": "Mission runner failed: {error}".format(error=exc),
             },
         )
+    finally:
+        from backend.app.work.service import SharedWork
+        work = SharedWork(repo)
+        context = work.execution_context(mission_id)
+        if context:
+            work.finish(repo.get_mission(mission_id).conversation_id, mission_id)
 
 
 def build_router(

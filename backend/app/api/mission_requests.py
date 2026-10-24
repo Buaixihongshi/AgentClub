@@ -7,7 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, StrictInt, model_validator
 
 from backend.app.domain.agent_registry import get_agent_registry
-from backend.app.domain.models import Conversation, DiscussionConfig, Message, MessageRole, Mission, utc_now
+from backend.app.domain.models import Conversation, DiscussionConfig, Message, MessageRole, Mission, MissionStatus, utc_now
 from backend.app.orchestration.roundtable import ACTIVE, DiscussionError
 
 
@@ -40,6 +40,7 @@ class MissionRequest(BaseModel):
     room_mode: Literal['task', 'roundtable'] = 'task'
     discussion: Optional[DiscussionRequest] = None
     request_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    work_mode: Optional[Literal['document', 'development', 'online']] = None
 
     @model_validator(mode='before')
     @classmethod
@@ -76,6 +77,8 @@ class MissionRequest(BaseModel):
     @model_validator(mode='after')
     def validate_mode(self):
         if self.room_mode == 'roundtable':
+            if self.work_mode is not None:
+                raise ValueError('Discussion does not authorize autonomous execution')
             if self.discussion is None:
                 raise ValueError('Roundtable requires discussion configuration')
             if self.discussion.participant_ids is None and self.skill != 'discuss':
@@ -118,6 +121,9 @@ def ensure_available(repo, conversation):
 
 def _normalize_legacy_fingerprint(fingerprint):
     """Only V1 records predate these two discussion default fields."""
+    fingerprint = dict(fingerprint)
+    if fingerprint.get('work_mode') is None:
+        fingerprint.pop('work_mode', None)
     discussion = fingerprint.get('discussion')
     if (fingerprint.get('room_mode') != 'roundtable' or fingerprint.get('skill') is not None
             or not isinstance(discussion, dict) or discussion.get('protocol', 'roundtable_v1') != 'roundtable_v1'):
@@ -132,6 +138,8 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
     scope = f'conversation:{conversation_id}' if conversation_id else 'new_conversation'
     # Existing idempotency records predate the optional skill field.
     excluded = {'conversation_id', 'skill'} if payload.skill is None else {'conversation_id'}
+    if payload.work_mode is None:
+        excluded.add('work_mode')
     fingerprint = payload.model_dump(exclude=excluded)
     with repo._transaction(immediate=True) as db:
         if payload.request_id:
@@ -212,11 +220,47 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
         else:
             conversation = Conversation(id=f'c_{uuid4().hex[:12]}', title=payload.title or payload.goal[:40])
             repo.create_conversation(conversation)
+        if payload.room_mode == 'task' and not payload.work_mode:
+            if any(t.get('active_mission_id') or t.get('release', {}).get('status') == 'running'
+                   for row in db.execute('SELECT data FROM work_boards') for t in json.loads(row['data'])['tasks']):
+                raise DiscussionError('工作区正在执行共享工作，请等待当前动作结束或在工作卡中暂停后续动作')
         mission = Mission(id=f'm_{uuid4().hex}', title=payload.title or payload.goal, goal=payload.goal,
                           conversation_id=conversation.id, room_mode=payload.room_mode, discussion=config,
                           skill=payload.skill,
                           target_agent_id=targets[0] if targets else None, target_agent_ids=targets)
         repo.create_mission(mission)
+        from backend.app.work.service import SharedWork, WorkError
+        from backend.app.work.decisions import match_answer
+        work = SharedWork(repo)
+        existing_work = work.read(conversation.id) if payload.room_mode == 'task' else None
+        answer = match_answer(existing_work, payload.goal) if existing_work and existing_work.get('protocol') == 'adaptive_v1' else None
+        if answer:
+            try:
+                work.command(conversation.id, 'decide', answer, existing_work['revision'], operation_id='answer:' + mission.id)
+            except WorkError as exc:
+                raise DiscussionError(str(exc), exc.status_code) from exc
+            mission = mission.model_copy(update={'status': MissionStatus.COMPLETED})
+            repo.update_mission(mission)
+            repo.add_event(mission.id, 'adaptive.control_received', {'decision_id': answer['decision_id'], 'option_id': answer['option_id']})
+        elif payload.work_mode:
+            from backend.app.work.service import SharedWork, WorkError
+            from backend.app.work.adaptive import AdaptiveWork
+            work = SharedWork(repo)
+            view = work.read(conversation.id)
+            owner = targets[0] if targets else registry.ids()[0]
+            # Source and authority are taken from the human API request, not
+            # parameters supplied by a model tool call.
+            try:
+                view = work.command(conversation.id, 'create_work', {
+                    'title': payload.title or payload.goal[:200], 'owner_id': owner,
+                    'agreement': {'source': payload.goal, 'goal': payload.goal, 'scope': payload.goal,
+                        'delivery': payload.work_mode, 'criteria': [{'id': 'AC-1', 'text': '完成原始请求并用实际产物和操作结果验证'}]}},
+                    view['revision'], operation_id='intake:' + mission.id)
+                mission = mission.model_copy(update={'target_agent_id': owner, 'target_agent_ids': [owner]})
+                repo.update_mission(mission)
+                AdaptiveWork(repo).adopt_mission(conversation.id, view['tasks'][-1]['id'], mission)
+            except WorkError as exc:
+                raise DiscussionError(str(exc), exc.status_code) from exc
         repo.add_message(Message(id=f'msg_{uuid4().hex}', mission_id=mission.id, conversation_id=conversation.id,
                                  role=MessageRole.USER, content=payload.goal))
         conversation = conversation.model_copy(update={'updated_at': utc_now()})
