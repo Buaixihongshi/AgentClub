@@ -5,6 +5,7 @@ import { currentReview, decisionKinds, decisionMatches, eventNames, pendingDecis
 import { WorkArtifacts } from './WorkArtifacts';
 import { WorkDialog } from './WorkDialog';
 import { WorkAgreementForm } from './WorkAgreementForm';
+import { WorkEnvironment } from './WorkEnvironment';
 
 export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, error, archived, command, requestedDecision, onDecisionClosed, onDiscuss }: {
   board: SharedWorkBoardView; conversationId: string; goal: string;
@@ -27,6 +28,7 @@ export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, er
   const agreement = board.contracts.find(c => c.id === root?.contract_id);
   const label = (id: string) => id === 'human' ? '你' : id === 'host' ? '系统' : agents.find(a => a.id === id)?.display_name ?? id;
   const related = root ? board.tasks.filter(t => t.id === root.id || t.root_id === root.id) : [];
+  const elsewhere = board.execution?.active.find(t => !related.some(r => r.id === t.task_id));
   const pending = root ? pendingDecisions(board, root) : [];
   const activities = workActivities(board).filter(e => !root || related.some(t => t.id === e.taskId));
   const priority = (e: WorkActivity) => e.decisionId || e.action === 'review' ? 3 : e.action === 'refine_agreement' || (e.action === 'submit' && board.tasks.some(t => t.id === e.taskId && t.parent_id)) ? 2 : 1;
@@ -53,6 +55,7 @@ export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, er
     {roots.length > 1 && <label className="work-task-picker">当前任务<select value={root?.id} onChange={e => setSelected(e.target.value)}>{roots.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>}
     {error && <p className="work-error" role="alert">{error}</p>}
     {root && <>
+      {elsewhere && root.status === 'ready' && !root.paused && <p className="work-notice" role="status">排队中：另一项工作「{elsewhere.title}」正在执行，完成后会继续。</p>}
       {pending.length ? <div className="work-attention-list">{pending.map(d => <div className="work-attention" key={d.id}>
         <Clock3 size={25} strokeWidth={1.6} /><div><h3>待你处理 · {decisionKinds[d.kind] || '任务决定'}</h3><p>{taskSummary(root, board, label)}</p></div>
         <button className="work-primary" onClick={() => setDecisionId(d.id)}>查看并决定 <ArrowRight size={16} /></button>
@@ -60,6 +63,7 @@ export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, er
         {root.status === 'waiting' && ['execution_failed', 'external', 'recovery', 'release_unknown'].includes(root.waiting_reason ?? '') && <button disabled={busy || !!root.active_mission_id} onClick={() => void command('retry', { task_id: root.id })}>核对后重试</button>}
         {['budget', 'no_progress'].includes(root.waiting_reason ?? '') && <button disabled={busy} onClick={() => void command('adjust_budget', { task_id: root.id, max_attempts: Math.min(200, (root.max_attempts ?? 20) + 10) })}>增加 10 次预算</button>}
       </div>}
+      <WorkEnvironment task={root} conversationId={conversationId} busy={busy} command={command} />
       <section className="work-section"><div className="work-section-heading"><h3>关键记录</h3><button className="work-text-button" onClick={() => setShowAll(true)}>全部记录 <ArrowRight size={15} /></button></div>
         {activities.length ? <ol className="work-activity-list">{(showEarlier ? activities : activities.filter(e => highlighted.has(e.id))).map(e => <li key={e.id}><button onClick={() => setActivity(e)}>
           <span className={`work-person work-person-${e.actor}`} aria-hidden="true">{label(e.actor).slice(0, 1)}</span><strong>{label(e.actor)}</strong><span>{e.title}</span><time dateTime={e.createdAt}>{formatTime(e.createdAt)}</time><ChevronRight size={16} />

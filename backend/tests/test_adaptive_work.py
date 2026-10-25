@@ -20,11 +20,22 @@ def adaptive(repository, tmp_path):
     root = tmp_path / 'project'
     root.mkdir()
     (root / 'docs').mkdir()
-    subprocess.run(['git', 'init', '-q', str(root)], check=True)
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(root)], check=True)
     subprocess.run(['git', '-C', str(root), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
                     'commit', '--allow-empty', '-qm', 'initial'], check=True)
     repository.create_conversation(Conversation(id='c_work', title='自主工作'))
     return AdaptiveWork(repository, root, check_timeout=1)
+
+
+def workspace(work):
+    root = next(t for t in work.read('c_work')['tasks'] if not t['parent_id'])
+    return Path(root['environment']['workspace_dir'])
+
+
+def put(work, rel, text):
+    target = workspace(work) / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
 
 
 def call(work, action, data=None, *, actor='human', mission=None, operation_id=None, revision=None):
@@ -55,7 +66,9 @@ def finish(work, mission, success=True):
 
 
 def submit(work, mission, task_id, path='docs/result.md', text='真实结果', *, kind='code', reviewer_id=None):
-    (work.root / path).write_text(text)
+    target = workspace(work) / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text)
     criteria = next(t['criterion_ids'] for t in work.read('c_work')['tasks'] if t['id'] == task_id)
     return call(work, 'submit', {'task_id': task_id, 'kind': kind, 'reviewer_id': reviewer_id,
         'summary': '已交付并核对结果', 'artifact_paths': [path],
@@ -81,7 +94,7 @@ def test_submission_without_kind_cannot_silently_make_designer_a_code_author(ada
     from pydantic import ValidationError
     task_id = create(adaptive)
     mission = run(adaptive)
-    (adaptive.root / 'docs/design.html').write_text('<html>设计候选</html>')
+    put(adaptive, 'docs/design.html', '<html>设计候选</html>')
     with pytest.raises(ValidationError, match='kind'):
         call(adaptive, 'submit', {'task_id': task_id, 'summary': '设计已完成',
             'artifact_paths': ['docs/design.html'], 'observations': [{'id': 'AC-1', 'text': '已核对设计'}]},
@@ -157,10 +170,10 @@ def test_high_risk_review_and_stale_version_cannot_approve(adaptive):
     task = adaptive.read('c_work')['tasks'][0]
     data = {'task_id': task_id, 'candidate_id': task['candidate']['id'], 'criterion_ids': ['AC-1'],
             'decision': 'approved', 'note': '对照约定和真实文件逐项验证'}
-    (adaptive.root / 'docs/result.md').write_text('变更')
+    put(adaptive, 'docs/result.md', '变更')
     with pytest.raises(WorkError, match='变化'):
         call(adaptive, 'review', data, actor=reviewer.target_agent_id, mission=reviewer)
-    (adaptive.root / 'docs/result.md').write_text('真实结果')
+    put(adaptive, 'docs/result.md', '真实结果')
     call(adaptive, 'review', data, actor=reviewer.target_agent_id, mission=reviewer)
     assert finish(adaptive, reviewer)['tasks'][0]['status'] == 'done'
 
@@ -180,7 +193,7 @@ def test_author_cannot_self_review_or_change_identity(adaptive):
 def test_design_decision_version_and_duplicate_acceptance(adaptive):
     task_id = create(adaptive)
     mission = run(adaptive)
-    (adaptive.root / 'docs/ui.md').write_text('A / B 两版界面')
+    put(adaptive, 'docs/ui.md', 'A / B 两版界面')
     call(adaptive, 'request_decision', {'task_id': task_id, 'kind': 'design', 'question': '选择哪版？',
         'options': [{'id': 'A', 'text': '方案 A'}, {'id': 'B', 'text': '方案 B'}], 'artifact_paths': ['docs/ui.md']},
         actor='chulan', mission=mission)
@@ -197,11 +210,11 @@ def test_design_decision_version_and_duplicate_acceptance(adaptive):
 def test_changed_design_does_not_consume_old_approval(adaptive):
     task_id = create(adaptive)
     mission = run(adaptive)
-    (adaptive.root / 'docs/ui.md').write_text('原版')
+    put(adaptive, 'docs/ui.md', '原版')
     call(adaptive, 'request_decision', {'task_id': task_id, 'question': '选 A？', 'options': [{'id': 'A', 'text': 'A'}],
          'artifact_paths': ['docs/ui.md']}, actor='chulan', mission=mission)
     board = finish(adaptive, mission)
-    (adaptive.root / 'docs/ui.md').write_text('新版')
+    put(adaptive, 'docs/ui.md', '新版')
     board = call(adaptive, 'decide', {'decision_id': board['decisions'][0]['id'], 'option_id': 'A'})
     assert board['decisions'][0]['status'] == 'stale'
     assert board['tasks'][0]['status'] == 'ready'
@@ -362,7 +375,7 @@ def test_live_orphan_process_prevents_recovery_writes(adaptive):
 def test_changed_workspace_recovers_as_readonly_reconciliation(adaptive):
     create(adaptive)
     run(adaptive)
-    (adaptive.root / 'docs/partial.md').write_text('已经写入，不得重放')
+    put(adaptive, 'docs/partial.md', '已经写入，不得重放')
     with adaptive.repo._transaction(immediate=True) as db:
         board = adaptive._load(db, 'c_work')
         board['tasks'][0]['attempts'][-1]['host_pid'] = 99999999
@@ -376,16 +389,17 @@ def test_changed_workspace_recovers_as_readonly_reconciliation(adaptive):
 
 def test_configured_release_executes_only_approved_candidate_and_queries_actual_state(adaptive):
     from backend.app.work.releases import process
-    (adaptive.root / '.gitignore').write_text('.agenthub/\n')
-    config = adaptive.root / '.agenthub/work.local.json'
+    task_id = create(adaptive, delivery='online')
+    mission = run(adaptive)
+    # The project release entry lives inside the task's own bound workspace.
+    put(adaptive, '.gitignore', '.agenthub/\n')
+    config = workspace(adaptive) / '.agenthub/work.local.json'
     config.parent.mkdir()
     # Deployment counter lives in ignored adapter storage, not candidate code.
     counter = config.parent / 'calls'
     config.write_text(json.dumps({'release': {'environment': 'staging', 'command': [sys.executable, '-c',
         f'from pathlib import Path; p=Path({str(counter)!r}); p.write_text(p.read_text()+"x" if p.exists() else "x")'],
         'verify_command': [sys.executable, '-c', 'import os,json; print(json.dumps({"candidate_id":os.environ["AGENTHUB_CANDIDATE_ID"],"environment":os.environ["AGENTHUB_TARGET_ENVIRONMENT"],"status":"published"}))']}}))
-    task_id = create(adaptive, delivery='online')
-    mission = run(adaptive)
     submit(adaptive, mission, task_id)
     board = finish(adaptive, mission)
     assert not process(adaptive, 'c_work')
@@ -402,15 +416,15 @@ def test_configured_release_executes_only_approved_candidate_and_queries_actual_
 
 def test_unknown_release_queries_once_without_replaying_deployment(adaptive):
     from backend.app.work.releases import process
-    (adaptive.root / '.gitignore').write_text('.agenthub/\n')
-    config = adaptive.root / '.agenthub/work.local.json'
+    task_id = create(adaptive, delivery='online')
+    mission = run(adaptive)
+    put(adaptive, '.gitignore', '.agenthub/\n')
+    config = workspace(adaptive) / '.agenthub/work.local.json'
     config.parent.mkdir()
     counter = config.parent / 'calls'
     config.write_text(json.dumps({'release': {'environment': 'production', 'command': [sys.executable, '-c',
         f'from pathlib import Path; Path({str(counter)!r}).write_text("deployed")'],
         'verify_command': [sys.executable, '-c', 'print("not verified")']}}))
-    task_id = create(adaptive, delivery='online')
-    mission = run(adaptive)
     submit(adaptive, mission, task_id)
     board = finish(adaptive, mission)
     call(adaptive, 'decide', {'decision_id': board['decisions'][0]['id'], 'option_id': 'approve'})
@@ -437,7 +451,7 @@ def test_runner_mcp_delegation_and_integration_flow(adaptive, temp_settings, mon
             if not task['parent_id'] and not task['depends_on']:
                 tools.invoke_agent(mission_id, agent_id, turn_id, 'baobao', '交付可核对的实现文件', provider_id, mode='wait_reply')
             else:
-                (adaptive.root / 'docs/result.md').write_text('真实结果')
+                put(adaptive, 'docs/result.md', '真实结果')
                 tools.shared_work(mission_id, agent_id, turn_id, provider_id, 'submit', {
                     'task_id': task['id'], 'kind': 'code', 'summary': '已集成并验收' if not task['parent_id'] else '实现完成',
                     'artifact_paths': ['docs/result.md'], 'observations': [{'id': key, 'text': '实际读取并核对文件内容'} for key in task['criterion_ids']]},
@@ -464,7 +478,7 @@ def test_api_intake_document_and_snapshot_scope(adaptive, temp_settings, monkeyp
             view = tools.shared_work(mission_id, agent_id, turn_id, provider_id)
             task = next(t for t in view['tasks'] if t['active_mission_id'] == mission_id)
             assert view['contracts'][0]['delivery'] == 'document'
-            (adaptive.root / 'docs/spec.md').write_text('Spec 与验收标准')
+            put(adaptive, 'docs/spec.md', 'Spec 与验收标准')
             tools.shared_work(mission_id, agent_id, turn_id, provider_id, 'submit', {'task_id': task['id'],
                 'kind': 'document', 'summary': 'Spec 已完成', 'artifact_paths': ['docs/spec.md'], 'observations': [{'id': 'AC-1', 'text': '文档含验收标准'}]},
                 view['revision'], operation_id='deliver')
@@ -508,7 +522,7 @@ def test_transfer_waits_for_target_acceptance_without_human_handoff(adaptive):
 def test_host_risk_floor_detects_auth_changes_even_if_author_declares_local(adaptive):
     task_id = create(adaptive)
     mission = run(adaptive)
-    (adaptive.root / 'backend/app').mkdir(parents=True)
+    (workspace(adaptive) / 'backend/app').mkdir(parents=True)
     submit(adaptive, mission, task_id, path='backend/app/auth.py', text='def allowed(): return True\n')
     task = finish(adaptive, mission)['tasks'][0]
     assert 'security' in task['evidence'][0]['detected_risks']

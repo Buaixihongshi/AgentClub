@@ -86,4 +86,5 @@ POLICY = {
 AGENT_ACTIONS = {'propose_work', 'progress', 'continue_work', 'submit', 'review', 'block',
                  'request_decision', 'raise_risk', 'propose_revision', 'propose_transfer', 'refine_agreement', 'accept_transfer'}
 HUMAN_ACTIONS = {'accept_proposal', 'reject_proposal', 'create_work', 'revise_work', 'decide', 'pause', 'resume', 'cancel',
-                 'retry', 'adjust_budget', 'accept_transfer', 'grant_execution'}
+                 'retry', 'adjust_budget', 'accept_transfer', 'grant_execution',
+                 'retry_environment', 'start_preview', 'stop_preview'}

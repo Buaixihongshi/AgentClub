@@ -8,15 +8,16 @@ from backend.app.work.service import WorkError, now, uid
 from backend.app.work.snapshots import snapshot
 
 
-def validate(service, conversation_id, task, agreement, mission_id):
+def validate(service, conversation_id, task, agreement, mission_id, root=None):
+    root = root or service.root  # The bound task workspace, passed by the host.
     candidate = task['candidate']
     paths = task['submission']['artifact_paths']
-    if snapshot(service.root, paths)['id'] != candidate['id']:
+    if snapshot(root, paths)['id'] != candidate['id']:
         raise WorkError('提交后产物已变化，未将验证归到新版本')
     checks = []
     for command in agreement['validation_commands']:
         try:
-            raw, code = run_check(service.root, command, service.check_timeout,
+            raw, code = run_check(root, command, service.check_timeout,
                 delivery=agreement['delivery'], protected_paths=[service.repo.database_path.resolve(),
                     str(service.repo.database_path.resolve()) + '-wal', str(service.repo.database_path.resolve()) + '-shm'],
                 on_spawn=lambda pid: service.record_process(mission_id, pid))
@@ -28,7 +29,7 @@ def validate(service, conversation_id, task, agreement, mission_id):
         checks.append({'command': command, 'exit_code': code, 'output': raw[-24000:].decode(errors='replace'),
                        'output_sha256': hashlib.sha256(raw).hexdigest(), 'truncated': len(raw) > 24000,
                        'log_id': log_id})
-    unchanged = snapshot(service.root, paths)['id'] == candidate['id']
+    unchanged = snapshot(root, paths)['id'] == candidate['id']
     with service.repo._transaction() as db:
         before_row = db.execute('SELECT output FROM work_check_logs WHERE id=? AND conversation_id=?',
             (task['attempts'][-1]['before_id'], conversation_id)).fetchone()

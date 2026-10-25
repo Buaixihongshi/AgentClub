@@ -11,12 +11,14 @@ from backend.app.domain.models import Mission, MissionStatus, OrchestrationConfi
 from backend.app.work.adaptive_models import (
     AGENT_ACTIONS, HUMAN_ACTIONS, POLICY, Agreement, Checkpoint, DecisionRequest, NewWork, Submission,
 )
+from backend.app.work.environments import TaskEnvironments
 from backend.app.work.service import LegacySharedWork, WorkError, now, uid
 from backend.app.work.snapshots import snapshot, store
 
 PROTOCOL = 'adaptive_v1'
 SUCCESS = {MissionStatus.COMPLETED, MissionStatus.COMPLETED_WITH_WARNINGS}
 TERMINAL = {'done', 'cancelled'}
+ENVIRONMENT_ACTIONS = {'retry_environment', 'start_preview', 'stop_preview'}
 
 
 def digest(value):
@@ -24,6 +26,141 @@ def digest(value):
 
 
 class AdaptiveWork(LegacySharedWork):
+    def __init__(self, repository, workspace_root=None, check_timeout=300,
+                 worktree_root=None, preview_command=None, preview_timeout=600):
+        super().__init__(repository, workspace_root, check_timeout)
+        self.environments = TaskEnvironments(repository, self.root, worktree_root,
+                                             preview_command=preview_command, preview_timeout=preview_timeout)
+
+    def _save(self, db, board, action, actor, details=None):
+        board.pop('execution', None)  # Derived per read, never persisted.
+        super()._save(db, board, action, actor, details)
+
+    def read(self, conversation_id):
+        board = super().read(conversation_id)
+        # One development action runs at a time across all boards; waiting
+        # boards need to show the honest reason instead of silent idling.
+        active = []
+        with self.repo._transaction() as db:
+            for row in db.execute('SELECT conversation_id, data FROM work_boards').fetchall():
+                for task in json.loads(row['data'])['tasks']:
+                    if task.get('active_mission_id'):
+                        active.append({'conversation_id': row['conversation_id'],
+                                       'task_id': task['id'], 'title': task['title']})
+        board['execution'] = {'active': active}
+        return board
+
+    def _workspace(self, board, task):
+        """Resolve the directory every action of this task must operate on."""
+        root = task if (task.get('root_id') or task['id']) == task['id'] else self._root_task(board, task)
+        env = root.get('environment')
+        if not env:
+            return self.root  # Boards created before binding keep single-workspace semantics.
+        if env.get('status') != 'ready':
+            raise WorkError('任务工作区尚未就绪：' + str(env.get('failure_reason') or env.get('status')))
+        if not self.environments.verify(env):
+            raise WorkError('任务工作区的目录或分支身份变化，请核对后重试')
+        return Path(env['workspace_dir'])
+
+    def ensure_environments(self, conversation_id, task_id=None, force=False):
+        """Serialize preparation per task without holding a database write lock."""
+        from scripts.environment_common import lock
+        board = self.read(conversation_id)
+        wanted = {'pending', 'preparing'} if not force else {'pending', 'preparing', 'failed'}
+        pending = [t for t in board['tasks'] if not t['parent_id'] and t['status'] not in TERMINAL
+                   and not t['paused'] and (t.get('environment') or {}).get('status') in wanted
+                   and (task_id is None or t['id'] == task_id)]
+        for stale in pending:
+            key = 'prepare-' + digest({'conversation': conversation_id, 'task': stale['id']})
+            with lock(self.environments.worktree_root / '.operations' / (key + '.lock'), wait=True):
+                fresh = self.read(conversation_id)
+                task = self._task(fresh, stale['id'])
+                if (task['status'] in TERMINAL or task['paused']
+                        or (task.get('environment') or {}).get('status') not in wanted):
+                    continue
+                prepared = self.environments.prepare(dict(task['environment']))
+                with self.repo._transaction(immediate=True) as db:
+                    current = self._load(db, conversation_id)
+                    live = self._task(current, stale['id'])
+                    if (live.get('environment') or {}).get('status') not in wanted:
+                        continue
+                    live['environment'] = prepared
+                    if prepared['status'] == 'ready':
+                        if live['waiting_reason'] == 'environment' and live['status'] not in TERMINAL and not live['paused']:
+                            self._ready(live, '工作区已就绪；按约定推进')
+                        self._save(db, current, 'environment_ready', 'host',
+                                   {'task_id': live['id'], 'branch': prepared['branch']})
+                    else:
+                        if live['status'] not in TERMINAL:
+                            self._waiting(live, 'environment', '工作区准备失败：' + str(prepared['failure_reason']), '用户')
+                        self._save(db, current, 'environment_failed', 'host',
+                                   {'task_id': live['id'], 'reason': prepared['failure_reason']})
+        return bool(pending)
+
+    def _recover_environment(self, board, task):
+        """After a restart: re-verify the recorded binding, stop orphan previews,
+        and leave ambiguous state explicitly waiting instead of replaying."""
+        env = task['environment']
+        changed = False
+        preview = env.get('preview') or {}
+        if preview.get('status') in {'starting', 'ready'}:
+            env['preview'] = self.environments.reconcile_preview(preview)
+            changed = True
+        if env.get('status') == 'ready' and not self.environments.verify(env):
+            env.update(status='failed', failure_reason='重启后核对失败：目录或分支与记录不匹配',
+                       updated_at=now())
+            if task['status'] not in TERMINAL:
+                self._waiting(task, 'environment', env['failure_reason'], '用户')
+            changed = True
+        elif env.get('status') == 'preparing':
+            env.update(status='pending', updated_at=now())  # Idempotent retry on next claim.
+            changed = True
+        return changed
+
+    def _environment_command(self, conversation_id, action, data, expected_revision, **kwargs):
+        from scripts.environment_common import lock
+        key = digest({'conversation': conversation_id, 'task': data.get('task_id')})
+        with lock(self.environments.worktree_root / '.operations' / (key + '.lock'), wait=True):
+            return self._environment_command_locked(conversation_id, action, data, expected_revision, **kwargs)
+
+    def _environment_command_locked(self, conversation_id, action, data, expected_revision, *,
+                             actor, mission_id, turn_id, operation_id):
+        if actor != 'human':
+            raise WorkError('环境与预览操作仅用户可用', 403)
+        if not isinstance(operation_id, str) or not operation_id.strip() or len(operation_id) > 120:
+            raise WorkError('写操作必须携带 1–120 字符的稳定 operation_id', 422)
+        fingerprint = digest({'action': action, 'data': data, 'actor': actor,
+                              'mission_id': mission_id, 'turn_id': turn_id})
+        with self.repo._transaction() as db:
+            prior = db.execute('SELECT fingerprint, result FROM work_operations WHERE conversation_id=? AND operation_id=?',
+                               (conversation_id, operation_id)).fetchone()
+            if prior:
+                if prior['fingerprint'] != fingerprint:
+                    raise WorkError('operation_id 已用于其他操作')
+                return json.loads(prior['result'])
+        task_id = str(data.get('task_id') or '')
+        if not task_id:
+            raise WorkError('请选择工作卡', 422)
+        board = self.read(conversation_id)
+        if expected_revision != board['revision']:
+            raise WorkError('任务板已更新，请重新读取后操作')
+        task = self._task(board, task_id)
+        if task['parent_id']:
+            raise WorkError('环境操作属于根工作卡', 422)
+        if action != 'stop_preview' and task['status'] == 'cancelled':
+            raise WorkError('任务已取消，不能准备工作区或启动预览')
+        if action == 'retry_environment':
+            self.ensure_environments(conversation_id, task_id, force=True)
+        elif action == 'start_preview':
+            self.environments.start_preview(self, conversation_id, task_id, expected_revision)
+        else:
+            self.environments.stop_preview(self, conversation_id, task_id, expected_revision)
+        result = self.read(conversation_id)
+        with self.repo._transaction() as db:
+            db.execute('INSERT INTO work_operations VALUES (?, ?, ?, ?)',
+                       (conversation_id, operation_id, fingerprint, json.dumps(result, ensure_ascii=False)))
+        return result
+
     def _empty(self, conversation_id):
         return {'protocol': PROTOCOL, 'conversation_id': conversation_id, 'revision': 0,
                 'enabled': True, 'workspace_root': str(self.root), 'contracts': [], 'tasks': [],
@@ -104,11 +241,12 @@ class AdaptiveWork(LegacySharedWork):
     def _risk_required(self, board, task):
         return bool(set(task['risks']) & set(board['policy']['review_risks'])) or task['review_required']
 
-    def _snapshot(self, board, artifact_paths=()):
-        return store(self.repo, board['conversation_id'], snapshot(self.root, artifact_paths))
+    def _snapshot(self, board, task, artifact_paths=()):
+        return store(self.repo, board['conversation_id'], snapshot(self._workspace(board, task), artifact_paths))
 
-    def _current_matches(self, candidate):
-        return bool(candidate) and snapshot(self.root, candidate.get('artifact_paths', []))['id'] == candidate['id']
+    def _current_matches(self, board, task, candidate):
+        root = self._workspace(board, task)
+        return bool(candidate) and snapshot(root, candidate.get('artifact_paths', []))['id'] == candidate['id']
 
     @staticmethod
     def _attempt_alive(attempt):
@@ -153,6 +291,8 @@ class AdaptiveWork(LegacySharedWork):
                                  'delivery': agreement['delivery'], 'publish': False,
                                  'capabilities': ['read', 'document'] + ([] if agreement['delivery'] == 'document' else ['develop', 'verify'])}
         task['policy'] = deepcopy(board['policy'])
+        task['environment'] = self.environments.initial(task['id'])
+        self._waiting(task, 'environment', '正在准备独立开发工作区', '系统')
         board['tasks'].append(task)
         return task
 
@@ -160,6 +300,9 @@ class AdaptiveWork(LegacySharedWork):
                 mission_id=None, turn_id=None, operation_id=None):
         if action not in (HUMAN_ACTIONS if actor == 'human' else AGENT_ACTIONS):
             raise WorkError('该操作不在当前身份的权限范围内', 403)
+        if action in ENVIRONMENT_ACTIONS:
+            return self._environment_command(conversation_id, action, data, expected_revision, actor=actor,
+                mission_id=mission_id, turn_id=turn_id, operation_id=operation_id)
         with self.repo._transaction(immediate=True) as db:
             board = self._load(db, conversation_id)
             fingerprint = digest({'action': action, 'data': data, 'actor': actor,
@@ -176,9 +319,9 @@ class AdaptiveWork(LegacySharedWork):
                 return json.loads(prior['result'])
             if expected_revision != board['revision']:
                 raise WorkError('任务板已更新，请重新读取后操作')
-            if Path(board['workspace_root']).resolve() != self.root:
-                raise WorkError('工作区已变化，请在原工作区继续')
             task = self._task(board, data['task_id']) if data.get('task_id') else None
+            if Path(board['workspace_root']).resolve() != self.root and not (task and self._root_task(board, task).get('environment')):
+                raise WorkError('工作区已变化，请在原工作区继续')
             if actor != 'human' and action != 'propose_work':
                 task = self._actor_task(board, data, actor, mission_id, turn_id)
                 if action not in {'review', 'accept_transfer'} and not (action == 'block' and task['attempts'][-1]['stage'] == 'handoff'):
@@ -318,7 +461,7 @@ class AdaptiveWork(LegacySharedWork):
                 task['review_required'] = self._risk_required(board, task)
             elif action == 'request_decision':
                 value = DecisionRequest.model_validate(data).model_dump()
-                candidate = self._snapshot(board, value['artifact_paths'])
+                candidate = self._snapshot(board, task, value['artifact_paths'])
                 decision = {**value, 'id': uid('wd_'), 'status': 'pending', 'created_at': now(),
                             'contract_id': task['contract_id'], 'candidate_id': candidate['id']}
                 board['decisions'].append(decision)
@@ -336,7 +479,7 @@ class AdaptiveWork(LegacySharedWork):
                     raise WorkError('验收观察不能重复', 422)
                 if any(self._task(board, dep)['status'] != 'done' for dep in task['depends_on']):
                     raise WorkError('必需依赖尚未完成')
-                candidate = self._snapshot(board, value['artifact_paths'])
+                candidate = self._snapshot(board, task, value['artifact_paths'])
                 task.update(candidate=candidate, candidate_sha=candidate['base_sha'], submission=value,
                             authors=sorted(set(task['authors']) | {actor}), progress=value['summary'])
                 task['reviewer_id'] = value['reviewer_id'] or task.get('reviewer_id')
@@ -406,7 +549,7 @@ class AdaptiveWork(LegacySharedWork):
         choice = data.get('option_id')
         if choice not in {x['id'] for x in decision['options']}:
             raise WorkError('请选择明确的有效选项；未回复不视为同意', 422)
-        if decision.get('candidate_id') and snapshot(self.root)['id'] != decision['candidate_id']:
+        if decision.get('candidate_id') and snapshot(self._workspace(board, task))['id'] != decision['candidate_id']:
             decision.update(status='stale', stale_reason='产物内容已变化')
             self._ready(task, '决定对应的产物已变化，请重新准备具体稿与决定卡')
             return
@@ -491,7 +634,7 @@ class AdaptiveWork(LegacySharedWork):
     def _review(self, board, task, data, actor, mission_id, turn_id):
         if task['attempts'][-1]['stage'] != 'review' or actor in task['authors']:
             raise WorkError('只有非作者审核者能提交结论', 403)
-        if data.get('candidate_id') != (task['candidate'] or {}).get('id') or not self._current_matches(task['candidate']):
+        if data.get('candidate_id') != (task['candidate'] or {}).get('id') or not self._current_matches(board, task, task['candidate']):
             raise WorkError('候选内容已变化，请重新验证')
         if set(data.get('criterion_ids') or []) != set(task['criterion_ids']):
             raise WorkError('审核必须覆盖本次约定的验收项')
@@ -530,10 +673,11 @@ class AdaptiveWork(LegacySharedWork):
                 self._ready(task)
 
     def claim(self, conversation_id):
+        # Workspace preparation runs outside the claim transaction; a slow or
+        # failed prepare must not hold the write lock other boards depend on.
+        self.ensure_environments(conversation_id)
         with self.repo._transaction(immediate=True) as db:
             board = self._load(db, conversation_id)
-            if Path(board['workspace_root']).resolve() != self.root:
-                return None
             self._refresh(board)
             # Shared worktrees are serialized across both legacy and adaptive work.
             if any(t.get('active_mission_id') or t.get('release', {}).get('status') == 'running' for row in db.execute('SELECT data FROM work_boards')
@@ -546,6 +690,16 @@ class AdaptiveWork(LegacySharedWork):
             for task in board['tasks']:
                 root = self._root_task(board, task)
                 if task['status'] != 'ready' or root['paused'] or root['status'] == 'cancelled':
+                    continue
+                env = root.get('environment')
+                if env and env.get('status') != 'ready':
+                    # Never fall back to the control plane checkout while the
+                    # bound directory is missing or broken.
+                    self._waiting(task, 'environment',
+                                  '任务工作区未就绪：' + str(env.get('failure_reason') or env.get('status')),
+                                  '系统' if env.get('status') in {'pending', 'preparing'} else '用户')
+                    continue
+                if not env and Path(board['workspace_root']).resolve() != self.root:
                     continue
                 if root['attempts_used'] >= root['max_attempts']:
                     self._waiting(task, 'budget', '累计执行预算耗尽，请查看证据后决定', '用户')
@@ -569,7 +723,7 @@ class AdaptiveWork(LegacySharedWork):
                 self._waiting(task, 'external', '缺少具备能力的独立审核者', task['owner_id'])
                 self._save(db, board, 'reviewer_unavailable', 'host')
                 return None
-            before = self._snapshot(board)
+            before = self._snapshot(board, task)
             mission = Mission(id=uid('m_'), title=task['title'], goal=task['next_action'],
                 conversation_id=conversation_id, target_agent_id=agent,
                 orchestration=OrchestrationConfig(mode=OrchestrationMode.SINGLE, participant_ids=[agent]))
@@ -609,7 +763,7 @@ class AdaptiveWork(LegacySharedWork):
         root = self._root_task(board, task)
         agreement = self._agreement(board, task)
         context = {'task': task, 'agreement': agreement, 'authorization': root['authorization'],
-                'policy': root.get('policy', board['policy']), 'workspace_root': board['workspace_root'],
+                'policy': root.get('policy', board['policy']), 'workspace_root': str(self._workspace(board, task)),
                 'children': [t for t in board['tasks'] if t['parent_id'] == task['id']],
                 'decisions': [d for d in board['decisions'] if d['task_id'] == task['id']]}
         context['task'] = self._compact_task(task)
@@ -657,9 +811,17 @@ class AdaptiveWork(LegacySharedWork):
 
     def adopt_mission(self, conversation_id, task_id, mission):
         """The initial user request is already a mission; do not add an intake run."""
+        self.ensure_environments(conversation_id, task_id)
         with self.repo._transaction(immediate=True) as db:
             board = self._load(db, conversation_id)
             task = self._task(board, task_id)
+            environment = (task.get('environment') or {}).get('status')
+            if environment != 'ready':
+                self.repo.update_mission(mission.model_copy(update={'status': MissionStatus.COMPLETED}))
+                self.repo.add_event(mission.id, 'adaptive.environment_blocked',
+                                    {'task_id': task_id, 'environment_status': environment,
+                                     'reason': (task.get('environment') or {}).get('failure_reason')})
+                return False
             busy = any(t.get('active_mission_id') or t.get('release', {}).get('status') == 'running'
                        for row in db.execute('SELECT data FROM work_boards')
                        for t in json.loads(row['data'])['tasks']) or any(
@@ -669,7 +831,7 @@ class AdaptiveWork(LegacySharedWork):
                 self.repo.update_mission(mission.model_copy(update={'status': MissionStatus.COMPLETED}))
                 self.repo.add_event(mission.id, 'adaptive.queued', {'task_id': task_id})
                 return False
-            before = self._snapshot(board)
+            before = self._snapshot(board, task)
             task.update(status='running', active_mission_id=mission.id)
             task['attempts'].append({'mission_id': mission.id, 'agent_id': task['owner_id'], 'stage': 'work',
                 'contract_id': task['contract_id'], 'started_at': now(), 'before_id': before['id'],
@@ -680,7 +842,7 @@ class AdaptiveWork(LegacySharedWork):
 
     def _accept(self, board, task):
         try:
-            matches = self._current_matches(task['candidate'])
+            matches = self._current_matches(board, task, task['candidate'])
         except WorkError as exc:
             self._waiting(task, 'recovery', str(exc), task['owner_id'])
             return
@@ -712,7 +874,7 @@ class AdaptiveWork(LegacySharedWork):
         if not task['parent_id'] and agreement['delivery'] == 'online':
             from backend.app.work.releases import configuration
             try:
-                config = configuration(self.root)
+                config = configuration(self._workspace(board, task))
             except WorkError as exc:
                 self._waiting(task, 'release_configuration', str(exc), '项目配置')
                 return
@@ -750,11 +912,12 @@ class AdaptiveWork(LegacySharedWork):
         checks = None
         error = None
         try:
-            after = snapshot(self.root)
+            workspace = self._workspace(board, candidate_task)
+            after = snapshot(workspace)
             if (mission and mission.status in SUCCESS and candidate_task.get('submission')
                     and candidate_task['attempts'][-1].get('submitted') and candidate_task['status'] != 'cancelled'):
                 from backend.app.work.validation import validate
-                checks = validate(self, conversation_id, candidate_task, agreement, mission_id)
+                checks = validate(self, conversation_id, candidate_task, agreement, mission_id, root=workspace)
         except (WorkError, OSError) as exc:
             after = None
             error = str(exc)
@@ -812,6 +975,9 @@ class AdaptiveWork(LegacySharedWork):
                     continue
                 changed = False
                 for task in board['tasks']:
+                    if not task['parent_id'] and task.get('environment'):
+                        if self._recover_environment(board, task):
+                            changed = True
                     if task.get('release', {}).get('status') == 'running':
                         task['release']['status'] = 'unknown'
                         self._waiting(task, 'release_unknown', '服务中断，须查询发布实际状态，不能重放', '项目发布入口')
@@ -855,7 +1021,7 @@ class AdaptiveWork(LegacySharedWork):
                     task['old_process_alive'] = alive
                     if not alive and not was_cancelled:
                         try:
-                            current = snapshot(self.root)
+                            current = snapshot(self._workspace(board, task))
                             if current['id'] == attempt['before_id']:
                                 self._ready(task, '项目快照未变化；核对检查点后安全继续')
                             else:

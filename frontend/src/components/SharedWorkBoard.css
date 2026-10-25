@@ -33,3 +33,5 @@
 .adaptive-work-body small { overflow-wrap: anywhere; }
 .discussion-panels.composer-layout-compact .mission-composer > label.composer-work-mode { position: static; width: auto; height: auto; padding: 4px 0; overflow: visible; clip-path: none; white-space: normal; display: flex; align-items: center; gap: 10px; letter-spacing: normal; }
 .composer-work-mode select { font: inherit; padding: 5px 8px; min-height: 32px; max-width: 100%; border: 1px solid var(--ink-soft, #bdcec5); border-radius: 5px; background: var(--paper, white); color: inherit; letter-spacing: normal; }
+.work-preview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.work-environment dd { overflow-wrap: anywhere; }
