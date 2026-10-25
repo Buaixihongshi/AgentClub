@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { MemoryModal } from '../components/MemoryModal';
+import { MemoryPanel } from '../components/MemoryPanel';
 import {
   clearMemoryCheckpoints,
   fetchAgentMemory,
@@ -57,16 +57,16 @@ beforeEach(() => {
 });
 
 it('lists agents and active entries with consistency status', async () => {
-  render(<MemoryModal conversationId="c1" onClose={() => {}} />);
+  render(<MemoryPanel conversationId="c1" />);
   expect(await screen.findByText('张楚岚')).toBeInTheDocument();
   expect(await screen.findByText('用户偏好')).toBeInTheDocument();
   expect(screen.getByText(/文件 2 · 索引 2/)).toBeInTheDocument();
   expect(await screen.findByText('等待用户确认。')).toBeInTheDocument();
 });
 
-it('forget hides an entry after switching to show forgotten', async () => {
+it('forget hides an entry after the action', async () => {
   const user = userEvent.setup();
-  render(<MemoryModal conversationId={null} onClose={() => {}} />);
+  render(<MemoryPanel />);
   await user.click(await screen.findByRole('button', { name: '忘记' }));
   expect(setMemoryEntryStatus).toHaveBeenCalledWith('mem_1', 'forgotten');
   await waitFor(() => expect(fetchAgentMemory).toHaveBeenCalledWith('chulan', false));
@@ -74,7 +74,7 @@ it('forget hides an entry after switching to show forgotten', async () => {
 
 it('edits an entry body and saves a revision', async () => {
   const user = userEvent.setup();
-  render(<MemoryModal conversationId={null} onClose={() => {}} />);
+  render(<MemoryPanel />);
   await user.click(await screen.findByRole('button', { name: '修订' }));
   const body = await screen.findByLabelText('记忆正文');
   await user.clear(body);
@@ -86,7 +86,7 @@ it('edits an entry body and saves a revision', async () => {
 it('shows forgotten entries only when toggled', async () => {
   vi.mocked(fetchAgentMemory).mockResolvedValue({ entries: [structuredClone(forgottenEntry)] });
   const user = userEvent.setup();
-  render(<MemoryModal conversationId={null} onClose={() => {}} />);
+  render(<MemoryPanel />);
   expect(await screen.findByText('过期事实')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '恢复' })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: '清除' }));
@@ -95,14 +95,20 @@ it('shows forgotten entries only when toggled', async () => {
 
 it('rebuilds the index on demand', async () => {
   const user = userEvent.setup();
-  render(<MemoryModal conversationId={null} onClose={() => {}} />);
+  render(<MemoryPanel />);
   await user.click(await screen.findByRole('button', { name: '重建索引' }));
   expect(rebuildMemoryIndex).toHaveBeenCalled();
 });
 
 it('clears one checkpoint for the conversation', async () => {
   const user = userEvent.setup();
-  render(<MemoryModal conversationId="c1" onClose={() => {}} />);
+  render(<MemoryPanel conversationId="c1" />);
   await user.click(await screen.findByRole('button', { name: '清除 chulan 的检查点' }));
   expect(clearMemoryCheckpoints).toHaveBeenCalledWith('c1', 'chulan');
+});
+
+it('omits the checkpoint section without a conversation', async () => {
+  render(<MemoryPanel />);
+  expect(await screen.findByText('张楚岚')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /清除 chulan 的检查点/ })).not.toBeInTheDocument();
 });

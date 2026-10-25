@@ -20,7 +20,6 @@ import type { ConfirmedMention } from "../lib/inputConfirmations";
 import { MissionHeader } from "./MissionHeader";
 import { OnboardingCard, type OnboardingCardProps } from "./OnboardingCard";
 import { SettingsButton } from "./SettingsButton";
-import { MemoryButton } from "./MemoryButton";
 import { TurnTimeline } from "./TurnTimeline";
 import { EnvironmentBadge } from "./EnvironmentBadge";
 import { SharedWorkWorkspace } from "./SharedWorkWorkspace";
@@ -103,6 +102,7 @@ export function MissionRoomPage(props: {
         <MissionHeader runtimeSummary={props.runtimeSummary} streamState={props.streamState} />
         <SettingsButton
           view={props.hubSettings ?? null}
+          conversationId={props.selectedConversationId}
           providerStatus={props.providerStatus}
           onboarding={props.onboarding?.onboarding}
           open={settingsOpen}
@@ -114,7 +114,6 @@ export function MissionRoomPage(props: {
           onVerifyProvider={props.onboarding?.onVerifyProvider}
           onSave={props.onSaveSettings ?? (() => {})}
         />
-        <MemoryButton conversationId={props.selectedConversationId} />
       </div>
       <EnvironmentBadge runtime={props.onboarding?.health?.runtime} loading={props.onboarding?.healthLoading} />
       {props.error ? (

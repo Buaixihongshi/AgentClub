@@ -35,7 +35,7 @@
 - **装配**（`backend/app/memory/assembly.py`）：按预算渲染【长期记忆】（默认 6 条/2400 字符）、【短期检查点】、【模型交接】节；接入 `_run_workflow`、`_run_roundtable`、`_run_adaptive` 三条执行路径与 `read_context`；Provider 验证任务不注入任何记忆节。
 - **MCP 新工具**：`memory(action: read/write/revise/forget)`（仅本角色）、`save_checkpoint(text, source_message_ids)`；`read_context` 增加 `message_ids` 原文补读并返回记忆/检查点节。V2 圆桌讨论维持只读白名单，新工具自动不可用。
 - **API**：`/api/memory/*`（agents/entries CRUD/forget/restore/purge/rebuild/status、conversations/{id}/checkpoints、handovers）。
-- **前端**：`MemoryModal`（长期记忆列表+编辑、检查点、交接记录、一致性状态），入口按钮放在头部设置旁。
+- **前端**：记忆面板并入设置弹窗"记忆"页签（沿用观测页签先例，不再有独立头部按钮）：长期记忆列表+编辑、检查点、交接记录、一致性状态。
 
 ## 恢复边界与检查
 

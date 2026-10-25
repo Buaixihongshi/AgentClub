@@ -4591,12 +4591,22 @@ summary:focus-visible {
 }
 
 /* Memory management modal (context-memory) */
-.memory-modal .settings-modal-content.memory-layout {
+.memory-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.memory-intro {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.75;
+}
+.memory-columns {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr) 280px;
   gap: 18px;
-  padding: 18px 22px;
-  overflow-y: auto;
+  align-items: start;
 }
 .memory-agent-list {
   display: flex;
@@ -4737,7 +4747,7 @@ summary:focus-visible {
   margin: 4px 0;
 }
 @media (max-width: 900px) {
-  .memory-modal .settings-modal-content.memory-layout {
+  .memory-columns {
     grid-template-columns: 1fr;
   }
 }

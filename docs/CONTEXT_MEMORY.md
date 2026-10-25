@@ -34,7 +34,7 @@
 ## 用户管理入口
 
 - REST：`/api/memory/overview`（角色计数与一致性状态）、`/api/memory/agents/{id}/entries`、条目 `PUT`/`forget`/`restore`/`DELETE`、`/api/memory/rebuild|sync`、`/api/memory/conversations/{id}/checkpoints`（GET/DELETE）、`/api/memory/handovers`。
-- 前端：任务房间头部"记忆管理"按钮打开面板——按角色查看/修订条目、忘记（仅移出上下文，可恢复）与清除（删除文件）、显示已忘记条目、重建索引、本会话检查点清除、最近模型交接与一致性状态。索引漂移会明确提示。
+- 前端：设置 → 记忆 页签——按角色查看/修订条目、忘记（仅移出上下文，可恢复）与清除（删除文件）、显示已忘记条目、重建索引、本会话检查点清除、最近模型交接与一致性状态。索引漂移会明确提示；该页签与观测页签一样不显示保存栏。
 
 ## 验证与边界
 

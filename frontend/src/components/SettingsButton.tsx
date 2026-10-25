@@ -6,6 +6,7 @@ import { SettingsModal } from "./SettingsModal";
 
 interface Props {
   view: HubSettingsView | null;
+  conversationId?: string | null;
   providerStatus?: ProviderStatusState;
   onboarding?: OnboardingView | null;
   open?: boolean;
@@ -17,6 +18,7 @@ interface Props {
 
 export function SettingsButton({
   view,
+  conversationId,
   providerStatus,
   onboarding,
   open: controlledOpen,
@@ -62,6 +64,7 @@ export function SettingsButton({
       {open && view && (
         <SettingsModal
           view={view}
+          conversationId={conversationId}
           providerStatus={providerStatus}
           onboarding={onboarding}
           onRefreshProviders={onRefreshProviders}

@@ -18,11 +18,10 @@ import type {
 } from "../types";
 
 interface Props {
-  conversationId: string | null;
-  onClose: () => void;
+  conversationId?: string | null;
 }
 
-export function MemoryModal({ conversationId, onClose }: Props) {
+export function MemoryPanel({ conversationId }: Props) {
   const [overview, setOverview] = useState<MemoryOverviewView | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [showForgotten, setShowForgotten] = useState(false);
@@ -103,17 +102,10 @@ export function MemoryModal({ conversationId, onClose }: Props) {
   const drift = consistency ? consistency.stale + consistency.missing_files : 0;
 
   return (
-    <div className="settings-modal-backdrop" role="dialog" aria-modal="true" aria-label="记忆管理" onClick={onClose}>
-      <div className="settings-modal memory-modal" onClick={(event) => event.stopPropagation()}>
-        <header className="settings-modal-header">
-          <div>
-            <h2>记忆管理</h2>
-            <p>长期记忆以 Markdown 文件为准；忘记仅移出上下文，清除会删除文件。</p>
-          </div>
-          <button type="button" className="artifact-modal-close" aria-label="关闭记忆管理" onClick={onClose}>×</button>
-        </header>
-        {error ? <div role="alert" className="error-banner">{error}</div> : null}
-        <div className="settings-modal-content memory-layout">
+    <div className="memory-layout" aria-label="记忆管理">
+      {error ? <div role="alert" className="error-banner">{error}</div> : null}
+      <p className="memory-intro">长期记忆以 Markdown 文件为准；忘记仅移出上下文，清除会删除文件。</p>
+      <div className="memory-columns">
           <nav className="memory-agent-list" aria-label="角色记忆">
             {(overview?.agents ?? []).map((agent) => (
               <button
@@ -242,6 +234,5 @@ export function MemoryModal({ conversationId, onClose }: Props) {
           </aside>
         </div>
       </div>
-    </div>
   );
 }

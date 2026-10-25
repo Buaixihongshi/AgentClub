@@ -3,6 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 import { SettingsModal } from "../components/SettingsModal";
 
 vi.mock("../lib/api", () => ({
+  fetchMemoryOverview: vi.fn().mockResolvedValue({
+    memory_root: "/state/data/memory",
+    consistency: { files: 0, indexed: 0, stale: 0, missing_files: 0, applied: false, active_by_agent: {} },
+    agents: [],
+  }),
+  fetchAgentMemory: vi.fn().mockResolvedValue({ entries: [] }),
+  fetchMemoryCheckpoints: vi.fn().mockResolvedValue({ checkpoints: [] }),
+  fetchMemoryHandovers: vi.fn().mockResolvedValue({ handovers: [] }),
+  clearMemoryCheckpoints: vi.fn().mockResolvedValue({ removed: 0 }),
+  updateMemoryEntry: vi.fn(),
+  setMemoryEntryStatus: vi.fn(),
+  purgeMemoryEntry: vi.fn(),
+  rebuildMemoryIndex: vi.fn(),
   fetchObservabilityOverview: vi.fn().mockResolvedValue({
     generated_at: "2026-10-20T10:00:00+00:00",
     window: "all",
@@ -53,6 +66,14 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "观测" }));
     expect(await screen.findByRole("heading", { name: "观测" })).toBeInTheDocument();
     expect(screen.getByText(/全部会话/)).toBeInTheDocument();
+    expect(screen.queryByTestId("settings-save")).not.toBeInTheDocument();
+  });
+
+  it("opens the memory tab inside settings without a save bar", async () => {
+    render(<SettingsModal view={baseView} onSave={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "记忆" }));
+    expect(await screen.findByLabelText("记忆管理")).toBeInTheDocument();
+    expect(screen.getByText(/长期记忆以 Markdown 文件为准/)).toBeInTheDocument();
     expect(screen.queryByTestId("settings-save")).not.toBeInTheDocument();
   });
 
