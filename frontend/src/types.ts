@@ -892,7 +892,19 @@ export interface WorkReview {
   reviewer_id: string; mission_id: string; decision: 'approved' | 'changes_requested'; note: string;
   candidate_id?: string; created_at?: string;
 }
+export interface WorkEnvironmentPreview {
+  status: 'stopped' | 'starting' | 'ready' | 'failed';
+  url?: string | null; ports?: { backend: number; frontend: number } | null;
+  instance_id?: string | null; candidate_id?: string | null;
+  failure_reason?: string | null; log_id?: string | null;
+}
+export interface WorkEnvironment {
+  short_id?: string; status: 'pending' | 'preparing' | 'ready' | 'failed';
+  branch?: string | null; workspace_dir?: string | null; base_sha?: string | null;
+  failure_reason?: string | null; preview?: WorkEnvironmentPreview | null;
+}
 export interface SharedWorkTask {
+  environment?: WorkEnvironment;
   id: string; title: string; contract_id: string; owner_id: string; reviewer_id: string;
   criterion_ids: string[]; depends_on: string[]; status: 'ready' | 'running' | 'validating' | 'review' | 'done' | 'blocked' | 'waiting' | 'cancelled';
   progress: string; blocker: string | null; active_mission_id: string | null;
@@ -920,6 +932,7 @@ export interface WorkProposal {
   task_id?: string;
 }
 export interface SharedWorkBoardView {
+  execution?: { active: { conversation_id: string; task_id: string; title: string }[] };
   proposals?: WorkProposal[];
   protocol?: 'adaptive_v1'; decisions?: WorkDecision[]; legacy_board?: SharedWorkBoardView;
   conversation_id: string; revision: number; enabled: boolean; active_contract_id: string | null;

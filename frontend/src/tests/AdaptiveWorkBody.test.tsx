@@ -71,4 +71,33 @@ describe('自主工作体验', () => {
     expect(onDiscuss).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText('要交付什么')).not.toBeInTheDocument();
   });
+  it('展示绑定工作区、打开预览并停止对应任务的预览', async () => {
+    const bound = structuredClone(board);
+    bound.tasks[0].environment = { status: 'ready', branch: 'codex/task-example', base_sha: 'base',
+      preview: { status: 'ready', url: 'http://127.0.0.1:5199', candidate_id: 'ws_current' } };
+    const command = vi.fn().mockResolvedValue(true);
+    render(<AdaptiveWorkBody board={bound} conversationId="c_work" goal="" agents={agents} busy={false} error="" archived={false} command={command} />);
+    expect(screen.getByRole('link', { name: '打开预览' })).toHaveAttribute('href', 'http://127.0.0.1:5199/');
+    fireEvent.click(screen.getByRole('button', { name: '停止预览' }));
+    await waitFor(() => expect(command).toHaveBeenCalledWith('stop_preview', { task_id: 'wt_root' }));
+    expect(screen.queryByLabelText('要交付什么')).not.toBeInTheDocument();
+  });
+  it('工作区失败可重试，其他任务执行时显示排队原因', async () => {
+    const failed = structuredClone(board);
+    failed.tasks[0].environment = { status: 'failed', failure_reason: '目录被占用' };
+    failed.execution = { active: [{ conversation_id: 'other', task_id: 'other-task', title: '上传文件' }] };
+    const command = vi.fn().mockResolvedValue(true);
+    render(<AdaptiveWorkBody board={failed} conversationId="c_work" goal="" agents={agents} busy={false} error="" archived={false} command={command} />);
+    expect(screen.getByText(/另一项工作「上传文件」正在执行/)).toBeInTheDocument();
+    expect(screen.getByText('目录被占用')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试准备工作区' }));
+    await waitFor(() => expect(command).toHaveBeenCalledWith('retry_environment', { task_id: 'wt_root' }));
+  });
+  it('拒绝非本机预览链接，准备中不重复启动', () => {
+    const pending = structuredClone(board);
+    pending.tasks[0].environment = { status: 'ready', preview: { status: 'starting', url: 'javascript:alert(1)' } };
+    render(<AdaptiveWorkBody board={pending} conversationId="c_work" goal="" agents={agents} busy={false} error="" archived={false} command={vi.fn()} />);
+    expect(screen.queryByRole('link', { name: '打开预览' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '正在准备预览…' })).toBeDisabled();
+  });
 });

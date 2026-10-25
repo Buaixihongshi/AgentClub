@@ -109,6 +109,7 @@ def environment(checkout, profile, *, real=False, providers="codex", backend=0, 
         "YIREN_DATABASE_PATH": str(state / "data/yirenhub.sqlite3"),
         "YIREN_ARTIFACT_ROOT": str(state / "artifacts"),
         "YIREN_MEMORY_ROOT": str(state / "data/memory"),
+        "YIREN_TASK_WORKTREE_ROOT": str(state.parent if profile == "runtime" else state / "task-worktrees"),
         "YIREN_RUNTIME_DIR": str(state / "runtime"),
         "YIREN_MAINTENANCE_WORKTREE_ROOT": str(state / "maintenance-worktrees"),
         "YIREN_USE_FAKE_CLI": ("true" if inherited["runtime"]["use_fake_cli"] else "false") if inherited else ("false" if real else "true"),
@@ -169,7 +170,7 @@ def python_for(root, install=True):
     return py
 
 
-def setup(root, install=True, backend_only=False):
+def setup(root, install=True, backend_only=False, *, output=None):
     py = python_for(root, install)
     if not backend_only:
         run(["node", "-e", "const [a,b]=process.versions.node.split('.').map(Number);process.exit(((a===20&&b>=19)||(a===22&&b>=12)||a>22)?0:1)"])
@@ -184,7 +185,7 @@ def setup(root, install=True, backend_only=False):
             stamp = stamps / (Path(name).name + ".stamp")
             missing = name.startswith("frontend/") and not (root / "frontend/node_modules").is_dir()
             if missing or not stamp.exists() or stamp.read_text() != digest:
-                run(command, cwd=cwd)
+                run(command, cwd=cwd, stdout=output, stderr=subprocess.STDOUT if output else None)
                 stamp.write_text(digest)
     elif not backend_only and not (root / "frontend/node_modules").is_dir():
         raise EnvironmentError("Missing frontend/node_modules; omit --no-install")

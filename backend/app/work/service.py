@@ -413,6 +413,10 @@ class SharedWork:
         return self._service(conversation_id).read_log(conversation_id, log_id)
 
     def command(self, conversation_id, action, data, expected_revision, **kwargs):
+        from backend.app.work.adaptive import ENVIRONMENT_ACTIONS
+        if action in ENVIRONMENT_ACTIONS:
+            return self._service(conversation_id, action).command(
+                conversation_id, action, data, expected_revision, **kwargs)
         with self.repo._transaction(immediate=True) as db:
             service = self._service(conversation_id, action)
             if action == 'create_work' and isinstance(service, LegacySharedWork) and type(service) is LegacySharedWork:

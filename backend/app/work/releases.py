@@ -33,10 +33,10 @@ def configuration(root):
         raise WorkError('项目发布配置无效，请检查 .agenthub/work.local.json') from exc
 
 
-def _run(service, command, release, timeout, conversation_id, task_id, *, stop_on_cancel=False):
+def _run(service, command, release, timeout, conversation_id, task_id, workspace, *, stop_on_cancel=False):
     env = {**os.environ, 'AGENTHUB_CANDIDATE_ID': release['candidate_id'],
            'AGENTHUB_TARGET_ENVIRONMENT': release['environment'], 'AGENTHUB_RELEASE_ID': release['id']}
-    proc = subprocess.Popen(command, cwd=service.root, env=env, stdout=subprocess.PIPE,
+    proc = subprocess.Popen(command, cwd=workspace, env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, start_new_session=True)
     with managed_process(proc):
         with service.repo._transaction(immediate=True) as db:
@@ -59,12 +59,6 @@ def _run(service, command, release, timeout, conversation_id, task_id, *, stop_o
 
 def process(service, conversation_id):
     """Called only by the host dispatcher, including after a service restart."""
-    try:
-        config = configuration(service.root)
-    except WorkError:
-        return False  # The work card keeps its actionable configuration error.
-    if not config:
-        return False
     with service.repo._transaction(immediate=True) as db:
         board = service._load(db, conversation_id)
         if any(t.get('active_mission_id') or t.get('release', {}).get('status') == 'running'
@@ -81,6 +75,13 @@ def process(service, conversation_id):
                      and t['status'] == 'waiting' and not service._root_task(board, t)['paused']), None)
         if not task:
             return False
+        workspace = service._workspace(board, task)
+        try:
+            config = configuration(workspace)
+        except WorkError:
+            return False  # The work card keeps its actionable configuration error.
+        if not config:
+            return False
         release = task['release']
         if release['status'] == 'unknown' and release.get('cli_pid'):
             try:
@@ -93,7 +94,7 @@ def process(service, conversation_id):
         approval = next((d for d in board['decisions'] if d['id'] == release['approval_id']), None)
         if not approval or approval['status'] != 'answered' or approval.get('option_id') != 'approve':
             raise WorkError('缺少有效发布批准')
-        if config['environment'] != release['environment'] or not service._current_matches(task['candidate']):
+        if config['environment'] != release['environment'] or not service._current_matches(board, task, task['candidate']):
             service._invalidate(board, task, '候选版本或发布环境变化，需要重新验证与批准')
             service._save(db, board, 'release_approval_stale', 'host', {'task_id': task['id']})
             return True
@@ -107,8 +108,8 @@ def process(service, conversation_id):
     deployment, code = b'', None
     try:
         if not verify_only:
-            deployment, code = _run(service, config['command'], release, config['timeout'], conversation_id, task_id, stop_on_cancel=True)
-        verification, verify_code = _run(service, config['verify_command'], release, config['timeout'], conversation_id, task_id)
+            deployment, code = _run(service, config['command'], release, config['timeout'], conversation_id, task_id, workspace, stop_on_cancel=True)
+        verification, verify_code = _run(service, config['verify_command'], release, config['timeout'], conversation_id, task_id, workspace)
         try:
             report = json.loads(verification)
         except (ValueError, TypeError):
