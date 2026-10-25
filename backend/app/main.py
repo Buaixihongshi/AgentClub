@@ -78,6 +78,8 @@ def create_app(
     app.include_router(build_missions_router(app_settings, repository, adapter_override=mission_adapter))
     from backend.app.api.shared_work import build_router as build_work_router
     app.include_router(build_work_router(app_settings, repository, mission_adapter))
+    from backend.app.api.memory import build_router as build_memory_router
+    app.include_router(build_memory_router(app_settings, repository))
     app.include_router(
         build_onboarding_router(
             app_settings,

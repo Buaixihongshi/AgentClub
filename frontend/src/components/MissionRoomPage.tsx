@@ -102,6 +102,7 @@ export function MissionRoomPage(props: {
         <MissionHeader runtimeSummary={props.runtimeSummary} streamState={props.streamState} />
         <SettingsButton
           view={props.hubSettings ?? null}
+          conversationId={props.selectedConversationId}
           providerStatus={props.providerStatus}
           onboarding={props.onboarding?.onboarding}
           open={settingsOpen}

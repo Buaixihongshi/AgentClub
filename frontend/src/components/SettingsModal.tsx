@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import {
   Activity,
   AlertTriangle,
+  Brain,
   KeyRound,
   Plus,
   RefreshCw,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import type { ProviderStatusState } from "../hooks/useProviderStatus";
 import { ObservabilityOverview } from "./ObservabilityOverview";
+import { MemoryPanel } from "./MemoryPanel";
 import {
   fetchConnectionModels,
   refreshConnectionModels,
@@ -50,7 +52,7 @@ interface AgentDraft {
   clear?: boolean;
 }
 
-type SettingsSectionId = "team" | "runtime" | "observability";
+type SettingsSectionId = "team" | "runtime" | "observability" | "memory";
 
 type SelectedTarget =
   | { type: "agent"; id: string }
@@ -69,6 +71,7 @@ interface Props {
   onVerifyProvider?: (providerId: string) => void;
   onSave: (patch: HubSettingsPatch) => void;
   onClose: () => void;
+  conversationId?: string | null;
 }
 
 export function SettingsModal({
@@ -79,6 +82,7 @@ export function SettingsModal({
   onVerifyProvider,
   onSave,
   onClose,
+  conversationId,
 }: Props) {
   const [providerDraft, setProviderDraft] = useState<Record<string, boolean>>({});
   const [runtimeDraft, setRuntimeDraft] = useState<Record<string, string>>({});
@@ -605,7 +609,7 @@ export function SettingsModal({
         <div className="settings-modal-header">
           <div>
             <h2>设置</h2>
-            <p>管理 CLI 与自定义 API、角色调度、运行参数与全局观测</p>
+            <p>管理 CLI 与自定义 API、角色调度、运行参数、全局观测与记忆</p>
           </div>
           <button
             type="button"
@@ -646,6 +650,15 @@ export function SettingsModal({
             >
               <Activity size={17} aria-hidden="true" />
               <span>观测</span>
+            </button>
+            <button
+              type="button"
+              className={activeSection === "memory" ? "is-active" : ""}
+              aria-pressed={activeSection === "memory"}
+              onClick={() => setActiveSection("memory")}
+            >
+              <Brain size={17} aria-hidden="true" />
+              <span>记忆</span>
             </button>
           </nav>
 
@@ -1791,9 +1804,10 @@ export function SettingsModal({
               ) : null}
 
               {activeSection === "observability" ? <ObservabilityOverview /> : null}
+              {activeSection === "memory" ? <MemoryPanel conversationId={conversationId} /> : null}
             </div>
 
-            {activeSection === "observability" ? null : (
+            {activeSection === "observability" || activeSection === "memory" ? null : (
               <div className="settings-modal-footer">
                 <div className="footer-status">
                   <span className={`status-dot dot-${hasDiff ? "warning" : "ready"}`} />

@@ -20,6 +20,7 @@ class AgentOverride(BaseModel):
 class Settings(BaseModel):
     database_path: Path = Path("data/yirenhub.sqlite3")
     artifact_root: Path = Path("artifacts")
+    memory_root: Path = Path("data/memory")
     config_dir: Path = Path("config")
     use_fake_cli: bool = True
     demo_only: bool = False
@@ -55,6 +56,7 @@ def get_settings() -> Settings:
     kwargs: dict = dict(
         database_path=database_path,
         artifact_root=_env_path("YIREN_ARTIFACT_ROOT", default=Path("artifacts")),
+        memory_root=_env_path("YIREN_MEMORY_ROOT", default=Path("data/memory")),
         config_dir=_env_path("YIREN_CONFIG_DIR", default=Path("config")),
         use_fake_cli=_env_bool("YIREN_USE_FAKE_CLI", default=True),
         demo_only=_env_bool("YIREN_DEMO_ONLY", default=False),
@@ -130,6 +132,7 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
     kwargs: dict = {
         "database_path": app_settings.database_path,
         "artifact_root": app_settings.artifact_root,
+        "memory_root": app_settings.memory_root,
         "config_dir": app_settings.config_dir,
         "use_fake_cli": app_settings.use_fake_cli,
         "demo_only": app_settings.demo_only,

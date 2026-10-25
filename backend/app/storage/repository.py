@@ -123,6 +123,49 @@ class Repository:
                 );
                 CREATE INDEX IF NOT EXISTS idx_maintenance_events_run
                     ON maintenance_events(run_id, id);
+                CREATE TABLE IF NOT EXISTS memory_entries (
+                    id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    tags TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    digest TEXT NOT NULL,
+                    body_chars INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_entries_agent
+                    ON memory_entries(agent_id, status);
+                CREATE TABLE IF NOT EXISTS context_checkpoints (
+                    conversation_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    source_message_ids TEXT NOT NULL DEFAULT '[]',
+                    cursor_event_id INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, agent_id)
+                );
+                CREATE TABLE IF NOT EXISTS model_state (
+                    agent_id TEXT PRIMARY KEY,
+                    provider_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS model_handovers (
+                    id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    previous TEXT NOT NULL DEFAULT '',
+                    current TEXT NOT NULL DEFAULT '',
+                    mission_id TEXT,
+                    conversation_id TEXT,
+                    acknowledged INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    acknowledged_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_model_handovers_agent
+                    ON model_handovers(agent_id, id);
                 """
             )
 

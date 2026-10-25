@@ -34,11 +34,18 @@ from backend.app.orchestration.events import (
     record_turn_failed,
     record_turn_started,
 )
+from backend.app.memory.assembly import assemble, sections_into_prompt
+from backend.app.memory import handover as handover_store
 from backend.app.orchestration.context import build_artifact_index, build_conversation_context
 from backend.app.orchestration.speaker import WorkflowStep
 from backend.app.orchestration.strategies import OrchestrationPlan, plan_orchestration
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
+
+
+def _provider_label(agent: Optional[AgentProfile], provider_id: str) -> str:
+    model = (agent.provider_models or {}).get(provider_id) if agent else None
+    return '{}/{}'.format(provider_id, model or '默认模型')
 
 
 @dataclass(frozen=True)
@@ -91,6 +98,9 @@ class MissionRunner:
 
         if any(e.event_type in {'adaptive.queued', 'adaptive.control_received'} for e in self.repository.list_events_after(mission_id, 0)):
             return self.repository.get_mission(mission_id)
+
+        if not is_provider_verification_mission(mission):
+            handover_store.record_mission_start(self.repository, self.agents, mission)
 
         if any(e.event_type == 'adaptive.claimed' for e in self.repository.list_events_after(mission_id, 0)):
             return self._run_adaptive(mission)
@@ -201,18 +211,22 @@ class MissionRunner:
 
             artifact_index = build_artifact_index(self.repository, mission.id)
             conversation_context = ""
+            memory_sections = None
             if not is_provider_verification_mission(mission):
                 conversation_context = build_conversation_context(
                     self.repository, mission.conversation_id, mission_id=mission.id,
                     reply_to_turn_id=step.sender_turn_id,
                     agent_registry=self.agent_registry,
                 )
+                memory_sections = assemble(self.repository, self.settings.memory_root,
+                                           mission.conversation_id, effective_agent_id)
             prompt = _build_prompt(
                 mission,
                 turn_purpose,
                 agents[effective_agent_id],
                 conversation_context=conversation_context,
                 artifact_index=artifact_index,
+                memory_blocks=sections_into_prompt(memory_sections) if memory_sections else None,
                 a2a_step=a2a_step,
                 a2a_reply_text=a2a_reply_text,
                 agents_by_id=agents,
@@ -253,6 +267,11 @@ class MissionRunner:
                 turn_tools,
                 a2a_sender_turn_id=a2a_sender_turn_id,
             )
+            if memory_sections is not None:
+                # Delivered in this turn's prompt (pre-turn sections plus any
+                # in-turn fallback note); a crash before this point re-delivers
+                # instead of losing the handover.
+                handover_store.acknowledge(self.repository, effective_agent_id)
 
             if step.origin == "a2a":
                 self._handle_callee_reply(
@@ -395,8 +414,14 @@ class MissionRunner:
             '可协作角色：\n' + json.dumps([{'id': a.id, 'name': a.display_name, 'role': a.role} for a in self.agents], ensure_ascii=False)
             + '\n持久工作上下文：\n' + json.dumps(context, ensure_ascii=False)
         )
+        sections = assemble(self.repository, self.settings.memory_root,
+                            mission.conversation_id, agent_id)
+        memory_blocks_text = '\n'.join(sections_into_prompt(sections))
+        if memory_blocks_text:
+            prompt = prompt + '\n' + memory_blocks_text + '\n'
         outcome = self._run_turn_with_fallbacks(mission, agent_id, turn_id,
                                                _providers_by_agent([agent])[agent_id], prompt, tools)
+        handover_store.acknowledge(self.repository, agent_id)
         status = MissionStatus.COMPLETED if outcome.status == TurnStatus.COMPLETED else MissionStatus.BLOCKED
         mission = self.repository.get_mission(mission.id).model_copy(update={'status': status, 'updated_at': utc_now()})
         self.repository.update_mission(mission)
@@ -417,6 +442,8 @@ class MissionRunner:
                     self.repository, mission.conversation_id, mission_id=mission_id,
                     reply_to_turn_id=step.sender_turn_id, agent_registry=self.agent_registry,
                 )
+                sections = assemble(self.repository, self.settings.memory_root,
+                                    mission.conversation_id, step.agent_id)
                 reply = None
                 if step.origin == 'a2a_resume':
                     callee_turn = next((e.payload['turn_id'] for e in self.repository.list_events_after(mission_id, 0)
@@ -432,6 +459,7 @@ class MissionRunner:
                                 '邀请共享本场总回合预算；工具返回未接纳时继续当前发言，不承诺额外回合。')
                 prompt = _build_prompt(mission, purpose, agents[step.agent_id], conversation_context=context,
                                        artifact_index=build_artifact_index(self.repository, mission_id),
+                                       memory_blocks=sections_into_prompt(sections),
                                        a2a_step=step if step.origin != 'workflow' else None, a2a_reply_text=reply,
                                        agents_by_id=agents, max_a2a_invocations=None)
                 tools = MCPTools(self.repository, self.settings.artifact_root,
@@ -439,6 +467,7 @@ class MissionRunner:
                 outcome = self._run_turn_with_fallbacks(mission, step.agent_id, turn_id,
                                                        _providers_by_agent(list(agents.values()))[step.agent_id], prompt, tools,
                                                        a2a_sender_turn_id=step.sender_turn_id)
+                handover_store.acknowledge(self.repository, step.agent_id)
                 policy.complete(mission_id, turn_id, outcome)
         except Exception:
             policy.fail(mission_id)
@@ -715,6 +744,18 @@ class MissionRunner:
                     return TurnOutcome(status=TurnStatus.BLOCKED, summary=str(exc), retryable=False)
             event_offset = len(prior_events)
             attempt = index + 1
+            attempt_prompt = prompt
+            if index and not is_provider_verification_mission(mission):
+                profile = next((a for a in self.agents if a.id == agent_id), None)
+                previous_label = _provider_label(profile, provider_candidates[index - 1])
+                current_label = _provider_label(profile, provider_id)
+                handover_store.record_fallback(self.repository, mission, agent_id,
+                                               previous_label, current_label)
+                attempt_prompt = prompt + (
+                    '\n【模型交接】本回合原 Provider {} 执行失败，已回退到 {}。'
+                    '请基于同一任务上下文接续，不要因切换重置已确认的事实；'
+                    '需要时用 read_context(message_ids=[...]) 补读原文。\n'.format(
+                        previous_label, current_label))
             if mission.room_mode == 'roundtable':
                 from backend.app.orchestration.roundtable import Roundtable
                 Roundtable(self.repository).authorize_attempt(mission.id, turn_id, provider_id, attempt)
@@ -725,7 +766,7 @@ class MissionRunner:
                 agent_id,
                 provider_id,
                 attempt,
-                prompt[:80],
+                attempt_prompt[:80],
                 a2a_sender_turn_id=a2a_sender_turn_id,
             )
             t0 = time.monotonic()
@@ -735,7 +776,7 @@ class MissionRunner:
                     agent_id,
                     turn_id,
                     provider_id,
-                    prompt,
+                    attempt_prompt,
                     tools,
                 )
             except Exception as exc:
@@ -934,6 +975,7 @@ def _build_prompt(
     *,
     conversation_context: str = "",
     artifact_index: str = "",
+    memory_blocks: Optional[List[str]] = None,
     a2a_step: Optional[WorkflowStep] = None,
     a2a_reply_text: Optional[str] = None,
     agents_by_id: Optional[Dict[str, AgentProfile]] = None,
@@ -1000,6 +1042,8 @@ def _build_prompt(
             "【职责与工作指引】结合当前任务落实以下指引，审查规则适用于代码审查场景，无需在每次回复中逐条复述：\n"
             "{bullets}".format(bullets=bullets)
         )
+    if memory_blocks:
+        parts.extend(memory_blocks)
     if conversation_context:
         parts.append(conversation_context)
     if artifact_index:

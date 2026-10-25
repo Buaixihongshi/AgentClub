@@ -6,6 +6,7 @@
 
 ### Added
 
+- 新增上下文记忆：角色长期记忆以 Markdown 文件为权威存储（`memory_root`，默认 `<状态>/data/memory`），SQLite 仅保存可重建索引、会话短期检查点和模型切换执行状态；新增 MCP 工具 `memory`（读取/写入/修订/忘记本角色记忆）与 `save_checkpoint`（会话滚动检查点），`read_context` 支持按消息 ID 原文补读并返回记忆/检查点/交接节；prompt 上下文装配统一接入普通任务、圆桌与自主工作三条路径，Provider 验证任务不注入记忆；角色有效模型变化（设置或回退）记录交接并在下一次 prompt 注入一次；新增 `/api/memory/*` 管理接口与设置内"记忆"页签（查看、修订、忘记/恢复/清除、重建索引、检查点与交接记录）。详见 [上下文记忆文档](docs/CONTEXT_MEMORY.md)。
 - 新增可选的 Antigravity 常驻进程模式：按会话与角色隔离、每轮执行凭证、正式回复去重、宿主退出监护及中断恢复记录；默认关闭，详见 [2026-10-18 升级记录](docs/upgrades/2026-10-18-antigravity-session-recovery.md)。
 - 新增代码仓库维护内核：受信仓库登记、隔离 Git worktree、无 shell 验证契约、持久化维护状态、重启恢复、审批/反馈记录与受控进化提案。
 - 设置新增「观测」页签：跨全部会话统计总量、检查项、Trace 覆盖率、花费、Agent / Provider 与最近失败，并支持全部 / 今天 / 7 天 / 30 天窗口；可下钻到逐回合表，再点开单回合的步骤、参数、输出与检查项。接口 `GET /api/observability/overview` 与 `GET /api/observability/turns/{turn_id}`。

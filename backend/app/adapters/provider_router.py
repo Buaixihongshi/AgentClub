@@ -26,6 +26,7 @@ class ProviderRouterAdapter(CLIAdapter):
         antigravity_persistent: bool = False,
         database_path: Optional[Path] = None,
         artifact_root: Optional[Path] = None,
+        memory_root: Optional[Path] = None,
         provider_overrides: Optional[dict[str, ProviderOverride]] = None,
         agent_overrides: Optional[dict[str, AgentOverride]] = None,
         api_settings=None,
@@ -37,6 +38,7 @@ class ProviderRouterAdapter(CLIAdapter):
         self.antigravity_persistent = antigravity_persistent
         self.database_path = database_path
         self.artifact_root = artifact_root
+        self.memory_root = memory_root
         self.provider_overrides = provider_overrides or {}
         self.agent_overrides = agent_overrides or {}
         self.fake_adapter = FakeCLIAdapter()
@@ -174,6 +176,7 @@ class ProviderRouterAdapter(CLIAdapter):
                 provider.args,
                 db_path=self.database_path,
                 artifact_root=self.artifact_root,
+                memory_root=self.memory_root,
                 timeout=remaining_timeout(self.cli_timeout),
                 idle_timeout=(
                     self.a2a_idle_timeout

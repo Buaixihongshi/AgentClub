@@ -135,9 +135,11 @@ class MCPTools:
         current_step_origin: Optional[str] = None,
         lease_token: Optional[str] = None,
         workspace_root: Optional[Path] = None,
+        memory_root: Optional[Path] = None,
     ):
         self.repository = repository
         self.artifact_root = artifact_root
+        self.memory_root = Path(memory_root) if memory_root else None
         self.a2a_enqueue = a2a_enqueue
         self.valid_agent_ids = set(valid_agent_ids or [])
         self.max_a2a_invocations = max_a2a_invocations
@@ -165,6 +167,7 @@ class MCPTools:
         material_offset: int = 0,
         history_offset: int = 0,
         issue_offset: int = 0,
+        message_ids: Optional[List[str]] = None,
     ) -> Dict[str, object]:
         from backend.app.orchestration.deliberation import Deliberation, is_v2
         if is_v2(self.repository.get_mission(mission_id)):
@@ -195,11 +198,30 @@ class MCPTools:
         history = self.repository.read_message_history(
             conversation_id=conversation_id, mission_id=None if conversation_id else mission_id,
         )
-        messages = select_context_messages(history.project(), limit)
+        entries = history.project()
+        messages = select_context_messages(entries, limit)
+        missing_message_ids: List[str] = []
+        if message_ids:
+            # 原文补读：按消息 ID 取未截断全文，绕过条数窗口。
+            wanted = [str(value) for value in message_ids if isinstance(value, str)][:50]
+            by_id = {entry.message.id: entry.message for entry in entries}
+            missing_message_ids = [value for value in wanted if value not in by_id]
+            messages = [by_id[value] for value in wanted if value in by_id]
         result = {
             "mission": mission.model_dump(mode="json"),
             "messages": [message.model_dump(mode="json") for message in messages],
         }
+        if missing_message_ids:
+            result["missing_message_ids"] = missing_message_ids
+        if conversation_id and agent_id and self.memory_root is not None:
+            from backend.app.memory.assembly import assemble
+            sections = assemble(self.repository, self.memory_root, conversation_id, agent_id)
+            result["memory"] = {
+                "entries": sections.memory_entries,
+                "handovers": sections.handovers,
+            }
+            if sections.checkpoint:
+                result["checkpoint"] = sections.checkpoint
         if conversation_id:
             from backend.app.work.service import SharedWork
             result['shared_work'] = SharedWork(self.repository).read(conversation_id)
@@ -215,6 +237,103 @@ class MCPTools:
                 output=_mission_context_digest(result),
             )
         return result
+
+    def _require_memory_store(self):
+        if self.memory_root is None:
+            raise MCPToolError("记忆存储未配置，本环境不可用长期记忆工具")
+        from backend.app.memory.store import MemoryStore, MemoryError
+        return MemoryStore(self.repository, self.memory_root), MemoryError
+
+    @roundtable_guard
+    def memory(self, mission_id, agent_id, turn_id, provider_id, action="read", data=None):
+        """Long-term, cross-conversation memory of the calling agent only."""
+        from backend.app.orchestration.events import record_tool_call, record_tool_result
+        mission = self._require_mission(mission_id)
+        if not agent_id:
+            raise MCPToolError("memory 需要 agent_id")
+        store, MemoryError_ = self._require_memory_store()
+        value = data if isinstance(data, dict) else {}
+        try:
+            record_tool_call(self.repository, mission_id, turn_id, agent_id, 'memory',
+                             {'action': action, 'entry_id': value.get('entry_id')}, provider_id)
+            if action == 'read':
+                entry_id = value.get('entry_id')
+                if entry_id:
+                    entry = store.read_entry(str(entry_id))
+                    if entry['agent_id'] != agent_id:
+                        raise MCPToolError("只能读取自己的记忆")
+                    record_tool_result(self.repository, mission_id, turn_id, agent_id, 'memory',
+                                       summary='read full', provider_id=provider_id,
+                                       output=entry['body'][:200])
+                    return entry
+                entries = store.read_entries(agent_id)
+                record_tool_result(self.repository, mission_id, turn_id, agent_id, 'memory',
+                                   summary='read {n} entries'.format(n=len(entries)), provider_id=provider_id)
+                return {'entries': entries}
+            if action == 'write':
+                entry = store.write(agent_id, title=value.get('title') or '', body=value.get('body') or '',
+                                    tags=value.get('tags') or [], source_refs=value.get('source_refs') or [])
+                self.repository.add_event(mission_id, 'memory.written', {
+                    'agent_id': agent_id, 'turn_id': turn_id, 'entry_id': entry['id'],
+                    'title': entry['title']})
+                record_tool_result(self.repository, mission_id, turn_id, agent_id, 'memory',
+                                   summary='written', provider_id=provider_id)
+                return {'id': entry['id'], 'title': entry['title'], 'revision': entry['revision']}
+            if action == 'revise':
+                entry_id = str(value.get('entry_id') or '')
+                existing = store.read_entry(entry_id)
+                if existing['agent_id'] != agent_id:
+                    raise MCPToolError("只能修订自己的记忆")
+                entry = store.revise(entry_id,
+                                     title=value.get('title'),
+                                     body=value.get('body'),
+                                     tags=value.get('tags') if 'tags' in value else None)
+                self.repository.add_event(mission_id, 'memory.revised', {
+                    'agent_id': agent_id, 'turn_id': turn_id, 'entry_id': entry_id,
+                    'revision': entry['revision']})
+                record_tool_result(self.repository, mission_id, turn_id, agent_id, 'memory',
+                                   summary='revised r{}'.format(entry['revision']), provider_id=provider_id)
+                return {'id': entry['id'], 'revision': entry['revision']}
+            if action == 'forget':
+                entry_id = str(value.get('entry_id') or '')
+                existing = store.read_entry(entry_id)
+                if existing['agent_id'] != agent_id:
+                    raise MCPToolError("只能忘记自己的记忆")
+                entry = store.set_status(entry_id, 'forgotten')
+                self.repository.add_event(mission_id, 'memory.forgotten', {
+                    'agent_id': agent_id, 'turn_id': turn_id, 'entry_id': entry_id})
+                record_tool_result(self.repository, mission_id, turn_id, agent_id, 'memory',
+                                   summary='forgotten', provider_id=provider_id)
+                return {'id': entry_id, 'status': entry['status']}
+            raise MCPToolError("memory 不支持该操作：{}".format(action))
+        except MemoryError_ as exc:
+            raise MCPToolError(str(exc)) from exc
+
+    @roundtable_guard
+    def save_checkpoint(self, mission_id, agent_id, turn_id, provider_id, text, source_message_ids=None):
+        """Save the agent's rolling short-term checkpoint for this conversation."""
+        from backend.app.orchestration.events import record_tool_call, record_tool_result
+        from backend.app.memory import checkpoints as checkpoint_store
+        from backend.app.memory.checkpoints import CheckpointError
+        mission = self._require_mission(mission_id)
+        if not mission.conversation_id or is_provider_verification_mission(mission):
+            raise MCPToolError("检查点需要普通会话上下文")
+        if not agent_id:
+            raise MCPToolError("save_checkpoint 需要 agent_id")
+        record_tool_call(self.repository, mission_id, turn_id, agent_id, 'save_checkpoint',
+                         {'text_length': len(str(text or ''))}, provider_id)
+        cursor = max((event.id for event in self.repository.list_events_after(mission_id, 0)), default=0)
+        try:
+            checkpoint = checkpoint_store.save(self.repository, mission.conversation_id, agent_id,
+                                               text, source_message_ids or [], cursor_event_id=cursor)
+        except CheckpointError as exc:
+            raise MCPToolError(str(exc)) from exc
+        self.repository.add_event(mission_id, 'checkpoint.saved', {
+            'agent_id': agent_id, 'turn_id': turn_id,
+            'source_message_ids': checkpoint['source_message_ids']})
+        record_tool_result(self.repository, mission_id, turn_id, agent_id, 'save_checkpoint',
+                           summary='saved', provider_id=provider_id)
+        return checkpoint
 
     @roundtable_guard
     def shared_work(self, mission_id, agent_id, turn_id, provider_id, action='read',
