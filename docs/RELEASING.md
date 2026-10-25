@@ -1,28 +1,32 @@
 # 审批、发布与恢复
 
 本工具将“写好代码”“准许合并”“合入 main”“激活日常实例”分开记录。
-Agent 可准备和验证候选；Owner release、实际数据导入、activate、rollback、recover 由所有者明确执行。
+Agent 可准备和验证候选；实际数据导入、activate、rollback、recover 仍需所有者明确执行或授权。
 共用账号凭据无法技术上区分人和 Agent，这一边界需要独立凭据，不能由本地批准字段伪造。
 
-## 1. 当前 head 的审批门禁
+## 1. 当前 head 的检查与合并
 
 ```sh
-./scripts/release.sh prepare --pr 22
+./scripts/release.sh prepare --pr 29
 ./scripts/release.sh gate status
-./scripts/release.sh gate install
 ```
 
-prepare/status 只读。gate install 是本流程改造授权范围内的仓库设置变更：先读取 main 上
-真实存在的人工 workflow，再在现有 no-bypass 主线规则中增加 Actions 来源的 Owner approval，
-保留前后端 required checks、strict 更新、PR、删除与 force-push 保护；不触发批准或合并。
-工具会回读规则确认生效。旧 v1 workflow 足以启动此门禁；PR 3 合并后才显示 hardened=true。
+prepare/status 只读。prepare 读取当前 PR head、基分支、两项 Actions CI 和审阅就绪状态；
+此结果不代表已审阅、已合并或已发布。合并遵循适用审阅、对话解决与 GitHub 分支保护。
+新增提交需重新运行 CI，并核对受影响的审阅。Agent 不自行合并或启用自动合并。
 
-所有者在 GitHub Actions 的 Owner release 选择 main，输入 PR 编号和 prepare 列出的完整
-head SHA。新 workflow 只在 owner/main 执行，checkout 固定到触发时的 main SHA，并拒绝
-draft、关闭、非 main 基线和已过期 head。追加提交不会继承旧批准。Agent 不运行此 workflow。
+所有者已取消单独的 Owner release / Owner approval 门禁；不再要求手动运行审批 workflow。
+针对仍保留旧检查的仓库，在所有者明确授权后可运行：
 
-连续 PR 在父分支上只完成候选检查，prepare 会标记尚未具备 main 放行条件。依次合并
-PR #22、将 #23 改基到 main 后验证/放行，再对 PR 3 做同样操作。
+```sh
+./scripts/release.sh gate remove-owner
+```
+
+该命令只移除现有主线规则中的 `Owner approval`，保留两项 Actions 来源的 CI、strict 更新、
+PR、其余保护和 bypass 设置，并回读确认。保护结构异常时拒绝覆盖；没有重新安装旧检查的入口。
+旧 workflow、批准辅助程序及相关活跃指引一起移除，历史报告中的既有批准证据原样保留。
+
+连续 PR 先合并依赖，将下一 PR 改基到 main，处理 squash 差异并重新检查/审阅。
 
 ## 2. 准备准确的已合并候选
 
@@ -31,10 +35,9 @@ PR #22、将 #23 改基到 main 后验证/放行，再对 PR 3 做同样操作�
 ./scripts/release.sh status
 ```
 
-stage 验证提交在当前公共 main 历史中，找到它对应的实际合并 PR，检查该 PR head 的两项
-Actions CI 和 Owner approval。批准必须来自本仓库 main 上由所有者手动触发的 Owner release。
-生成可追溯链：source_pr → approved_head_sha / approval_run → merge_commit_sha → deployed sha。
-旧的、没有该审批链的历史提交不能冒充已批准版本。
+stage 验证提交位于当前公共 main 历史中，找到对应的实际合并 PR，并检查该 PR head 的两项
+Actions CI 成功。生成可追溯链：source_pr → verified_head_sha / ci → merge_commit_sha → deployed sha。
+不要求 Owner approval，也不生成虚构批准。直接推送或无法映射到实际合并 PR 的提交不能冒充候选。
 
 候选在环境根目录 releases/<sha> 的独立 detached worktree 安装、完整检查和生产构建。
 前端按 runtime 标签构建并保留构建时身份；manifest 记录源码摘要、完整检查报告和所有
@@ -73,7 +76,7 @@ release-history 都留在私有环境根目录，不提交到仓库。
 ./scripts/release.sh activate --sha <下一候选SHA> --expected-current <当前部署SHA>
 ```
 
-工具重新核对来源与 required owner gate，认证并 drain 当前受管实例，等待已接入写操作、
+工具重新核对来源与必需 CI/PR 主线保护，认证并 drain 当前受管实例，等待已接入写操作、
 确认没有活跃工作；一致备份 SQLite、设置、密钥和产物后停止自己的 supervisor，启动新候选。
 生产前端使用已验证的 preview 产物，保留同一 runtime-state；不会覆盖已保存的 Provider 配置。
 新实例健康与前后端身份核对成功后，才原子更新 current.json 和历史记录。
@@ -91,7 +94,7 @@ release-history 都留在私有环境根目录，不提交到仓库。
 **rollback 同时恢复前一版本和发布前状态。** 它先保存当前状态的另一份一致备份，因此
 发布后新增的聊天/产物不会被直接删除，但不留在回滚后的活动库中；可从保留的备份恢复。
 必须显式 --restore-state，不自动假设旧代码兼容新数据。回滚使用已有、校验通过的候选
-及批准链，不要求网络可用或制造一次新批准。
+及原始来源记录，不要求网络可用或制造一次新批准。
 
 transition.json 在暂停接入前即记录意图，随后记录快照、旧版停止、新版启动和提交阶段。
 存在未完成转换时阻止新切换。recover 可重复检查当前实例：若目标已经正式提交且身份
@@ -99,4 +102,4 @@ transition.json 在暂停接入前即记录意图，随后记录快照、旧版�
 未知进程、busy 工作或校验失败会要求先处理具体问题，不能通过重新启动掩盖状态。
 
 current/transition/history 的记录是操作证据，不是所有者授权。临时 fixture 测试不写真实
-GitHub 批准，不使用日常端口或生产数据。备份与历史保留不自动清理；清理需要单独核对。
+GitHub 批准，不使用日常端口或生产数据。备份与历史保留不自动清理；清理需要单独核对。旧候选 manifest 的批准字段可继续用于回滚记录，不会被改写为新格式或补造批准。

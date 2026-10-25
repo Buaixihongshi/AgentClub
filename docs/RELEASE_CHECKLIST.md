@@ -37,9 +37,9 @@
 
 上面的数字与勾选是 0.1.0 历史记录，不能作为后续提交的测试证据。每次发布重新核对：
 
-- [ ] prepare 读取准确 PR head；真实 CI 与所有者放行覆盖该 head。
+- [ ] prepare 读取准确 PR head；真实必需 CI 成功，并完成适用审阅。
 - [ ] 已合并到 main，并在 alpha 对准确合并结果核对用户路径。
-- [ ] stage 建立 approved head → merge commit → 候选 SHA 的来源链和完整检查/产物校验。
+- [ ] stage 建立 CI verified head → merge commit → 候选 SHA 的来源链和完整检查/产物校验。
 - [ ] 首次迁移已由所有者停止旧服务、检查空闲并显式导入；未用空库替换旧数据。
 - [ ] 所有者明确执行 activate，expected-current 与实际部署一致。
 - [ ] 日常实例身份、current.json、前版及备份记录一致。

@@ -165,9 +165,12 @@ def switch(api, target_sha, expected, *, rollback=False):
             if not old or not old.get("previous_sha"): raise EnvironmentError("No previous release recorded")
             target_sha = old["previous_sha"]
         target = load_stage(check_sha(target_sha))
-        provenance = ({k: target[k] for k in ("repository", "source_pr", "merge_commit_sha", "approved_head_sha", "approval_run", "approved_by")}
+        # Historical manifests keep their original approval evidence on rollback;
+        # new releases record exact-head CI without inventing an owner approval.
+        provenance = ({k: target[k] for k in ("repository", "source_pr", "merge_commit_sha", "verified_head_sha", "ci",
+                                            "approved_head_sha", "approval_run", "approved_by") if k in target}
                       if rollback else release_provenance(api, target_sha))
-        if not rollback and not gate(api)["owner_required"]: raise EnvironmentError("Owner approval is not yet a required main check")
+        if not rollback: gate(api)  # Required CI and PR protection remain in force.
         if old and target_sha == old["sha"]: raise EnvironmentError("Requested release is already active")
         state = home() / "runtime-state"
         initialization = state / "initialization.json"
@@ -237,10 +240,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", help="GitHub owner/repo; defaults to configured origin")
     sub = parser.add_subparsers(dest="action", required=True)
-    prep = sub.add_parser("prepare", help="Read-only exact-head approval readiness")
+    prep = sub.add_parser("prepare", help="Read-only exact-head CI and review readiness")
     prep.add_argument("--pr", type=int, required=True)
     gates = sub.add_parser("gate")
-    gates.add_argument("operation", choices=("status", "install"))
+    gates.add_argument("operation", choices=("status", "remove-owner"))
     candidate = sub.add_parser("stage")
     candidate.add_argument("--sha", required=True)
     activate = sub.add_parser("activate", help="Owner-only explicit runtime switch")
@@ -262,7 +265,7 @@ def main():
     args = parser.parse_args()
     api = GitHub(args.repo)
     if args.action == "prepare": result = prepare(api, args.pr)
-    elif args.action == "gate": result = gate(api, install=args.operation == "install")
+    elif args.action == "gate": result = gate(api, remove_owner=args.operation == "remove-owner")
     elif args.action == "stage": result = stage(api, args.sha)
     elif args.action == "activate": result = switch(api, args.sha, args.expected_current)
     elif args.action == "rollback": result = switch(api, None, args.expected_current, rollback=True)

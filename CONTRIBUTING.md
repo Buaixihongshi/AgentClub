@@ -30,12 +30,12 @@ Do not reuse a branch whose pull request has already been merged.
 - Add tests for behavior changes and keep the pull request focused.
 - Push review fixes to the same branch; the existing pull request updates
   automatically.
-- Merge only after the required CI checks pass, all review conversations
-  are resolved, and repository owner Buaixihongshi explicitly approves the
-  current PR head commit. Only the owner may authorize merge; agents must
-  not merge or enable auto-merge on their own.
-- Any additional commit invalidates the previous approval. Request owner
-  approval again for the new head commit.
+- Merge only after the required CI checks pass and applicable reviews and
+  review conversations are resolved. The owner decides whether to merge;
+  agents must not merge or enable auto-merge on their own. No additional
+  Owner release workflow or Owner approval status is required.
+- After an additional commit, rerun checks for the new head and revisit any
+  reviews affected by the change.
 - Prefer squash merging so each pull request becomes one coherent commit on
   `main`.
 - Delete the topic branch after merge.
@@ -90,11 +90,11 @@ privacy, hygiene, audit). Full delivery evidence records the actual SHA and sour
 digest; a source change during validation invalidates the receipt. Real-model
 checks are separately opt-in. See [SOP](docs/SOP.md) and [environments](docs/ENVIRONMENTS.md).
 
-Read the exact current PR head and approval readiness with
-`./scripts/release.sh prepare --pr <number>`. The required `Owner approval`
-status comes only from the owner's manual workflow on main; PR text is not an
-approval. For stacked PRs, merge the dependency first, retarget the next PR to
-main, reconcile squash history and rerun checks/approval before merging it.
+Read the exact current PR head, CI and review readiness with
+`./scripts/release.sh prepare --pr <number>`. This read-only report does not
+merge a PR or replace applicable review. For stacked PRs, merge the dependency
+first, retarget the next PR to main, reconcile squash history and rerun checks
+and relevant review before merging it.
 
 ## Development, testing, and production
 
@@ -114,7 +114,8 @@ the service is idle, retaining the previous version for rollback.
 The owner controls PR release. CI success is a prerequisite, not approval.
 Repository administrators should enforce PR review, stale approval dismissal,
 required CI checks, and no direct or force pushes to `main` in GitHub settings.
-Use `scripts/release.sh gate status` to inspect actual protection and
-`scripts/release.sh gate install` for the authorized, preserving owner-status
-activation. This does not post approval or merge a PR. Deployment and state
+Use `scripts/release.sh gate status` to inspect actual protection. The retired
+owner check can be removed with `scripts/release.sh gate remove-owner` when
+authorized by the owner; the command preserves CI, PR rules and other settings
+and verifies the readback. There is no command to reinstall it. Deployment and state
 recovery are separate explicit owner actions; see [release operations](docs/RELEASING.md).

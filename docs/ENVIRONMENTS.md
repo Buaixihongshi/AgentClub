@@ -129,11 +129,10 @@ Frontend tests and build 检查名称，并支持 codex/** 作为连续 PR 的�
 --output 指定私有位置；记录 SHA、源码摘要、分组、退出码和起止时间。验证期间源码或
 SHA 变化时整份报告失败，不能将混合版本的绿色结果用于交付。
 
-## 所有者放行与日常发布
+## 合并与日常发布
 
-只有所有者 Buaixihongshi 可以操作 Owner release workflow，批准准确的 PR head SHA。
-Agent 不得代为执行或伪造 Owner approval。新增提交需要重新放行；CI 成功不代表批准。
-合并与激活日常服务分开，日常切换需在任务空闲时执行并保留准确的前版及恢复记录。
-共用人类账号凭据无法技术上区分人和 Agent；权限隔离需要独立凭据，不能由审批文案冒充。
+不再要求 Owner release workflow 或 Owner approval 状态。合并仍需当前 head 的两项必需 CI、
+适用审阅和分支保护；Agent 不自行合并。新增提交重新运行检查并核对受影响审阅。
+合并与激活日常服务分开，日常切换仍需所有者明确授权、任务空闲，并保留准确前版及恢复记录。
 
 初始盘点见 [PR 1 清单](plans/2026-10-22-environment-inventory.md)。PR 2 不删除其中任何目录。
