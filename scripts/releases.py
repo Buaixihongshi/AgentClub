@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -133,6 +134,9 @@ def recover(expected):
                 phase(intent, "aborted")
                 return old
             manager.stop(Path(record["checkout"]), "runtime", state=state)
+            for _ in range(50):
+                if ports_free(): break
+                time.sleep(0.1)
         if not ports_free(): raise EnvironmentError("Unknown runtime listener prevents recovery")
         snapshot = Path(intent["backup"])
         if snapshot.exists():
@@ -197,7 +201,13 @@ def switch(api, target_sha, expected, *, rollback=False):
             storage.backup(state, snapshot, old or {"sha": "none"}, allow_empty=old is None and
                            json.loads(initialization.read_text())["mode"] == "explicit-empty")
             phase(intent, "state_snapshotted")
-            if running: manager.stop(Path(old["checkout"]), "runtime", state=state)
+            if running:
+                manager.stop(Path(old["checkout"]), "runtime", state=state)
+                for _ in range(50):
+                    if ports_free(): break
+                    time.sleep(0.1)
+                if not ports_free():
+                    raise EnvironmentError("Runtime ports remained occupied after managed stop")
             phase(intent, "old_stopped")
         except BaseException:
             if drained and manager.alive(record):

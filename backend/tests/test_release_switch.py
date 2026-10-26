@@ -164,3 +164,22 @@ def test_staged_artifact_tampering_is_rejected(tmp_path, monkeypatch):
     write_json(checks, incomplete)
     (dist / "index.html").write_text("different")
     with pytest.raises(EnvironmentError, match="has changed"): releases.load_stage(A)
+
+
+def test_switch_waits_for_ports_to_drain(deployment, monkeypatch):
+    root, state, manifests, live, started, stopped, requests, _ = deployment
+    attempts = {"count": 0}
+    def delayed_ports_free():
+        attempts["count"] += 1
+        return attempts["count"] >= 3
+    monkeypatch.setattr(releases, "ports_free", delayed_ports_free)
+    activated = releases.switch(None, B, A)
+    assert activated["sha"] == B
+    assert attempts["count"] >= 3
+
+
+def test_switch_fails_if_ports_remain_occupied_after_stop(deployment, monkeypatch):
+    root, state, manifests, live, started, stopped, requests, _ = deployment
+    monkeypatch.setattr(releases, "ports_free", lambda: False)
+    with pytest.raises(EnvironmentError, match="Runtime ports remained occupied after managed stop"):
+        releases.switch(None, B, A)
