@@ -102,9 +102,9 @@ def test_canonical_agents_have_distinct_work_styles():
         baobao = registry.require("baobao")
         wangye = registry.require("wangye")
 
-        assert "大局观" in chulan.persona
-        assert "证据" in baobao.persona
-        assert "视觉语言" in wangye.persona
+        assert "关键取舍和落地成本" in chulan.persona
+        assert "事实和遗漏" in baobao.persona
+        assert "人用起来顺不顺" in wangye.persona
 
 
 

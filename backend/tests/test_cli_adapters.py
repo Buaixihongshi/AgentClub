@@ -1498,7 +1498,9 @@ def test_public_discussion_rules_apply_to_every_agent_and_mode(agent_id, mode):
     assert "不把相互认同当作验证通过" in prompt
     assert "不为体现独立性而强行反对或制造分歧" in prompt
     assert "仍有已授权的任务或核验未完成时，继续推进或明确阻碍" in prompt
-    assert "不为凑轮次要求其他角色表态" in prompt
+    assert "无新增信息且无待完成事项时允许不发言" in prompt
+    assert "若发声协议要求回复，用最短回应收口" in prompt
+    assert "不例行表态、总结或点名接力" in prompt
 
 
 def test_public_discussion_rules_apply_without_personal_guidelines():
