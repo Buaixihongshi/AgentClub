@@ -220,6 +220,40 @@ def test_changed_design_does_not_consume_old_approval(adaptive):
     assert board['tasks'][0]['status'] == 'ready'
 
 
+def test_decide_across_different_workspace_root_resolves_task_from_decision(adaptive, repository, tmp_path):
+    task_id = create(adaptive)
+    mission = run(adaptive)
+    put(adaptive, 'docs/ui.md', 'A / B 两版方案')
+    call(adaptive, 'request_decision', {'task_id': task_id, 'kind': 'direction', 'question': '选择路径？',
+        'options': [{'id': 'A', 'text': '方案 A'}, {'id': 'B', 'text': '方案 B'}], 'artifact_paths': ['docs/ui.md']},
+        actor='chulan', mission=mission)
+    board = finish(adaptive, mission)
+    decision = board['decisions'][0]
+
+    # 模拟服务切换工作区（例如从 releases/A 切到 releases/B）
+    other_root = tmp_path / 'other_host_root'
+    other_root.mkdir()
+    new_work = AdaptiveWork(repository, other_root, check_timeout=1)
+
+    # 1. 仅传 decision_id（不显式传 task_id），后端通过 decision 自动反查 task 及其绑定环境，不报 409
+    data_without_task_id = {'decision_id': decision['id'], 'option_id': 'B', 'note': '通过 decision 反查'}
+    board_after = call(new_work, 'decide', data_without_task_id, operation_id='choose-b-implicit')
+    assert board_after['decisions'][0]['option_id'] == 'B'
+    assert board_after['decisions'][0]['status'] == 'answered'
+
+    # 2. 显式传 task_id 同样顺利通过环境门禁
+    mission2 = run(adaptive)
+    call(adaptive, 'request_decision', {'task_id': task_id, 'kind': 'direction', 'question': '再次选择？',
+        'options': [{'id': 'C', 'text': '方案 C'}, {'id': 'D', 'text': '方案 D'}], 'artifact_paths': ['docs/ui.md']},
+        actor='chulan', mission=mission2)
+    board2 = finish(adaptive, mission2)
+    decision2 = board2['decisions'][-1]
+    data_with_task_id = {'task_id': task_id, 'decision_id': decision2['id'], 'option_id': 'D', 'note': '显式携带 task_id'}
+    board_after2 = call(new_work, 'decide', data_with_task_id, operation_id='choose-d-explicit')
+    assert board_after2['decisions'][-1]['option_id'] == 'D'
+    assert board_after2['decisions'][-1]['status'] == 'answered'
+
+
 def test_delegation_keeps_parent_accountable_and_integration_required(adaptive):
     task_id = create(adaptive)
     mission = run(adaptive)

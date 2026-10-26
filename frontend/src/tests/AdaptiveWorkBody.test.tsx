@@ -40,7 +40,7 @@ describe('自主工作体验', () => {
     fireEvent.click(screen.getByRole('button', { name: '关闭a.html' }));
     fireEvent.change(screen.getByLabelText('反馈或修改意见（可选）'), { target: { value: '按钮放底部' } });
     fireEvent.click(screen.getByRole('button', { name: '选择 B' }));
-    await waitFor(() => expect(command).toHaveBeenCalledWith('decide', { decision_id: 'wd_ui', option_id: 'b', note: '按钮放底部' }));
+    await waitFor(() => expect(command).toHaveBeenCalledWith('decide', { task_id: 'wt_root', decision_id: 'wd_ui', option_id: 'b', note: '按钮放底部' }));
   });
 
   it('已失效的方案没有可批准按钮', () => {
@@ -68,7 +68,7 @@ describe('自主工作体验', () => {
     expect(screen.getByRole('button', { name: 'A：从零实施' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'C：等待权限' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'B：先审计再实施' }));
-    await waitFor(() => expect(command).toHaveBeenCalledWith('decide', { decision_id: 'wd_path', option_id: 'copy', note: '' }));
+    await waitFor(() => expect(command).toHaveBeenCalledWith('decide', { task_id: 'wt_root', decision_id: 'wd_path', option_id: 'copy', note: '' }));
   });
 
   it('新的方向决定不要求沿用上次交付的候选快照', () => {
