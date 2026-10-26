@@ -597,6 +597,13 @@
   gap:10px;
   margin-top:18px
 }
+.work-decision-buttons button {
+  min-width:0;
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  text-align:left
+}
 .work-decision-buttons button:not(.work-primary),.work-current button,.work-evidence-task button {
   padding:9px 14px;
   border:1px solid var(--work-line);
