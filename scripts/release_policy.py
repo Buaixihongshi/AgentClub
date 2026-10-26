@@ -1,10 +1,6 @@
-"""Read GitHub provenance and install the existing owner status as a real gate.
-
-This module never dispatches the owner workflow or posts approval statuses.
-"""
+"""Read exact-head CI and merged-PR provenance; preserve main protection."""
 from __future__ import annotations
 
-import base64
 import json
 import re
 import subprocess
@@ -53,33 +49,12 @@ def ci_result(api, sha):
             for name in CI_NAMES}
 
 
-def owner_evidence(api, sha):
-    # The combined /status response omits creator. Read individual statuses so
-    # an otherwise valid Actions approval can still be authenticated.
-    statuses = api.get(f"commits/{check_sha(sha)}/statuses?per_page=100")
-    matching = sorted((s for s in statuses if s["context"] == OWNER_CONTEXT),
-                      key=lambda s: s.get("created_at", ""), reverse=True)
-    if not matching or matching[0]["state"] != "success": raise EnvironmentError("Current head has no successful Owner approval")
-    status = matching[0]
-    match = re.fullmatch(r"https://github\.com/" + re.escape(api.repo) + r"/actions/runs/(\d+)", status.get("target_url") or "")
-    if not match or status.get("creator", {}).get("login") != "github-actions[bot]":
-        raise EnvironmentError("Owner approval must come from the trusted manual workflow")
-    run = api.get(f"actions/runs/{match.group(1)}")
-    if (run["event"] != "workflow_dispatch" or run["head_branch"] != "main" or
-        run["actor"]["login"] != api.repo.split("/")[0] or run["conclusion"] != "success" or
-        run["path"].split("@", 1)[0] != ".github/workflows/owner-release.yml"):
-        raise EnvironmentError("Approval workflow provenance is invalid")
-    return {"approved_head_sha": sha, "approval_run": status["target_url"], "approved_by": run["actor"]["login"]}
-
-
 def prepare(api, number):
     pr = api.get(f"pulls/{int(number)}")
     ci = ci_result(api, pr["head"]["sha"])
-    try: approval = owner_evidence(api, pr["head"]["sha"])
-    except EnvironmentError: approval = None
     return {"pr": pr["number"], "head_sha": pr["head"]["sha"], "base": pr["base"]["ref"], "ci": ci,
-            "ready_for_owner_review": pr["state"] == "open" and not pr["draft"] and pr["base"]["ref"] == "main" and all(ci.values()),
-            "owner_approval": approval, "merged": bool(pr.get("merged"))}
+            "ready_for_review": pr["state"] == "open" and not pr["draft"] and pr["base"]["ref"] == "main" and all(ci.values()),
+            "merged": bool(pr.get("merged"))}
 
 
 def release_provenance(api, sha):
@@ -89,25 +64,15 @@ def release_provenance(api, sha):
     if compare["status"] not in {"ahead", "identical"}: raise EnvironmentError("Release SHA is not on public main")
     prs = api.get(f"commits/{sha}/pulls?per_page=100")
     pr = next((p for p in prs if p.get("merged_at") and p.get("merge_commit_sha") == sha and p["base"]["ref"] == "main"), None)
-    if not pr: raise EnvironmentError("Release must be an exact merged PR commit with traceable approval")
-    approved = owner_evidence(api, pr["head"]["sha"])
-    if not all(ci_result(api, pr["head"]["sha"]).values()): raise EnvironmentError("Approved PR head lacks successful required CI")
-    return {"repository": api.repo, "source_pr": pr["number"], "merge_commit_sha": sha, **approved}
+    if not pr: raise EnvironmentError("Release must be an exact merged PR commit with traceable CI")
+    ci = ci_result(api, pr["head"]["sha"])
+    if not all(ci.values()): raise EnvironmentError("Merged PR head lacks successful required CI")
+    return {"repository": api.repo, "source_pr": pr["number"], "merge_commit_sha": sha,
+            "verified_head_sha": pr["head"]["sha"], "ci": ci}
 
 
-def gate(api, install=False):
-    # Verify an actual main workflow before enabling its required status. The
-    # existing v1 workflow is sufficient to bootstrap; PR 3 hardens its ref check.
-    workflow = api.get("contents/.github/workflows/owner-release.yml?ref=main")
-    code = base64.b64decode(workflow["content"]).decode()
-    legacy = "Owner approval" in code and "pr.head.sha" in code
-    hardened = False
-    if "validateApproval" in code and "github.ref == 'refs/heads/main'" in code:
-        helper = api.get("contents/.github/scripts/owner-approval.cjs?ref=main")
-        policy = base64.b64decode(helper["content"]).decode()
-        hardened = all(s in policy for s in ("context: 'Owner approval'", "actor !== owner", "ref !== 'refs/heads/main'", "pr.head.sha !== sha"))
-    if not ("workflow_dispatch:" in code and "github.actor ==" in code and (legacy or hardened)):
-        raise EnvironmentError("Trusted manual owner workflow is not installed on main")
+def gate(api, remove_owner=False):
+    """Optionally remove only the retired owner check, then read back protection."""
     candidates = [r for r in api.get("rulesets") if r["target"] == "branch" and r["enforcement"] == "active"]
     found = None
     for candidate in candidates:
@@ -120,16 +85,22 @@ def gate(api, install=False):
     required = next((r for r in found["rules"] if r["type"] == "required_status_checks"), None)
     if required is None: raise EnvironmentError("Existing required CI checks must be configured first")
     contexts = {c["context"] for c in required["parameters"]["required_status_checks"]}
-    if not set(CI_NAMES) <= contexts or found.get("bypass_actors"):
+    trusted = {c["context"] for c in required["parameters"]["required_status_checks"]
+               if c.get("integration_id") == ACTIONS_APP}
+    if (not set(CI_NAMES) <= trusted or found.get("bypass_actors")
+            or not required["parameters"].get("strict_required_status_checks_policy")
+            or not any(r["type"] == "pull_request" for r in found["rules"])):
         raise EnvironmentError("Existing protection differs from the expected no-bypass CI policy")
-    if install and OWNER_CONTEXT not in contexts:
-        required["parameters"]["required_status_checks"].append({"context": OWNER_CONTEXT, "integration_id": ACTIONS_APP})
+    if remove_owner and OWNER_CONTEXT in contexts:
+        required["parameters"]["required_status_checks"] = [
+            c for c in required["parameters"]["required_status_checks"] if c["context"] != OWNER_CONTEXT]
         payload = {k: found[k] for k in ("name", "target", "enforcement", "bypass_actors", "conditions", "rules")}
         api.put(f"rulesets/{found['id']}", payload)
         found = api.get(f"rulesets/{found['id']}")
+        if any(found.get(k) != v for k, v in payload.items()):
+            raise EnvironmentError("Gate readback differs from the requested preserving update")
     checks = next(r["parameters"]["required_status_checks"] for r in found["rules"] if r["type"] == "required_status_checks")
-    owner_required = any(c["context"] == OWNER_CONTEXT and c.get("integration_id") == ACTIONS_APP for c in checks)
-    if install and not owner_required: raise EnvironmentError("Gate update did not become effective")
+    owner_required = any(c["context"] == OWNER_CONTEXT for c in checks)
+    if remove_owner and owner_required: raise EnvironmentError("Owner check removal did not become effective")
     return {"ruleset": found["id"], "owner_required": owner_required, "required_checks": checks,
-            "workflow_hardened": hardened,
-            "workflow_sha": workflow["sha"], "bypass_actors": found["bypass_actors"]}
+            "bypass_actors": found["bypass_actors"]}

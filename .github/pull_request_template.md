@@ -29,13 +29,13 @@
 Co-authored-by: Codex <noreply@openai.com>
 Squash 时保留真实协作者 trailer。 -->
 
-## 当前版本放行
+## 当前版本合并状态
 
-使用 `./scripts/release.sh prepare --pr <本PR编号>` 读取真实当前 head、基线、CI 与 Owner approval。
-正文和手填 SHA 不构成批准。只有所有者通过 main 上的 Owner release 批准准确 head；
-追加提交后重新放行。连续 PR 先合并依赖并改基到 main，不能直接将合并父分支当成已交付主线。
+使用 `./scripts/release.sh prepare --pr <本PR编号>` 读取真实当前 head、基线、CI 与审阅就绪状态。
+不再要求 Owner release 或 Owner approval；适用审阅及分支保护继续有效。
+追加提交后重新检查并核对受影响审阅。连续 PR 先合并依赖并改基到 main，不能将合并父分支记成已交付主线。
 
 - PR 发起账号 / 实际修改人：
-- 当前状态：待所有者审阅当前 head；CI 不代表批准。
+- 当前状态：待适用审阅及所有者决定合并；CI 不代表已合并或已部署。
 
-<!-- Agent 不代为运行审批 workflow，不自行合并或启用自动合并。 -->
+<!-- Agent 不伪造审阅或批准，不自行合并或启用自动合并。 -->

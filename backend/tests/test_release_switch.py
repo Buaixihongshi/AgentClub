@@ -37,8 +37,8 @@ def deployment(tmp_path, monkeypatch):
     state = root / "runtime-state"
     seed(state)
     manifests = {sha: {"sha": sha, "checkout": str(root / "releases" / sha), "repository": "owner/project",
-        "source_pr": 1, "merge_commit_sha": sha, "approved_head_sha": "c" * 40,
-        "approval_run": "verified-fixture", "approved_by": "owner"} for sha in (A, B)}
+        "source_pr": 1, "merge_commit_sha": sha, "verified_head_sha": "c" * 40,
+        "ci": {"Backend tests": True, "Frontend tests and build": True}} for sha in (A, B)}
     token = state / "private-token.json"
     write_json(token, {"token": "test-private-control"})
     live = {"record": {"checkout": manifests[A]["checkout"], "backend_port": 12345, "token_file": str(token)}}
@@ -47,7 +47,7 @@ def deployment(tmp_path, monkeypatch):
     monkeypatch.setattr(releases, "home", lambda: root)
     monkeypatch.setattr(releases, "load_stage", lambda sha: manifests[sha])
     monkeypatch.setattr(releases, "release_provenance", lambda api, sha: manifests[sha])
-    monkeypatch.setattr(releases, "gate", lambda api: {"owner_required": True})
+    monkeypatch.setattr(releases, "gate", lambda api: {"owner_required": False})
     monkeypatch.setattr(releases, "ports_free", lambda: live["record"] is None)
     monkeypatch.setattr(releases.manager, "read_record", lambda *a, **k: live["record"])
     monkeypatch.setattr(releases.manager, "alive", lambda rec: rec is not None and rec is live["record"])
@@ -65,8 +65,13 @@ def deployment(tmp_path, monkeypatch):
     return root, state, manifests, live, started, stopped, requests, start
 
 
-def test_activate_then_rollback_records_sha_mapping_and_preserves_post_release_work(deployment):
-    root, state, _, _, started, stopped, requests, _ = deployment
+@pytest.mark.parametrize("legacy_previous", [False, True])
+def test_activate_then_rollback_records_sha_mapping_and_preserves_post_release_work(deployment, legacy_previous):
+    root, state, manifests, _, started, stopped, requests, _ = deployment
+    if legacy_previous:
+        manifests[A].pop("verified_head_sha")
+        manifests[A].pop("ci")
+        manifests[A].update(approved_head_sha="d" * 40, approval_run="historical-fixture", approved_by="owner")
     activated = releases.switch(None, B, A)
     assert activated["sha"] == B and activated["previous_sha"] == A
     assert requests[0][1] == "/api/runtime/drain"
@@ -77,6 +82,12 @@ def test_activate_then_rollback_records_sha_mapping_and_preserves_post_release_w
     with sqlite3.connect(Path(rolled_back["backup"]) / "data/yirenhub.sqlite3") as db:
         assert {r[0] for r in db.execute("SELECT id FROM missions")} == {"before", "after"}
     assert started == [B, A] and len(stopped) == 2
+    if legacy_previous:
+        assert rolled_back["approved_head_sha"] == "d" * 40
+        assert "verified_head_sha" not in rolled_back
+    else:
+        assert rolled_back["verified_head_sha"] == "c" * 40
+        assert "approval_run" not in rolled_back
 
 
 def test_failed_candidate_restores_database_and_previous_release(deployment, monkeypatch):
@@ -101,6 +112,17 @@ def test_wrong_expected_current_and_busy_service_do_not_stop_or_replace_state(de
     with pytest.raises(EnvironmentError, match="busy"): releases.switch(None, B, A)
     assert stopped == [] and ids(state) == {"before"}
     assert releases.transition()["phase"] == "aborted"
+
+
+def test_invalid_main_protection_prevents_switch_before_touching_runtime(deployment, monkeypatch):
+    _, state, _, _, started, stopped, requests, _ = deployment
+    def invalid_gate(_):
+        raise EnvironmentError("required CI protection is missing")
+    monkeypatch.setattr(releases, "gate", invalid_gate)
+    with pytest.raises(EnvironmentError, match="CI protection"):
+        releases.switch(None, B, A)
+    assert not started and not stopped and not requests
+    assert ids(state) == {"before"} and releases.transition() is None
 
 
 def test_unknown_live_startup_requires_recovery_before_any_restore(deployment, monkeypatch):
