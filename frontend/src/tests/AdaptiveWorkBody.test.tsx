@@ -54,6 +54,47 @@ describe('自主工作体验', () => {
     expect(screen.queryByRole('button', { name: '批准此版本上线' })).not.toBeInTheDocument();
   });
 
+  it.each(['direction', 'design'])('未交付时的 %s 决定仍展示 A/B/C，并提交对应选项', async kind => {
+    const pending = structuredClone(board);
+    pending.tasks[0].status = 'waiting';
+    pending.tasks[0].candidate = null;
+    pending.decisions = [{ id: 'wd_path', task_id: 'wt_root', kind, question: '请选择实施路径',
+      options: [{ id: 'copy', text: 'B：先审计再实施' }, { id: 'fresh', text: 'A：从零实施' }, { id: 'wait', text: 'C：等待权限' }],
+      status: 'pending', contract_id: 'wc_1', candidate_id: 'ws_question', artifact_paths: [] }];
+    const command = vi.fn().mockResolvedValue(true);
+    render(<AdaptiveWorkBody board={pending} conversationId="c_work" goal="" agents={agents} busy={false} error="" archived={false} command={command} />);
+    fireEvent.click(screen.getByRole('button', { name: /查看并决定/ }));
+    expect(screen.queryByText('此决定对应的版本已失效，请等待新的决定。')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'A：从零实施' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'C：等待权限' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'B：先审计再实施' }));
+    await waitFor(() => expect(command).toHaveBeenCalledWith('decide', { decision_id: 'wd_path', option_id: 'copy', note: '' }));
+  });
+
+  it('新的方向决定不要求沿用上次交付的候选快照', () => {
+    const pending = structuredClone(board);
+    pending.tasks[0].candidate = { id: 'ws_previous_delivery', base_sha: 'base' };
+    pending.decisions = [{ id: 'wd_new', task_id: 'wt_root', kind: 'direction', question: '下一步方向',
+      options: [{ id: 'continue', text: '继续当前方向' }], status: 'pending',
+      contract_id: 'wc_1', candidate_id: 'ws_new_question', artifact_paths: [] }];
+    render(<AdaptiveWorkBody board={pending} conversationId="c_work" goal="" agents={agents} busy={false} error="" archived={false} command={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /查看并决定/ }));
+    expect(screen.getByRole('button', { name: '继续当前方向' })).toBeEnabled();
+  });
+
+  it.each(['missing-candidate', 'different-candidate', 'different-contract', 'cancelled-task'])('保留失效决定的限制：%s', scenario => {
+    const pending = structuredClone(board);
+    pending.tasks[0].candidate = scenario === 'missing-candidate' ? null : { id: 'ws_current', base_sha: 'base' };
+    if (scenario === 'cancelled-task') pending.tasks[0].status = 'cancelled';
+    pending.decisions = [{ id: 'wd_invalid', task_id: 'wt_root', kind: scenario === 'different-contract' || scenario === 'cancelled-task' ? 'direction' : 'release',
+      question: '不可继续的决定', options: [{ id: 'approve', text: '确认此决定' }], status: 'pending',
+      contract_id: scenario === 'different-contract' ? 'wc_old' : 'wc_1',
+      candidate_id: scenario === 'different-candidate' ? 'ws_old' : 'ws_current', artifact_paths: [] }];
+    render(<AdaptiveWorkBody board={pending} conversationId="c_work" goal="" agents={agents} busy={false} error="" archived={false} command={vi.fn()} requestedDecision="wd_invalid" />);
+    expect(screen.getByText('此决定对应的版本已失效，请等待新的决定。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '确认此决定' })).not.toBeInTheDocument();
+  });
+
   it('暂停和取消直接操作根责任，已归档工作仍可受控暂停', async () => {
     const command = vi.fn().mockResolvedValue(true);
     render(<AdaptiveWorkBody board={board} conversationId="c_work" goal="" agents={agents} busy={false} error="" archived command={command} />);
