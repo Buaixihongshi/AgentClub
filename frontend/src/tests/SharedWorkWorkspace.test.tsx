@@ -38,7 +38,7 @@ it('审批冲突保留反馈并重新读取版本；新快照不能沿用旧决�
   const changed = structuredClone(board); changed.revision = 9; changed.tasks[0].candidate = { id: 'ws_other', base_sha: 'base' };
   vi.mocked(fetchSharedWork).mockResolvedValue(changed);
   fireEvent.click(within(dialog).getByRole('button', { name: '批准此版本' }));
-  await waitFor(() => expect(updateSharedWork).toHaveBeenCalledWith('c_ui', 'decide', 8, { decision_id: 'd1', option_id: 'approve', note: '先核对目标环境' }));
+  await waitFor(() => expect(updateSharedWork).toHaveBeenCalledWith('c_ui', 'decide', 8, { task_id: 't1', decision_id: 'd1', option_id: 'approve', note: '先核对目标环境' }));
   expect(await within(dialog).findByText('此决定对应的版本已失效，请等待新的决定。')).toBeVisible();
   expect(within(dialog).queryByRole('button', { name: '批准此版本' })).not.toBeInTheDocument();
   expect(within(dialog).getByLabelText('反馈或修改意见（可选）')).toHaveValue('先核对目标环境');

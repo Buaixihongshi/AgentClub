@@ -319,7 +319,12 @@ class AdaptiveWork(LegacySharedWork):
                 return json.loads(prior['result'])
             if expected_revision != board['revision']:
                 raise WorkError('任务板已更新，请重新读取后操作')
-            task = self._task(board, data['task_id']) if data.get('task_id') else None
+            task_id = data.get('task_id')
+            if not task_id and data.get('decision_id'):
+                decision = next((d for d in board.get('decisions', []) if d.get('id') == data['decision_id']), None)
+                if decision:
+                    task_id = decision.get('task_id')
+            task = self._task(board, task_id) if task_id else None
             if Path(board['workspace_root']).resolve() != self.root and not (task and self._root_task(board, task).get('environment')):
                 raise WorkError('工作区已变化，请在原工作区继续')
             if actor != 'human' and action != 'propose_work':
