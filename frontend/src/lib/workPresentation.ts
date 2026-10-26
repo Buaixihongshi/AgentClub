@@ -16,7 +16,11 @@ export function pendingDecisions(board: SharedWorkBoardView, root?: SharedWorkTa
 }
 export function decisionMatches(board: SharedWorkBoardView, decision: WorkDecision) {
   const task = board.tasks.find(t => t.id === decision.task_id);
-  return !!task && task.contract_id === decision.contract_id && (!decision.candidate_id || task.candidate?.id === decision.candidate_id);
+  if (!task || ['done', 'cancelled'].includes(task.status) || task.contract_id !== decision.contract_id) return false;
+  // Ordinary decisions snapshot the workspace independently of a submitted
+  // candidate. The server validates that snapshot when consuming the choice.
+  // Release approval alone must also match the submitted candidate in this view.
+  return decision.kind !== 'release' || !!decision.candidate_id && task.candidate?.id === decision.candidate_id;
 }
 export function taskStatus(task: SharedWorkTask, board: SharedWorkBoardView) {
   if (task.status === 'done') return task.release?.status === 'published' ? '已核对上线结果' : '已交付';
