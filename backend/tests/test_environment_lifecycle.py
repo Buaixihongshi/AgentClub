@@ -226,3 +226,16 @@ def test_inventory_includes_managed_backend_only_ports(tmp_path, monkeypatch):
     assert report["services"][0]["backend_port"] == 8400
     assert report["services"][0]["frontend_port"] is None
     assert "仅后端实例" in status.render(report)
+
+
+def test_process_start_enforces_c_locale(monkeypatch):
+    calls = []
+    def fake_run(cmd, capture_output=True, text=True, env=None):
+        calls.append((cmd, env))
+        return subprocess.CompletedProcess(cmd, 0, stdout="Mon Oct 26 14:58:23 2026\n", stderr="")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    res = supervisor.process_start(12345)
+    assert res == "Mon Oct 26 14:58:23 2026"
+    assert len(calls) == 1
+    assert calls[0][0] == ["ps", "-p", "12345", "-o", "lstart="]
+    assert calls[0][1].get("LC_ALL") == "C"

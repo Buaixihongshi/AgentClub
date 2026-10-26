@@ -19,7 +19,8 @@ from scripts.environment_common import (
 
 
 def process_start(pid):
-    result = subprocess.run(["ps", "-p", str(pid), "-o", "lstart="], capture_output=True, text=True)
+    result = subprocess.run(["ps", "-p", str(pid), "-o", "lstart="], capture_output=True, text=True,
+                            env={**os.environ, "LC_ALL": "C"})
     return result.stdout.strip() if result.returncode == 0 else None
 
 
@@ -165,7 +166,9 @@ def supervise(root, profile, *, real=False, providers="codex", backend=None, fro
             webbrowser.open(f"http://127.0.0.1:{frontend}")
         try:
             while True:
-                if any(c.poll() is not None for c in children): raise EnvironmentError("A managed service exited unexpectedly")
+                for idx, c in enumerate(children):
+                    if c.poll() is not None:
+                        raise EnvironmentError(f"Managed service {idx} (PID {c.pid}) exited unexpectedly with code {c.poll()}")
                 if stopping:
                     try:
                         request(backend, "/api/runtime/drain", token=token)
