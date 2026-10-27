@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional
 
 from backend.app.domain.models import AgentProfile, TaskComplexity
+from backend.app.orchestration.interaction import is_casual_turn
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,13 @@ def select_workflow(
 ) -> List[WorkflowStep]:
     available = {agent.id: agent for agent in agents}
     targets = list(target_agent_ids or ([target_agent_id] if target_agent_id else []))
+    if not available:
+        raise ValueError("No agents available")
+    if is_casual_turn(goal, agents):
+        return _require_available([
+            WorkflowStep(agent_id, "回应用户这句话，结合前面的对话自然接话；无需介绍岗位或总结。")
+            for agent_id in dict.fromkeys(targets or [next(iter(available))])
+        ], available)
     if len(targets) >= 2:
         return _require_available(_build_discussion_workflow(targets), available)
     if targets:

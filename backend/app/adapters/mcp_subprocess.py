@@ -829,12 +829,23 @@ _MCP_PROMPT_GUIDANCE = (
 
 
 def _augment_prompt_for_mcp(prompt: str) -> str:
+    from backend.app.orchestration.interaction import is_casual_prompt
+    if is_casual_prompt(prompt):
+        return prompt + (
+            "\n【发声协议】调用 yiren_hub.publish_message(content=中文回复) 发布本次回应；"
+            "普通 stdout 不算发声。成功发布后结束本轮，无需工作计划或流程汇报。"
+        )
     return prompt + "\n" + _MCP_PROMPT_GUIDANCE
 
 
 def _compact_prompt_for_gemini_mcp(prompt: str) -> str:
     """Keep Gemini MCP prompts small while preserving routing-critical context."""
     body = prompt.replace(_MCP_PROMPT_GUIDANCE, "").strip()
+    from backend.app.orchestration.interaction import is_casual_prompt
+    if is_casual_prompt(body):
+        # The work-prompt compactor only recognizes Mission/Goal labels. Applying
+        # it to a social turn would drop both the user's words and its rules.
+        return _augment_prompt_for_mcp(body)
     lines = [line.strip() for line in body.splitlines() if line.strip()]
     compact: list[str] = []
     recent_lines: list[str] = []

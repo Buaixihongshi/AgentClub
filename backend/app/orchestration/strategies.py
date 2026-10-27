@@ -23,6 +23,7 @@ from backend.app.domain.models import (
     OrchestrationMode,
 )
 from backend.app.orchestration.speaker import WorkflowStep, select_workflow
+from backend.app.orchestration.interaction import is_casual_turn
 
 
 @dataclass(frozen=True)
@@ -66,7 +67,7 @@ def plan_orchestration(
             mode=mode,
             steps=workflow,
             agent_ids=list(available),
-            max_a2a_invocations=max(0, default_max_a2a),
+            max_a2a_invocations=0 if is_casual_turn(mission.goal, agents) else max(0, default_max_a2a),
             max_turns=max(0, default_max_turns),
         )
 
