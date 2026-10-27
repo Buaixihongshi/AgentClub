@@ -17,34 +17,31 @@ beforeEach(() => {
   vi.mocked(listAgents).mockResolvedValue([{ id: 'chulan', display_name: '张楚岚', aliases: [], role: '', capability_hints: [] }, { id: 'wangye', display_name: '王也', aliases: [], role: '', capability_hints: [] }]);
   vi.mocked(updateSharedWork).mockRejectedValue(new Error('版本已变化，请重新核对'));
 });
-function setup() { return render(<SharedWorkWorkspace conversationId="c_ui" goal="" archived={false} chat={<div>真实对话<input aria-label="测试草稿" defaultValue="未发送草稿" /></div>} composer={<div>输入区</div>} />); }
-it('聊天只呈现当前有效状态；切换视图保留同一份草稿，预览按需加载', async () => {
+const onOpenTask = vi.fn();
+function setup() { onOpenTask.mockClear(); return render(<SharedWorkWorkspace conversationId="c_ui" goal="" archived={false} onOpenTask={onOpenTask} chat={<div>真实对话<input aria-label="测试草稿" defaultValue="未发送草稿" /></div>} composer={<div>输入区</div>} />); }
+it('会话只保留任务摘要和跳转，任务详情不再嵌在会话内', async () => {
   setup(); await screen.findByText('1 项待你处理');
-  expect(within(screen.getByRole('tabpanel', { name: '对话' })).getByText('王也已通过当前快照复审，尚未获得上线批准。')).toBeVisible();
+  expect(screen.getByText('王也已通过当前快照复审，尚未获得上线批准。')).toBeVisible();
+  expect(screen.queryByRole('tab', { name: /^任务/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: '关键记录' })).not.toBeInTheDocument();
   expect(screen.queryByTitle('方案预览：docs/index.html')).not.toBeInTheDocument();
   const draft = screen.getByLabelText('测试草稿'); fireEvent.change(draft, { target: { value: '继续编辑中的草稿' } });
-  fireEvent.click(screen.getByRole('tab', { name: /^任务/ }));
-  expect(screen.getByRole('heading', { name: '关键记录' })).toBeVisible();
-  expect(draft).not.toBeVisible();
-  fireEvent.click(screen.getByRole('tab', { name: '对话' }));
-  expect(screen.getByLabelText('测试草稿')).toBe(draft); expect(draft).toHaveValue('继续编辑中的草稿');
-  expect(screen.getByRole('tab', { name: /^任务/ })).toHaveTextContent('1');
+  fireEvent.click(screen.getByRole('button', { name: '查看并决定' }));
+  expect(onOpenTask).toHaveBeenCalledWith('t1');
+  expect(screen.getByLabelText('测试草稿')).toBe(draft);
+  expect(draft).toHaveValue('继续编辑中的草稿');
 });
-it('审批冲突保留反馈并重新读取版本；新快照不能沿用旧决定', async () => {
+it('子任务的待决定事项跳到所属根任务，不能误开另一项工作', async () => {
+  const next = structuredClone(board);
+  next.tasks.push({ ...structuredClone(next.tasks[0]), id: 'root2', root_id: 'root2', title: '另一项工作' });
+  next.tasks.push({ ...structuredClone(next.tasks[0]), id: 'child2', root_id: 'root2', parent_id: 'root2', title: '协作步骤' });
+  next.decisions![0].task_id = 'child2';
+  vi.mocked(fetchSharedWork).mockResolvedValue(next);
   setup(); await screen.findByText('1 项待你处理');
   fireEvent.click(screen.getByRole('button', { name: '查看并决定' }));
-  const dialog = screen.getByRole('dialog', { name: '上线审批' });
-  fireEvent.change(within(dialog).getByLabelText('反馈或修改意见（可选）'), { target: { value: '先核对目标环境' } });
-  const changed = structuredClone(board); changed.revision = 9; changed.tasks[0].candidate = { id: 'ws_other', base_sha: 'base' };
-  vi.mocked(fetchSharedWork).mockResolvedValue(changed);
-  fireEvent.click(within(dialog).getByRole('button', { name: '批准此版本' }));
-  await waitFor(() => expect(updateSharedWork).toHaveBeenCalledWith('c_ui', 'decide', 8, { task_id: 't1', decision_id: 'd1', option_id: 'approve', note: '先核对目标环境' }));
-  expect(await within(dialog).findByText('此决定对应的版本已失效，请等待新的决定。')).toBeVisible();
-  expect(within(dialog).queryByRole('button', { name: '批准此版本' })).not.toBeInTheDocument();
-  expect(within(dialog).getByLabelText('反馈或修改意见（可选）')).toHaveValue('先核对目标环境');
-  expect(await within(dialog).findByRole('alert')).toHaveTextContent('版本已变化');
+  expect(onOpenTask).toHaveBeenCalledWith('root2');
 });
-it('停留在聊天页仍更新待办，旧轮询响应不能覆盖较新的任务状态', async () => {
+it('旧轮询响应不能覆盖较新的任务状态', async () => {
   vi.useFakeTimers();
   let resolveOld!: (value: SharedWorkBoardView) => void;
   try {
@@ -58,11 +55,10 @@ it('停留在聊天页仍更新待办，旧轮询响应不能覆盖较新的任�
     expect(screen.queryByText('1 项待你处理')).not.toBeInTheDocument();
     await act(async () => { resolveOld(structuredClone(board)); });
     expect(screen.queryByText('1 项待你处理')).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '对话' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('测试草稿')).toHaveValue('未发送草稿');
   } finally { vi.useRealTimers(); }
 });
-
-it('没有任务时引导回到对话，提议通过具体 ID 确认后才执行', async () => {
+it('会话仍通过具体提议 ID 确认工作，拒绝把普通聊天自动当授权', async () => {
   const empty = structuredClone(board); empty.tasks = []; empty.contracts = []; empty.decisions = [];
   empty.proposals = [{ id: 'wp_exact', title: '小程序页面方案', owner_id: 'chulan', created_by: 'chulan', status: 'pending', mission_id: 'm_intake', turn_id: 'turn_intake', created_at: '', digest: 'exact', agreement: { ...board.contracts[0], goal: '设计页面方案', delivery: 'document', criteria: [{id: 'AC-1', text: '展示页面结构与交互'}] } }];
   vi.mocked(fetchSharedWork).mockResolvedValue(empty);
@@ -70,14 +66,11 @@ it('没有任务时引导回到对话，提议通过具体 ID 确认后才执行
   vi.mocked(updateSharedWork).mockResolvedValue(accepted);
   setup(); await screen.findByText('张楚岚整理了一项任务提议');
   expect(updateSharedWork).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('tab', { name: '任务' }));
-  expect(screen.getByRole('heading', { name: '先聊聊你想做什么' })).toBeVisible();
-  expect(screen.queryByLabelText('要交付什么')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: /回到对话/ }));
-  expect(screen.getByLabelText('测试草稿')).toHaveValue('未发送草稿');
+  expect(screen.queryByRole('tab', { name: '任务' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /查看提议/ }));
   expect(screen.getByText('方案与文档')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: '确认并开始' }));
   await waitFor(() => expect(updateSharedWork).toHaveBeenCalledWith('c_ui', 'accept_proposal', 8, { proposal_id: 'wp_exact' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(screen.getByLabelText('测试草稿')).toHaveValue('未发送草稿');
 });

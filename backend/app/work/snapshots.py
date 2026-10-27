@@ -6,6 +6,7 @@ Ignored runtime files are excluded by Git; symlinks cannot escape the workspace.
 import base64
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -65,16 +66,28 @@ def store(repo, conversation_id, candidate):
     with repo._transaction(immediate=True) as db:
         db.execute('INSERT OR IGNORE INTO work_check_logs VALUES (?, ?, ?)',
                    (candidate['id'], conversation_id, candidate['bytes']))
+        # Identical contents are shared blobs, but each execution context must
+        # acquire its own reference. Never overwrite the first context's blob.
+        db.execute('INSERT OR IGNORE INTO work_snapshot_references VALUES (?, ?)',
+                   (conversation_id, candidate['id']))
     return {k: v for k, v in candidate.items() if k != 'bytes'}
 
 
-def content(repo, conversation_id, snapshot_id, path):
+def read_bytes(repo, conversation_id, snapshot_id):
+    if not isinstance(snapshot_id, str) or not re.fullmatch(r'ws_[0-9a-f]{64}', snapshot_id):
+        raise WorkError('快照不存在', 404)
     with repo._transaction() as db:
-        row = db.execute('SELECT output FROM work_check_logs WHERE id=? AND conversation_id=?',
-                         (snapshot_id, conversation_id)).fetchone()
+        row = db.execute('''SELECT output FROM work_check_logs AS blob WHERE blob.id=? AND
+            (blob.conversation_id=? OR EXISTS (SELECT 1 FROM work_snapshot_references AS ref
+                WHERE ref.snapshot_id=blob.id AND ref.conversation_id=?))''',
+            (snapshot_id, conversation_id, conversation_id)).fetchone()
     if not row:
         raise WorkError('快照不存在', 404)
-    value = json.loads(bytes(row['output']))['files'].get(path)
+    return bytes(row['output'])
+
+
+def content(repo, conversation_id, snapshot_id, path):
+    value = json.loads(read_bytes(repo, conversation_id, snapshot_id))['files'].get(path)
     if not value or 'content' not in value:
         raise WorkError('快照中没有该文件', 404)
     return base64.b64decode(value['content'])

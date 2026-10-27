@@ -372,6 +372,9 @@ class AdaptiveWork(LegacySharedWork):
                 proposal.update(decided_by=actor, decided_at=now())
             elif action == 'create_work':
                 task = self._create_work(board, data, actor)
+            elif action == 'configure_workflow':
+                from backend.app.work.workflow import configure
+                configure(self, board, task, data.get('orchestration', {}))
             elif action == 'revise_work':
                 self._require_root_quiet(board, task)
                 agreement = Agreement.model_validate(data['agreement']).model_dump()
@@ -671,7 +674,8 @@ class AdaptiveWork(LegacySharedWork):
                 if any(dep['status'] == 'cancelled' for dep in deps):
                     self._waiting(task, 'external', '依赖已取消，需要负责人调整', task['owner_id'])
                 elif all(dep['status'] == 'done' for dep in deps):
-                    self._ready(task, '集成协作结果并按原约定检查整体交付')
+                    self._ready(task, self._agreement(board, task)['goal'] if task.get('workflow_step_id')
+                                else '集成协作结果并按原约定检查整体交付')
             if root['paused'] and task['status'] == 'ready':
                 self._waiting(task, 'paused', '用户暂停，尚未启动后续动作', '用户')
             elif not root['paused'] and task['waiting_reason'] == 'paused':

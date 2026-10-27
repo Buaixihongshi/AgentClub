@@ -35,6 +35,11 @@ class Repository:
                     id TEXT PRIMARY KEY,
                     data TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS task_creation_operations (
+                    operation_id TEXT PRIMARY KEY,
+                    fingerprint TEXT NOT NULL,
+                    task_id TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS work_boards (
                     conversation_id TEXT PRIMARY KEY,
                     data TEXT NOT NULL
@@ -43,6 +48,11 @@ class Repository:
                     id TEXT PRIMARY KEY,
                     conversation_id TEXT NOT NULL,
                     output BLOB NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS work_snapshot_references (
+                    conversation_id TEXT NOT NULL,
+                    snapshot_id TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, snapshot_id)
                 );
                 CREATE TABLE IF NOT EXISTS work_operations (
                     conversation_id TEXT NOT NULL,
@@ -377,10 +387,12 @@ class Repository:
             ).fetchone()
         return Conversation.model_validate_json(row["data"]) if row else None
 
-    def list_conversations(self) -> list[Conversation]:
+    def list_conversations(self, *, include_task_contexts: bool = False) -> list[Conversation]:
         with self._transaction() as db:
             rows = db.execute("SELECT data FROM conversations").fetchall()
         conversations = [Conversation.model_validate_json(row["data"]) for row in rows]
+        if not include_task_contexts:
+            conversations = [c for c in conversations if c.kind == "chat"]
         conversations.sort(key=lambda c: c.updated_at, reverse=True)
         return conversations
 

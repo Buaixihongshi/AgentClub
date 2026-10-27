@@ -3591,11 +3591,13 @@ summary:focus-visible {
 .discussion-panels.composer-layout-compact .discussion-setup-inner { gap:6px 10px; }
 .discussion-panels.composer-layout-compact .discussion-budget-hint,
 .discussion-panels.composer-layout-compact .discussion-participant-role { display:none; }
-.discussion-panels.composer-layout-compact .mission-composer { padding:0 12px 10px; gap:8px; border:0; border-radius:0 0 12px 12px; background:transparent; }
+.discussion-panels.composer-layout-compact .mission-composer { padding:0; gap:0; border:0; border-radius:12px; background:transparent; }
+.discussion-panels.composer-layout-compact .composer-input-wrapper { min-width:0; border-radius:inherit; }
+.discussion-panels.composer-layout-compact:focus-within { border-color:var(--sage-strong); box-shadow:0 0 0 1px var(--sage-strong); }
 .discussion-panels.composer-layout-compact .mission-composer > label { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-.discussion-panels.composer-layout-compact .mission-composer textarea { display:block; min-height:66px; max-height:180px; padding:10px 12px; border:0; border-radius:6px; background:var(--paper); box-shadow:none; transform:none; font-size:.88rem; }
-.discussion-panels.composer-layout-compact .mission-composer textarea:focus-visible { outline:2px solid var(--sage); outline-offset:-2px; }
-.discussion-panels.composer-layout-compact .mission-composer > button { position:static; justify-self:end; min-width:auto; padding:6px 14px; border-width:1px; border-radius:6px; box-shadow:none; }
+.discussion-panels.composer-layout-compact .mission-composer textarea { display:block; width:100%; min-height:116px; max-height:220px; padding:14px 16px 58px; border:0; border-radius:inherit; background:transparent; box-shadow:none; transform:none; font-size:.88rem; }
+.discussion-panels.composer-layout-compact .mission-composer textarea:focus-visible { outline:none; }
+.discussion-panels.composer-layout-compact .mission-composer .composer-send { position:absolute; bottom:12px; right:12px; width:auto; min-width:64px; min-height:34px; max-width:calc(100% - 24px); margin:0; padding:7px 14px; border-width:1px; border-radius:5px; box-shadow:var(--hard-shadow-sm); }
 .discussion-panels.composer-layout-compact .discussion-status { margin:0 12px 8px; }
 @media(max-width:640px) {
  .discussion-panels.composer-layout-compact { margin:0 10px 10px; }

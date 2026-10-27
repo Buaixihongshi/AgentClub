@@ -66,7 +66,7 @@ release-history 都留在私有环境根目录，不提交到仓库。
 ```
 
 默认导入旧 checkout 的 data/yirenhub.sqlite3、config、artifacts；自定义布局显式使用
---database、--config、--artifacts。来源必须是 AgentClub 数据库。复制不跟随产物中的目录
+--database、--config、--artifacts。来源必须是 Unity 数据库。复制不跟随产物中的目录
 符号链接，不回写原库。导入以准备目录原子落位，不覆盖已有 runtime-state。
 只有确实不需要任何旧数据的新实例才使用 `release.sh init --empty`。
 

@@ -227,7 +227,7 @@ export async function listAgents(): Promise<AgentSummary[]> {
 
 export async function getHealth(): Promise<HealthView> {
   const response = await fetch(`${API_ROOT}/api/health`);
-  return parseJson<HealthView>(response, "AgentClub 后端尚未就绪");
+  return parseJson<HealthView>(response, "Unity 后端尚未就绪");
 }
 
 export async function getOnboarding(): Promise<OnboardingView> {

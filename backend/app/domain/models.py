@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Literal
 
 try:
     from enum import StrEnum
@@ -126,6 +126,8 @@ class ConversationStatus(StrEnum):
 
 
 class Conversation(BaseModel):
+    # Task execution contexts share storage, but are not user chat threads.
+    kind: Literal["chat", "task"] = "chat"
     id: str
     title: str
     status: ConversationStatus = ConversationStatus.ACTIVE

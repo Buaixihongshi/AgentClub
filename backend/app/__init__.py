@@ -1,1 +1,1 @@
-"""AgentClub backend package."""
+"""Unity backend package."""

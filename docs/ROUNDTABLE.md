@@ -40,11 +40,11 @@
 
 | 阶段 | 交付 | 当前状态 |
 | --- | --- | --- |
-| RT-1 | 每轮共享上下文、插话持久化、旧记录兼容 | [PR #7](https://github.com/Buaixihongshi/AgentClub/pull/7) 已合入 |
-| RT-2 | 圆桌创建、预算、A2A、插话与控制、并发及恢复 | [PR #8](https://github.com/Buaixihongshi/AgentClub/pull/8)；通过 HTTP 可完整验收 |
+| RT-1 | 每轮共享上下文、插话持久化、旧记录兼容 | [PR #7](https://github.com/Buaixihongshi/Unity/pull/7) 已合入 |
+| RT-2 | 圆桌创建、预算、A2A、插话与控制、并发及恢复 | [PR #8](https://github.com/Buaixihongshi/Unity/pull/8)；通过 HTTP 可完整验收 |
 | RT-3 | 模式选择、参与者、运行状态、控制按钮、继续讨论与体验验收 | 本次前端实现，堆叠在 RT-2 之上；待 PR 审查合并 |
 
-设计依据：[三阶段方案 PR #6](https://github.com/Buaixihongshi/AgentClub/pull/6)。三位角色沿用[人格约定](PERSONALITIES.md)，不设固定主持、执行或反对岗位。RT-1 的上下文预算沿用[共享对话说明](SHARED_CONTEXT.md)，本阶段不据未实测的字符数推算模型费用。
+设计依据：[三阶段方案 PR #6](https://github.com/Buaixihongshi/Unity/pull/6)。三位角色沿用[人格约定](PERSONALITIES.md)，不设固定主持、执行或反对岗位。RT-1 的上下文预算沿用[共享对话说明](SHARED_CONTEXT.md)，本阶段不据未实测的字符数推算模型费用。
 
 ## 前端入口与运行状态（RT-3）
 

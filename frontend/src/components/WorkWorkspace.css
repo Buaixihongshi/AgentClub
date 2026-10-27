@@ -1073,3 +1073,16 @@
   .task-room .conv-item-title-row { padding-right:0
   }
 }
+
+/* Preview controls share the workspace palette and primary button treatment. */
+.work-environment .work-preview-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 14px; margin:14px 0; background:var(--work-paper); border:1px solid var(--work-line); border-radius:6px; }
+.work-preview-state { display:flex; align-items:center; gap:9px; font-size:12px; color:var(--work-muted); }
+.work-preview-state strong { font-size:11px; padding:3px 8px; background:var(--work-tint); border:1px solid var(--work-line); border-radius:4px; color:var(--work-muted); }
+.work-preview-state[data-state=ready] strong { background:var(--work-accent-soft); color:var(--work-accent-ink); }
+.work-preview-buttons { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.work-preview-buttons :is(button,a) { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:34px; padding:7px 11px; border-radius:4px; font-size:12px; text-decoration:none; }
+.work-preview-buttons .work-preview-stop { border:1px solid var(--work-line); background:var(--work-surface); color:var(--work-ink); }
+.work-preview-buttons .work-preview-stop:hover:not(:disabled) { border-color:var(--work-ink); background:var(--work-tint); }
+.work-preview-loading { animation:work-preview-spin 1s linear infinite; }
+@keyframes work-preview-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .work-preview-loading { animation:none; } }

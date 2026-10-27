@@ -1,6 +1,6 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import type { ConversationDetail, MissionDetail, MissionStatus } from "../types";
 
@@ -93,10 +93,66 @@ async function flushRaf() {
   });
 }
 
-describe("AgentClub app", () => {
+describe("Unity app", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/");
     vi.unstubAllGlobals();
     vi.stubGlobal("fetch", stubFetch());
+  });
+
+  afterEach(() => { window.history.replaceState(null, "", "/"); });
+
+  it("任务有独立入口；未选择会话也能打开，切回仍保留聊天草稿", async () => {
+    const request = stubFetch(url => url === "/api/tasks" ? new Response(JSON.stringify({ tasks: [] }), { status: 200 }) : null);
+    vi.stubGlobal("fetch", request);
+    render(<App />);
+    const input = screen.getByLabelText("消息输入");
+    await userEvent.type(input, "切换后继续讨论的草稿");
+    const navigation = screen.getByRole("navigation", { name: "工作区导航" });
+    await userEvent.click(within(navigation).getByRole("button", { name: "任务" }));
+    expect(await screen.findByRole("heading", { name: "把一件事交给团队" })).toBeVisible();
+    expect(within(navigation).getByRole("button", { name: "任务" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("navigation", { name: "任务列表" })).toBeVisible();
+    expect(input).not.toBeVisible();
+    expect(request.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    await userEvent.click(within(navigation).getByRole("button", { name: "会话" }));
+    expect(input).toBeVisible();
+    expect(input).toHaveValue("切换后继续讨论的草稿");
+    expect(screen.queryByRole("navigation", { name: "任务列表" })).not.toBeInTheDocument();
+    expect(window.location.hash).toBe("#conversations");
+  });
+
+  it("任务入口可直接从URL打开，不需要先选择一个会话", async () => {
+    window.history.replaceState(null, "", "/#tasks");
+    vi.stubGlobal("fetch", stubFetch(url => url === "/api/tasks" ? new Response(JSON.stringify({ tasks: [] }), { status: 200 }) : null));
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "把一件事交给团队" })).toBeVisible();
+    const navigation = screen.getByRole("navigation", { name: "工作区导航" });
+    expect(within(navigation).getByRole("button", { name: "任务" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("晚到的来源会话请求不能覆盖用户后来选择的会话", async () => {
+    const conversations = ['a', 'b'].map(id => ({ id: `c_${id}`, title: `会话${id.toUpperCase()}`, status: 'active', created_at: '', updated_at: '', mission_count: 0 }));
+    let finishOld!: (response: Response) => void;
+    const old = new Promise<Response>(resolve => { finishOld = resolve; });
+    const base = stubFetch();
+    const detail = (id: string) => ({ ...makeConvDetail(), conversation: conversations.find(c => c.id === `c_${id}`), missions: [], latest_mission_detail: null,
+      messages: [{ id: id === 'b' ? 22 : 11, mission_id: `m_${id}`, event_type: 'message', role: 'user', content: `当前会话${id.toUpperCase()}`, created_at: '2026-10-27T00:00:00Z' }] });
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith('/api/conversations?')) return new Response(JSON.stringify(conversations), { status: 200 });
+      if (url === '/api/conversations/c_a') return old;
+      if (url === '/api/conversations/c_b') return new Response(JSON.stringify(detail('b')), { status: 200 });
+      return base(input, init);
+    }));
+    render(<App />);
+    const list = await screen.findByRole('navigation', { name: '会话列表' });
+    await userEvent.click(await within(list).findByRole('button', { name: /会话A/ }));
+    await userEvent.click(within(list).getByRole('button', { name: /会话B/ }));
+    expect(await screen.findByText('当前会话B')).toBeVisible();
+    await act(async () => { finishOld(new Response(JSON.stringify(detail('a')), { status: 200 })); });
+    expect(screen.getByText('当前会话B')).toBeVisible();
+    expect(screen.queryByText('当前会话A')).not.toBeInTheDocument();
   });
 
   it("clears a previously matching identity when the backend becomes unreachable", async () => {
@@ -194,7 +250,7 @@ describe("AgentClub app", () => {
           conversation: makeConvDetail({
             conversation: {
               id: "c_welcome",
-              title: "欢迎使用 AgentClub",
+              title: "欢迎使用 Unity",
               status: "active",
               created_at: "2026-05-05T00:00:00Z",
               updated_at: "2026-05-05T00:00:00Z",
@@ -218,7 +274,7 @@ describe("AgentClub app", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("AgentClub 已启动")).toBeInTheDocument();
+    expect(await screen.findByText("Unity 已启动")).toBeInTheDocument();
     expect(screen.getByText("演示 Provider 可用")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "和张楚岚打个招呼" }));
 

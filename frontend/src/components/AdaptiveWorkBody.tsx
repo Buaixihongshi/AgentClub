@@ -7,8 +7,8 @@ import { WorkDialog } from './WorkDialog';
 import { WorkAgreementForm } from './WorkAgreementForm';
 import { WorkEnvironment } from './WorkEnvironment';
 
-export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, error, archived, command, requestedDecision, onDecisionClosed, onDiscuss }: {
-  board: SharedWorkBoardView; conversationId: string; goal: string;
+export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, error, archived, command, requestedDecision, onDecisionClosed, onDiscuss, taskId, embedded = false, allowRevision = true }: {
+  board: SharedWorkBoardView; conversationId: string; goal: string; taskId?: string; embedded?: boolean; allowRevision?: boolean;
   agents: { id: string; display_name: string }[]; busy: boolean; error: string; archived: boolean;
   command: (action: string, data?: Record<string, unknown>) => Promise<boolean>;
   onDiscuss?: () => void;
@@ -24,23 +24,24 @@ export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, er
   const [decisionId, setDecisionId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const requestedTask = board.tasks.find(t => t.id === board.decisions?.find(d => d.id === requestedDecision)?.task_id);
-  const root = roots.find(t => t.id === requestedTask?.root_id) ?? roots.find(t => t.id === selected) ?? roots.find(t => !['done', 'cancelled'].includes(t.status)) ?? roots[0];
+  const root = taskId ? roots.find(t => t.id === taskId) : roots.find(t => t.id === requestedTask?.root_id) ?? roots.find(t => t.id === selected) ?? roots.find(t => !['done', 'cancelled'].includes(t.status)) ?? roots[0];
   const agreement = board.contracts.find(c => c.id === root?.contract_id);
   const label = (id: string) => id === 'human' ? '你' : id === 'host' ? '系统' : agents.find(a => a.id === id)?.display_name ?? id;
   const related = root ? board.tasks.filter(t => t.id === root.id || t.root_id === root.id) : [];
   const elsewhere = board.execution?.active.find(t => !related.some(r => r.id === t.task_id));
+  const queued = !!root && !root.paused && (elsewhere && root.status === 'ready' || board.execution?.queued && related.some(task => task.status === 'ready' && !task.paused));
   const pending = root ? pendingDecisions(board, root) : [];
   const activities = workActivities(board).filter(e => !root || related.some(t => t.id === e.taskId));
   const priority = (e: WorkActivity) => e.decisionId || e.action === 'review' ? 3 : e.action === 'refine_agreement' || (e.action === 'submit' && board.tasks.some(t => t.id === e.taskId && t.parent_id)) ? 2 : 1;
   const highlighted = new Set([...activities].sort((a, b) => priority(b) - priority(a) || Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 6).map(e => e.id));
-  const active = board.decisions?.find(d => d.id === (requestedDecision || decisionId));
+  const active = board.decisions?.find(d => d.id === (requestedDecision || decisionId) && (!taskId || related.some(task => task.id === d.task_id)));
   const closeDecision = () => { setDecisionId(null); onDecisionClosed?.(); };
   const review = root && currentReview(root);
   const safeDecision = active && active.status === 'pending' && decisionMatches(board, active);
   const decisionTask = board.tasks.find(t => t.id === active?.task_id);
   const decisionReview = decisionTask && currentReview(decisionTask);
   return <div className="work-overview">
-    <div className="work-page-heading"><div><h2>{root?.title || '任务'}</h2>{root && <p>负责人 {label(root.owner_id)} <span className={`work-state work-state-${root.status}`}>{taskStatus(root, board)}</span></p>}</div>
+    {!embedded ? <div className="work-page-heading"><div><h2>{root?.title || '任务'}</h2>{root && <p>负责人 {label(root.owner_id)} <span className={`work-state work-state-${root.status}`}>{taskStatus(root, board)}</span></p>}</div>
       <div className="work-page-tools">{root && <button className="work-text-button" onClick={() => setShowAgreement(true)}>查看需求 <ArrowRight size={15} /></button>}
         <details className="work-actions"><summary aria-label="任务操作"><MoreHorizontal size={22} /></summary><div>
           {!archived && onDiscuss && <button onClick={onDiscuss}>在对话中提出新需求</button>}
@@ -48,14 +49,17 @@ export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, er
             <button disabled={busy} onClick={() => void command(root.paused ? 'resume' : 'pause', { task_id: root.id })}>{root.paused ? '恢复任务' : '暂停任务'}</button>
             <button disabled={busy} onClick={() => void command('cancel', { task_id: root.id })}>取消任务</button>
           </>}
-          {root && !root.active_mission_id && root.status !== 'cancelled' && <button disabled={busy} onClick={() => setEditing(true)}>调整需求</button>}
+          {allowRevision && root && !root.active_mission_id && root.status !== 'cancelled' && <button disabled={busy} onClick={() => setEditing(true)}>调整需求</button>}
         </div></details>
       </div>
-    </div>
-    {roots.length > 1 && <label className="work-task-picker">当前任务<select value={root?.id} onChange={e => setSelected(e.target.value)}>{roots.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>}
+    </div> : <div className="work-embedded-heading"><h2>交付与记录</h2><div>
+      {root && <button className="work-text-button" onClick={() => setShowAgreement(true)}>查看需求 <ArrowRight size={15} /></button>}
+      {allowRevision && root && !root.active_mission_id && root.status !== 'cancelled' && <button className="work-text-button" disabled={busy} onClick={() => setEditing(true)}>调整需求</button>}
+    </div></div>}
+    {!taskId && roots.length > 1 && <label className="work-task-picker">当前任务<select value={root?.id} onChange={e => setSelected(e.target.value)}>{roots.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label>}
     {error && <p className="work-error" role="alert">{error}</p>}
     {root && <>
-      {elsewhere && root.status === 'ready' && !root.paused && <p className="work-notice" role="status">排队中：另一项工作「{elsewhere.title}」正在执行，完成后会继续。</p>}
+      {queued && <p className="work-notice" role="status">{elsewhere ? `排队中：另一项工作「${elsewhere.title}」正在执行，完成后会继续。` : '排队中：执行通道正在处理其他工作，已就绪步骤会在空闲后继续。'}</p>}
       {pending.length ? <div className="work-attention-list">{pending.map(d => <div className="work-attention" key={d.id}>
         <Clock3 size={25} strokeWidth={1.6} /><div><h3>待你处理 · {decisionKinds[d.kind] || '任务决定'}</h3><p>{taskSummary(root, board, label)}</p></div>
         <button className="work-primary" onClick={() => setDecisionId(d.id)}>查看并决定 <ArrowRight size={16} /></button>

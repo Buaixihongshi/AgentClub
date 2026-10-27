@@ -1,0 +1,117 @@
+/* Source-owned editor. Reuses WorkDialog, native form controls and Lucide. */
+.work-form .flow-config-form, .flow-config-form {
+  --flow-line: var(--ink-soft, rgba(26,26,26,.12));
+  --flow-muted: var(--ink-muted, #6b6b65);
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.flow-config-form > legend { padding: 0; margin-bottom: 10px; font-size: 13px; font-weight: 700; }
+.flow-mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.flow-config-form .flow-mode-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--flow-line);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.flow-mode-card.is-selected { background: var(--sage-soft); border-color: var(--sage-strong); }
+.flow-mode-card:has(input:focus-visible) { outline: 2px solid var(--sage-strong); outline-offset: 3px; }
+.flow-config-form .flow-mode-card .flow-mode-input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; padding: 0; }
+.flow-mode-icon { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: 5px; color: var(--flow-muted); background: var(--paper-soft); }
+.is-selected .flow-mode-icon { color: var(--work-accent-ink); background: var(--surface); }
+.flow-mode-copy { flex: 1; min-width: 0; }
+.flow-mode-copy strong { display: block; font-size: 13px; line-height: 1.5; }
+.flow-mode-copy small { display: block; margin-top: 5px; font-size: 11px; line-height: 1.6; color: var(--flow-muted); }
+.flow-mode-check { display: grid; place-items: center; flex: 0 0 17px; height: 17px; margin-top: 2px; border: 1px solid var(--flow-line); border-radius: 50%; color: var(--surface); }
+.is-selected .flow-mode-check { background: var(--work-accent-ink); border-color: var(--work-accent-ink); }
+.flow-editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
+.flow-editor-toolbar > div { display: flex; align-items: baseline; gap: 10px; }
+.flow-editor-toolbar strong { font-size: 13px; }
+.flow-editor-toolbar span { font-size: 11px; color: var(--flow-muted); }
+.flow-config-form .flow-reset { display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; border: 0; background: none; font-size: 11px; color: var(--work-accent-ink); box-shadow: none; }
+.flow-editor-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: 345px; border: 1px solid var(--flow-line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.flow-step-nav { padding: 12px; background: var(--paper); border-right: 1px solid var(--flow-line); min-width: 0; }
+.flow-step-nav ol { display: grid; gap: 6px; max-height: 330px; overflow-y: auto; scrollbar-width: thin; list-style: none; padding: 0; margin: 0; }
+.flow-config-form .flow-step-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 9px; border: 1px solid transparent; border-radius: 5px; text-align: left; background: transparent; box-shadow: none; }
+.flow-step-link:hover { background: var(--paper-soft); }
+.flow-config-form .flow-step-link.is-active { border-color: var(--sage-strong); background: var(--sage-soft); }
+.flow-step-index { flex-shrink: 0; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--flow-muted); }
+.flow-step-link.is-active .flow-step-index { color: var(--work-accent-ink); font-weight: 700; }
+.flow-step-copy { display: grid; gap: 3px; flex: 1; min-width: 0; }
+.flow-step-copy strong { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.flow-step-copy small { font-size: 10px; color: var(--flow-muted); }
+.flow-incomplete { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: #ae713c; }
+.flow-config-form .flow-add { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 9px; margin-top: 10px; border: 1px dashed var(--flow-line); border-radius: 5px; background: transparent; font-size: 11px; color: var(--work-accent-ink); box-shadow: none; }
+.flow-step-panel { display: grid; align-content: start; gap: 14px; padding: 16px 20px; min-width: 0; }
+.flow-panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.flow-panel-header > div > span { font-size: 10px; color: var(--flow-muted); }
+.flow-step-panel .flow-panel-header h3 { font-size: 15px; line-height: 1.5; margin: 2px 0 0; overflow-wrap: anywhere; }
+.flow-config-form .flow-delete { display: flex; align-items: center; gap: 5px; flex-shrink: 0; padding: 6px; font-size: 11px; color: var(--flow-muted); border: 0; background: transparent; box-shadow: none; }
+.flow-delete:hover { color: #a24d19; background: var(--paper-soft); }
+.flow-fields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(115px, 1fr); gap: 14px; }
+.flow-config-form .flow-field { display: grid; gap: 7px; min-width: 0; font-size: 12px; }
+.flow-config-form .flow-field input, .flow-config-form .flow-field select, .flow-config-form .flow-field textarea { min-width: 0; width: 100%; padding: 9px 10px; font-size: 12px; line-height: 1.5; border: 1px solid var(--flow-line); border-radius: 5px; background: var(--surface); }
+.flow-config-form .flow-field textarea { min-height: 80px; resize: vertical; }
+.flow-config-form .flow-field :is(input, select, textarea):focus { border-color: var(--sage-strong); outline: 2px solid var(--sage-soft); outline-offset: 1px; }
+.flow-config-form .flow-dependencies { border: 0; border-top: 1px solid var(--flow-line); border-radius: 0; min-width: 0; padding: 10px 0 0; margin: 0; }
+.flow-dependencies legend { padding: 0 6px 0 0; font-size: 12px; }
+.flow-dependencies legend span { margin-left: 5px; font-size: 10px; color: var(--flow-muted); }
+.flow-config-form .flow-dependencies p { font-size: 11px; color: var(--flow-muted); line-height: 1.6; margin: 0 0 10px; }
+.flow-dependencies > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.flow-config-form .flow-dependencies label { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; border: 1px solid var(--flow-line); border-radius: 5px; padding: 6px 9px; font-size: 11px; background: var(--surface); cursor: pointer; }
+.flow-config-form .flow-dependencies label.is-checked { border-color: var(--sage-strong); background: var(--sage-soft); }
+.flow-config-form .flow-dependencies input { width: 13px; height: 13px; flex: 0 0 13px; padding: 0; margin: 0; accent-color: var(--work-accent-ink); }
+.flow-dependencies label > span { min-width: 0; overflow-wrap: anywhere; }
+.flow-dependencies > small { display: flex; gap: 5px; align-items: baseline; margin-top: 10px; font-size: 10px; color: var(--flow-muted); }
+.flow-config-form .flow-editor-note { font-size: 10px; line-height: 1.6; color: var(--flow-muted); margin-top: 11px; }
+.flow-auto-note { display: flex; align-items: flex-start; gap: 12px; padding: 22px; margin-top: 20px; border: 1px dashed var(--flow-line); border-radius: 6px; color: var(--work-accent-ink); background: var(--surface); }
+.flow-auto-note > svg { flex-shrink: 0; margin-top: 3px; }
+.flow-auto-note strong { font-size: 13px; }
+.flow-config-form .flow-auto-note p { margin-top: 5px; font-size: 12px; color: var(--flow-muted); }
+.flow-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 30px; color: var(--flow-muted); }
+.flow-empty strong { font-size: 14px; color: var(--ink); }
+.flow-empty p { font-size: 12px; }
+.flow-empty button { display: flex; align-items: center; gap: 5px; padding: 7px 10px; font-size: 12px; }
+.flow-config-form:disabled .flow-mode-card, .flow-config-form:disabled .flow-dependencies label { cursor: default; opacity: .65; }
+
+.work-dialog.flow-edit-dialog { width: min(1000px, calc(100vw - 48px)); overflow: hidden; }
+.flow-edit-dialog[open] { display: flex; flex-direction: column; }
+.flow-edit-dialog > .work-dialog-header { flex-shrink: 0; padding: 19px 24px; }
+.flow-edit-dialog > .work-dialog-header h2 { font-size: 17px; }
+.flow-edit-dialog > .work-dialog-content { display: flex; flex-direction: column; padding: 0; min-height: 0; }
+.flow-edit-dialog .flow-edit-form { display: flex; flex-direction: column; min-height: 0; padding: 0; gap: 0; margin: 0; border: 0; border-radius: 0; background: var(--paper); }
+.flow-edit-body { padding: 18px 24px 20px; overflow-y: auto; scrollbar-width: thin; }
+.flow-edit-form .flow-save-note { display: flex; align-items: center; gap: 7px; color: var(--work-muted); font-size: 11px; line-height: 1.6; margin: 0 0 12px; }
+.flow-save-note > svg { flex-shrink: 0; }
+.flow-edit-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 24px; border-top: 1px solid var(--ink-soft); background: var(--surface); }
+.flow-edit-footer > div:first-child { font-size: 11px; color: var(--work-muted); line-height: 1.6; }
+.flow-edit-footer .work-decision-buttons { flex-shrink: 0; margin: 0; gap: 8px; }
+.flow-edit-footer .work-decision-buttons button { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 14px; font-size: 12px; }
+
+@media (max-width: 680px) {
+  .work-dialog.flow-edit-dialog { width: calc(100vw - 20px); max-height: 94dvh; }
+  .flow-edit-dialog > .work-dialog-header { padding: 14px 16px; }
+  .flow-edit-body { padding: 14px 16px; }
+  .flow-mode-grid { grid-template-columns: 1fr; gap: 8px; }
+  .flow-config-form .flow-mode-card { padding: 12px; }
+  .flow-mode-copy small { font-size: 11px; }
+  .flow-editor-toolbar { align-items: flex-start; margin-top: 18px; }
+  .flow-editor-toolbar > div { display: grid; gap: 2px; }
+  .flow-editor-layout { grid-template-columns: minmax(0, 1fr); }
+  .flow-step-nav { border-right: 0; border-bottom: 1px solid var(--flow-line); padding: 10px; }
+  .flow-step-nav ol { display: flex; overflow-x: auto; max-height: none; gap: 6px; }
+  .flow-step-nav li { flex: 0 0 160px; }
+  .flow-config-form .flow-step-link { height: 100%; }
+  .flow-config-form .flow-add { padding: 7px; }
+  .flow-step-panel { padding: 16px; gap: 15px; }
+  .flow-fields { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .flow-edit-footer { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+  .flow-edit-footer > div:first-child { flex: 1 1 140px; }
+  .flow-edit-footer .work-decision-buttons { margin-left: auto; }
+}
