@@ -99,7 +99,7 @@ def environment(checkout, profile, *, real=False, providers="codex", backend=0, 
     inherited = None
     if inherit_cli:
         from scripts.environment_cli_config import inherit_runtime_cli
-        inherited = inherit_runtime_cli(checkout, state)
+        inherited = inherit_runtime_cli(checkout, state, real=real)
     for name in ("data", "artifacts", "runtime", "maintenance-worktrees"):
         private_dir(state / name)
     env = {k: v for k, v in os.environ.items() if not k.startswith("YIREN_")}

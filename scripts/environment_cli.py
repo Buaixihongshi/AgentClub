@@ -63,9 +63,11 @@ def options(parser, checkout=True):
     if checkout: parser.add_argument("--checkout", type=lambda v: Path(v).expanduser().resolve(), default=ROOT)
     parser.add_argument("--backend-port", type=int)
     parser.add_argument("--frontend-port", type=int)
-    parser.add_argument("--real-cli", action="store_true", help="Explicit opt-in, separate private real-CLI state")
-    parser.add_argument("--inherit-runtime-cli", action="store_true", help="Use daily CLI routes/models with isolated task state; alpha does this by default")
-    parser.add_argument("--providers", default="codex")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--real-cli", action="store_true", help="Use separate real-CLI state; with --providers, test specific providers")
+    mode.add_argument("--demo", action="store_true", help="Explicit offline demo (development/test only)")
+    parser.add_argument("--inherit-runtime-cli", action="store_true", help="Use daily CLI routes/models with isolated task state; development/alpha do this by default")
+    parser.add_argument("--providers", help="Specific real providers instead of daily routes (requires --real-cli outside development)")
     parser.add_argument("--no-install", action="store_true")
     parser.add_argument("--no-open", action="store_true", help="Compatibility: browser is opened only with --open")
     parser.add_argument("--open", action="store_true")
@@ -75,10 +77,24 @@ def options(parser, checkout=True):
     parser.add_argument("--reset-onboarding", action="store_true")
 
 
+def cli_mode(args, profile):
+    demo = getattr(args, "demo", False)
+    inherit = getattr(args, "inherit_runtime_cli", False)
+    providers = getattr(args, "providers", None)
+    if demo and (profile not in {"development", "test"} or inherit or providers):
+        raise EnvironmentError("--demo is for development/test and cannot inherit or select real CLI providers")
+    real = args.real_cli or (profile == "development" and not demo)
+    # Explicit --real-cli retains the standalone provider-probe path. Normal
+    # development uses the team's effective daily routes rather than Codex-only.
+    inherit = profile == "alpha" or inherit or (profile == "development" and not demo and not args.real_cli and providers is None)
+    return real, inherit
+
+
 def launch(args, root, profile, allocate=False):
     if profile == "runtime": raise EnvironmentError("Runtime activation is reserved for the owner release command")
     if getattr(args, "inherit_runtime_cli", False) and profile not in {"development", "test", "alpha"}:
         raise EnvironmentError("Daily CLI inheritance is only available to isolated development/test/alpha")
+    real, inherit = cli_mode(args, profile)
     protected = home() / "releases"
     if root.resolve().is_relative_to(protected.resolve()) or (profile != "alpha" and root.resolve() == (home() / "alpha").resolve()):
         raise EnvironmentError("Release/alpha source is protected; create a feature worktree instead")
@@ -90,13 +106,13 @@ def launch(args, root, profile, allocate=False):
             raise EnvironmentError("Alpha must be a clean detached main checkout")
         if git(root, "rev-parse", "HEAD") != git(ROOT, "rev-parse", "origin/main"):
             raise EnvironmentError("Alpha is not at refreshed origin/main; sync it before starting")
-    if checkout_listening(root) and not alive(read_record(root, profile, args.real_cli)):
+    if checkout_listening(root) and not alive(read_record(root, profile, real)):
         raise EnvironmentError("Checkout is serving another instance; do not develop in a running service checkout")
     if not (root / "backend/app/runtime_control.py").exists():
         raise EnvironmentError("Checkout does not include the managed lifecycle yet; merge PR 2 before using alpha/main features")
     record = start(root, profile, detach=args.detach,
-        real=args.real_cli, providers=args.providers, backend=args.backend_port, frontend=args.frontend_port,
-        inherit_cli=profile == "alpha" or getattr(args, "inherit_runtime_cli", False),
+        real=real, providers=args.providers or "codex", backend=args.backend_port, frontend=args.frontend_port,
+        inherit_cli=inherit,
         allocate=allocate, install=not args.no_install, backend_only=args.backend_only, reload=args.reload,
         open_browser=args.open and not args.no_open, reset_onboarding=args.reset_onboarding)
 
@@ -127,14 +143,16 @@ def main(argv=None):
     end = commands.add_parser("stop")
     end.add_argument("profile", choices=profiles())
     end.add_argument("--checkout", type=lambda v: Path(v).expanduser().resolve(), default=ROOT)
-    end.add_argument("--real-cli", action="store_true")
+    mode = end.add_mutually_exclusive_group()
+    mode.add_argument("--real-cli", action="store_true")
+    mode.add_argument("--demo", action="store_true", help="Stop the explicitly started demo state")
     alpha = commands.add_parser("alpha")
     alpha.add_argument("operation", choices=("sync", "start", "stop", "status"))
     options(alpha, checkout=False)
     args = parser.parse_args(argv)
     if args.action == "dev": launch(args, feature(args.task, args.ref), "development", allocate=True)
     elif args.action == "start": launch(args, args.checkout, args.profile)
-    elif args.action == "stop": stop(args.checkout, args.profile, args.real_cli)
+    elif args.action == "stop": stop(args.checkout, args.profile, cli_mode(args, args.profile)[0])
     elif args.operation == "sync": sync_alpha()
     elif args.operation == "stop": stop(home() / "alpha", "alpha")
     elif args.operation == "status":

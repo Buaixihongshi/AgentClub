@@ -1,7 +1,8 @@
 # 开发环境、验收与检查入口
 
 项目统一通过 `scripts/env.sh` 管理环境，通过 `scripts/check.sh` 执行检查。
-development/test 默认使用演示 Provider；alpha 继承日常 CLI 设置。启动、安装依赖和离线检查不会主动发起模型任务。
+development 默认使用真实 CLI 并继承日常角色路由、模型与参数；演示须显式 `--demo`。
+test 与 CI/离线检查继续使用 fixture；alpha 继承日常 CLI 设置。启动、安装依赖和离线检查不会主动发起模型任务。
 
 ## 环境与端口
 
@@ -31,6 +32,8 @@ development/test 默认使用演示 Provider；alpha 继承日常 CLI 设置。�
 ./scripts/env.sh dev composer --detach
 ./scripts/env.sh start development --checkout /absolute/path/to/candidate --detach
 ./scripts/env.sh stop development --checkout /absolute/path/to/candidate
+./scripts/env.sh dev offline-demo --demo --detach
+./scripts/env.sh stop development --checkout /absolute/path/to/offline-demo --demo
 ./scripts/env.sh alpha sync
 ./scripts/env.sh alpha start --detach
 ./scripts/env.sh alpha status
@@ -64,19 +67,22 @@ maintenance-worktrees 和 runtime（日志、进程记录、私有控制令牌�
 SQLite 及 `data/connection-secrets/` 都随环境隔离；不复制日常聊天和 API 密钥作为种子。
 目录权限为 700，控制文件为 600。环境变量中的旧 YIREN 路径不会意外串入新环境。
 
-开发候选的真实 CLI 使用独立的 development-real 状态，不改提交配置。验收完整团队时继承日常配置；单 Provider 专项测试才指定 providers：
+`dev` 与 `start development` 默认使用独立的 `.yiren/development-real` 状态，继承日常 CLI 配置。
+明确关闭演示开关与 fake Provider，不把角色统一成 Codex。日常配置缺失、路由为演示或 API 连接时明确报错，
+不静默回退演示。未运行的旧 `.yiren/development` 演示数据仍保留；停止旧演示需传 `--demo`。
+`--demo` 使用该独立演示状态，不能同时继承或指定真实 Provider。单 Provider 专项测试保留显式入口：
 
 ```sh
-./scripts/env.sh dev provider-probe --real-cli --inherit-runtime-cli --detach
+./scripts/env.sh dev team-validation --detach
 ./scripts/env.sh start development --real-cli --providers codex,claude --detach
-./scripts/env.sh stop development --real-cli
+./scripts/env.sh stop development
 ```
 
-alpha 每次停止后重新启动时，从 `runtime-state` 读取有效 CLI 设置，包含 Provider 命令参数及启用状态、各角色的主用/备用连接、CLI 模型和运行超时；不把角色统一成 Codex。沿用 `.yiren/alpha` 的独立数据，`--real-cli` 不另建一份空的 alpha-real 状态。日常修改后，重启 alpha 才更新快照；已运行实例不会静默重启或自动同步中途配置。运行记录标明 `cli_config_source=runtime`。
+development 的默认模式与 alpha 每次停止后重新启动时，从 `runtime-state` 读取有效 CLI 设置，包含 Provider 命令参数及启用状态、各角色的主用/备用连接、CLI 模型和运行超时。development 强制真实模式，alpha 保留日常模式设置。alpha 沿用 `.yiren/alpha` 的独立数据，`--real-cli` 不另建一份空的 alpha-real 状态。日常修改后，重启才更新快照；已运行实例不会静默重启或自动同步中途配置。运行记录标明 `cli_config_source=runtime`。
 
 只复制 CLI 配置字段，不复制日常数据库、聊天、API connections、key_ref 或登录凭据文件。角色使用非 CLI 的 API 连接、角色 ID 不对应或日常配置缺失时，明确拒绝继承，不替换成另一模型。日常配置作为只读来源，alpha 的设置修改不写回日常；维护执行继续关闭。
 
-真实验证可能消耗额度；用户在 alpha 提交任务时按日常路由执行。development/test 演示环境在读取保存设置及每次任务快照后
+development 已获用户授权进行真实功能验证，按日常路由执行；自动化离线检查不受此默认值影响。显式 development --demo / 默认 test 环境在读取保存设置及每次任务快照后
 仍强制使用演示适配器，并拦截真实验证/探测，不能被旧设置中的 use_fake_cli=false 放开。
 日常 local 兼容模式保留用户在设置页明确完成的真实 Provider 接入方式。
 

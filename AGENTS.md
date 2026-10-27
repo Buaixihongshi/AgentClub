@@ -10,5 +10,5 @@
 - 遵守 `CONTRIBUTING.md` 的协作者与提交署名要求。合并依据当前 head 的必需 CI、适用审阅和 GitHub 分支规则；不再要求 Owner approval 或 Owner release。
 - Agent 可准备候选、执行离线检查、创建/更新 PR；不得伪造审阅或批准、自行合并或启用自动合并。
 - 实际日常数据导入、激活、回滚及故障恢复由所有者明确执行；可以在临时 fixture 中验证这些路径，不触碰日常实例。
-- development/test 默认使用演示/fixture；alpha 启动时继承日常有效 CLI 配置，任务数据独立。真实验收遵循用户授权，不擅自将所有角色统一成 Codex。合并不等于部署授权。
+- 用户已授权功能开发使用真实 CLI 验证：development 默认继承日常有效 CLI 的角色路由、模型和参数，任务数据独立，不擅自将所有角色统一成 Codex；演示须显式 --demo。test/CI/离线检查继续使用 fixture；alpha 启动时继承日常 CLI 配置。交付功能需走真实 CLI 关键路径，不能用演示结果代替。合并不等于部署授权。
 - 浏览器操作优先使用 ego-browser，先运行 `ego-browser skill` 读取本机版本指引。

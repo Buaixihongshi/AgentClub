@@ -231,6 +231,7 @@ python3 scripts/privacy-check.py
 使用方式与证据边界见 [环境状态说明](docs/ENVIRONMENTS.md)。
 
 推荐使用 `./scripts/env.sh dev <任务名>` 创建隔离工作目录；主线验收使用 `./scripts/env.sh alpha start --detach`。
+功能开发默认对接真实 CLI，继承日常角色路由与模型，任务数据仍隔离；只有显式传 `--demo` 才启动演示。
 完整端口、旧数据兼容与共用检查说明见 [环境文档](docs/ENVIRONMENTS.md)。
 
 ### 后端
