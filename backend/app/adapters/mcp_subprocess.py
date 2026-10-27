@@ -827,14 +827,16 @@ _MCP_PROMPT_GUIDANCE = (
     "发声前用 log_thought 记录简短的工作计划或判断摘要，供用户查看；无需记录私密的逐步推理。"
 )
 
+_MCP_CASUAL_GUIDANCE = (
+    "【发声协议】调用 yiren_hub.publish_message(content=中文回复) 发布本次回应；"
+    "普通 stdout 不算发声。成功发布后结束本轮，无需工作计划或流程汇报。"
+)
+
 
 def _augment_prompt_for_mcp(prompt: str) -> str:
     from backend.app.orchestration.interaction import is_casual_prompt
     if is_casual_prompt(prompt):
-        return prompt + (
-            "\n【发声协议】调用 yiren_hub.publish_message(content=中文回复) 发布本次回应；"
-            "普通 stdout 不算发声。成功发布后结束本轮，无需工作计划或流程汇报。"
-        )
+        return prompt if prompt.endswith(_MCP_CASUAL_GUIDANCE) else prompt + "\n" + _MCP_CASUAL_GUIDANCE
     return prompt + "\n" + _MCP_PROMPT_GUIDANCE
 
 

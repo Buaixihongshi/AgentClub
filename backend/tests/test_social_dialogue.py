@@ -91,6 +91,23 @@ def test_social_contract_survives_provider_prompt_processing(transform):
     assert 'invoke_agent' not in processed
 
 
+def test_gemini_pipeline_does_not_repeat_social_transport_guidance():
+    agent = AgentRegistry.builtin().require('baobao')
+    mission = Mission(id='social', title='聊天', goal='你好')
+    prompt = _build_prompt(mission, '回应用户', agent)
+    processed = _compact_prompt_for_gemini_mcp(_augment_prompt_for_mcp(prompt))
+    assert processed.count('【发声协议】') == 1
+    assert mission.goal in processed
+
+
+def test_body_mentions_never_select_additional_speakers(repository, temp_settings):
+    mission = Mission(id='no-text-routing', title='聊天', goal='@宝宝 你好', target_agent_id='chulan')
+    repository.create_mission(mission)
+    adapter = RecordingAdapter()
+    MissionRunner(repository, temp_settings, adapter).run(mission.id)
+    assert [agent for agent, _ in adapter.calls] == ['chulan']
+
+
 def test_mixed_greeting_preserves_review_and_delivery_rules():
     agent = AgentRegistry.builtin().require('baobao')
     mission = Mission(id='review', title='审查', goal='你好，请审查权限修改并补测试')

@@ -7,6 +7,7 @@ import re
 from typing import Iterable, Optional
 
 from backend.app.domain.models import AgentProfile
+from backend.app.domain.agent_registry import get_agent_registry, strip_leading_addressees
 
 
 _SOCIAL_UTTERANCE = re.compile(
@@ -27,19 +28,8 @@ _SOCIAL_UTTERANCE = re.compile(
 
 def is_casual_turn(content: str, agents: Optional[Iterable[AgentProfile]] = None) -> bool:
     if agents is None:
-        from backend.app.domain.agent_registry import get_agent_registry
         agents = get_agent_registry().all()
-    names = {name for agent in agents for name in (agent.id, agent.display_name, *agent.aliases) if name}
-    text = content.strip()
-    # Strip known leading addressees only. Never strip arbitrary @tokens or a
-    # name embedded in the body, which could erase an actual task instruction.
-    if names:
-        aliases = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
-        prefix = re.compile(
-            rf"^@?(?:{aliases})(?:[\s,，、:：]+|(?=你|在|大家|各位)|$)", re.IGNORECASE,
-        )
-        while (match := prefix.match(text)) is not None:
-            text = text[match.end():].lstrip()
+    text = strip_leading_addressees(content, agents)
     utterances = [re.sub(r"\s+", "", part) for part in re.split(r"[,，。.!！?？;；\n]+", text)]
     utterances = [part for part in utterances if part]
     return bool(utterances) and all(_SOCIAL_UTTERANCE.fullmatch(part) for part in utterances)
