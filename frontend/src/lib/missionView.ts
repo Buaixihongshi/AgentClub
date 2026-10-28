@@ -12,6 +12,7 @@ import type {
   TurnToolCall,
   TurnView,
 } from "../types";
+import { MENTION_OPTIONS, mentionOptionById } from "./mentions";
 import { compactPersonaProviderLabel } from "./providerLabels";
 
 export type { ThoughtEntry } from "../types";
@@ -24,13 +25,14 @@ const CAPABILITY_LABEL: Record<Capability, string> = {
   unknown: "Agent",
 };
 
-const DEFAULT_AGENTS: Array<{ agentId: string; personaLabel: string; capability: Capability }> = [
-  { agentId: "chulan", personaLabel: "张楚岚", capability: "unknown" },
-  { agentId: "baobao", personaLabel: "冯宝宝", capability: "unknown" },
-  { agentId: "wangye", personaLabel: "王也", capability: "unknown" },
-];
-
-const AGENT_NAME_BY_ID = new Map(DEFAULT_AGENTS.map((agent) => [agent.agentId, agent.personaLabel]));
+/** Team directory in config order; synced from `/api/agents`, so user roles appear too. */
+function teamAgents(): Array<{ agentId: string; personaLabel: string; capability: Capability }> {
+  return MENTION_OPTIONS.map((option) => ({
+    agentId: option.id,
+    personaLabel: option.label,
+    capability: "unknown" as Capability,
+  }));
+}
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "排队中",
@@ -117,7 +119,9 @@ export function buildTurnViews(
     const metadata = event.metadata ?? {};
     const capability = metadata.capability ?? inferCapability(event);
     const providerLabel = metadata.provider_label ?? event.provider_id ?? "Provider pending";
-    const personaLabel = metadata.persona_label ?? event.character_name ?? undefined;
+    // Streaming partials arrive before backend metadata; use the live directory name meanwhile.
+    const personaLabel = metadata.persona_label ?? event.character_name
+      ?? (event.agent_id ? mentionOptionById(event.agent_id)?.label : undefined);
     const isStatus = !isMessageEvent(event);
     if (event.role === "agent" && !isStatus) {
       agentTurnCount++;
@@ -258,7 +262,7 @@ function describeA2ATargetTurn(targetName: string, turn?: TurnRecord): string {
 }
 
 export function formatAgentName(agentId: string): string {
-  return AGENT_NAME_BY_ID.get(agentId) ?? agentId;
+  return mentionOptionById(agentId)?.label ?? agentId;
 }
 
 function isThoughtEvent(event: ThreadEvent): boolean {
@@ -369,7 +373,7 @@ export function buildAgentParticipants(turns: TurnView[]): AgentParticipant[] {
       seen.set(turn.agentId, turn);
     }
   }
-  return DEFAULT_AGENTS.map((agent) => {
+  return teamAgents().map((agent) => {
     const turn = seen.get(agent.agentId);
     if (turn) {
       return {

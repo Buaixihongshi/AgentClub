@@ -56,6 +56,7 @@ export function MissionRoomPage(props: {
   displayMessages: ThreadEvent[];
   hubSettings?: HubSettingsView | null;
   onSaveSettings?: (patch: HubSettingsPatch) => void;
+  onSettingsViewChange?: (view: HubSettingsView) => void;
   onboarding?: OnboardingCardProps;
   discussionBusy: boolean;
   onRequestFinish: () => void;
@@ -126,6 +127,7 @@ export function MissionRoomPage(props: {
           }}
           onVerifyProvider={props.onboarding?.onVerifyProvider}
           onSave={props.onSaveSettings ?? (() => {})}
+          onViewChange={props.onSettingsViewChange}
         />
       </div>
       <EnvironmentBadge runtime={props.onboarding?.health?.runtime} loading={props.onboarding?.healthLoading} />

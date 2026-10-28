@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+import re
+import secrets
 import threading
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.config.providers import load_cli_providers
-from backend.app.domain.agent_registry import get_agent_registry
+from backend.app.domain.agent_registry import CUSTOM_AGENTS_KEY, AgentRegistry, get_agent_registry
 from backend.app.settings import AgentOverride, ProviderOverride, Settings
 from backend.app.storage import hub_settings
 from backend.app.storage import api_connections
@@ -36,6 +38,82 @@ class AgentOverridePatch(BaseModel):
     provider_models: Optional[Dict[str, str]] = None
     clear: Optional[bool] = None
     fallback_context_approved: Optional[bool] = None
+
+
+class CustomAgentInput(BaseModel):
+    """A user-created role. Routing here becomes the role's own default."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: Optional[str] = None
+    display_name: str
+    role: str
+    persona: str
+    aliases: List[str] = Field(default_factory=list)
+    trigger_points: List[str] = Field(default_factory=list)
+    default_provider_id: str
+    fallback_provider_ids: List[str] = Field(default_factory=list)
+    provider_models: Dict[str, str] = Field(default_factory=dict)
+
+
+MAX_CUSTOM_AGENTS = 12
+_CUSTOM_ID = re.compile(r"[a-z][a-z0-9_-]{1,31}")
+_ROUTE_KEYS = ("default_provider_id", "fallback_provider_ids", "provider_models")
+# Separators the @-mention parsers split on; an alias containing one could never match.
+_ALIAS_FORBIDDEN = frozenset("@,，、:：")
+
+
+def _bad_request(detail: str) -> HTTPException:
+    return HTTPException(status_code=400, detail=detail)
+
+
+def _clean_text(value: str, label: str, limit: int) -> str:
+    text = value.strip()
+    if not text:
+        raise _bad_request(f"{label}不能为空")
+    if len(text) > limit or any(ord(c) < 32 and c not in "\n\t" for c in text):
+        raise _bad_request(f"{label}过长或包含控制字符（上限 {limit} 字）")
+    return text
+
+
+def _clean_custom_agent(payload: CustomAgentInput, registry: AgentRegistry, agent_id: str) -> dict:
+    display_name = _clean_text(payload.display_name, "名称", 24)
+    if "\n" in display_name:
+        raise _bad_request("名称不能换行")
+    aliases: List[str] = []
+    for raw in payload.aliases:
+        alias = raw.strip()
+        if not alias:
+            continue
+        if len(alias) > 24 or any(c.isspace() or c in _ALIAS_FORBIDDEN for c in alias):
+            raise _bad_request("别名不能包含空格、@ 或标点，且不超过 24 字")
+        if alias.lower() not in {a.lower() for a in aliases} and alias.lower() != display_name.lower():
+            aliases.append(alias)
+    if len(aliases) > 8:
+        raise _bad_request("别名最多 8 个")
+    trigger_points = [line.strip() for line in payload.trigger_points if line.strip()]
+    if len(trigger_points) > 8 or any(len(line) > 300 for line in trigger_points):
+        raise _bad_request("职责指引最多 8 条，每条不超过 300 字")
+    # @mentions resolve names case-insensitively, so every name a role
+    # answers to must stay unique across the whole team.
+    taken: Dict[str, str] = {}
+    for other in registry.all():
+        if other.id == agent_id:
+            continue
+        for name in (other.id, other.display_name, *other.aliases):
+            taken[name.lower()] = other.display_name
+    for name in (agent_id, display_name, *aliases):
+        if name.lower() in taken:
+            raise _bad_request(f"“{name}”已被 {taken[name.lower()]} 使用，请换一个名称或别名")
+    return {
+        "id": agent_id,
+        "display_name": display_name,
+        "role": _clean_text(payload.role, "职位", 80),
+        "persona": _clean_text(payload.persona, "人格", 600),
+        "aliases": aliases,
+        "trigger_points": trigger_points,
+        "capability_hints": [],
+    }
 
 
 class HubSettingsPatch(BaseModel):
@@ -122,6 +200,11 @@ def build_router(settings: Settings) -> APIRouter:
             agent_list.append({
                 "id": agent.id,
                 "display_name": agent.display_name,
+                "custom": registry.is_custom(agent.id),
+                "role": agent.role,
+                "persona": agent.persona,
+                "aliases": list(agent.aliases),
+                "trigger_points": list(agent.trigger_points),
                 "default_provider_id": {"value": default_value, "source": default_source},
                 "fallback_provider_ids": {"value": fallback_value, "source": fallback_source},
                 "provider_models": {
@@ -150,10 +233,11 @@ def build_router(settings: Settings) -> APIRouter:
         data = hub_settings.load(_settings_file_path())
         connection = data.get("connections", {}).get(cid)
         if connection is None:
-            if cid not in _committed_provider_ids():
+            from backend.app.adapters.cli_catalog import cli_catalog
+            provider = next((p for p in load_cli_providers(settings.config_dir) if p.id == cid), None)
+            if provider is None:
                 raise HTTPException(status_code=404, detail="unknown connection")
-            return dict(connection_id=cid, status="unsupported", models=[], fetched_at=None,
-                        error="CLI catalog is unavailable; enter a model ID manually")
+            return cli_catalog(provider, scope=str(settings.config_dir), refresh=refresh)
         return catalog(settings, cid, connection, refresh=refresh)
 
     @router.get("/connections/{connection_id}/models")
@@ -167,6 +251,109 @@ def build_router(settings: Settings) -> APIRouter:
     @router.get("/settings")
     def get_hub_settings():
         return _build_view()
+
+    def _validate_route(default: str, fallbacks: List[str], models: Dict[str, str], connections: dict) -> None:
+        valid_ids = _committed_provider_ids() | set(connections)
+        if default not in valid_ids:
+            raise _bad_request(f"未知的主用连接：{default}")
+        if len(set(fallbacks)) != len(fallbacks) or default in fallbacks:
+            raise _bad_request("备用连接不能重复，也不能与主用连接相同")
+        for pid in fallbacks:
+            if pid not in valid_ids:
+                raise _bad_request(f"未知的备用连接：{pid}")
+        for pid, model in models.items():
+            if pid not in (default, *fallbacks) or pid not in {"codex", "claude", "antigravity"} | set(connections):
+                raise _bad_request(f"该连接不支持指定模型：{pid}")
+            if model != model.strip() or len(model) > 200 or any(ord(c) < 32 for c in model):
+                raise _bad_request("模型 ID 无效")
+        for pid in (default, *fallbacks):
+            if pid in connections and not models.get(pid, "").strip():
+                raise _bad_request("API 连接需要填写模型 ID")
+
+    def _save_custom_agent(agent_id: Optional[str], payload: CustomAgentInput) -> dict:
+        file_path = _settings_file_path()
+        existing = hub_settings.load(file_path)
+        custom = [entry for entry in existing.get(CUSTOM_AGENTS_KEY) or [] if isinstance(entry, dict)]
+        registry = get_agent_registry(settings.config_dir)
+        if agent_id is None:
+            if len(custom) >= MAX_CUSTOM_AGENTS:
+                raise _bad_request(f"最多添加 {MAX_CUSTOM_AGENTS} 个自定义角色")
+            if payload.id is not None:
+                agent_id = payload.id.strip()
+                if not _CUSTOM_ID.fullmatch(agent_id):
+                    raise _bad_request("角色 ID 需以小写字母开头，只含小写字母、数字、- 或 _，长度 2–32")
+                if registry.get(agent_id) is not None:
+                    raise _bad_request(f"角色 ID 已存在：{agent_id}")
+            else:
+                agent_id = "role-" + secrets.token_hex(3)
+                while registry.get(agent_id) is not None:
+                    agent_id = "role-" + secrets.token_hex(3)
+            index = None
+        else:
+            if payload.id is not None and payload.id != agent_id:
+                raise _bad_request("角色 ID 创建后不能修改")
+            index = next((i for i, entry in enumerate(custom) if entry.get("id") == agent_id), None)
+            if index is None:
+                if registry.get(agent_id) is not None:
+                    raise HTTPException(status_code=403, detail="内置角色不能在这里编辑")
+                raise HTTPException(status_code=404, detail="unknown agent")
+        profile = _clean_custom_agent(payload, registry, agent_id)
+        default = payload.default_provider_id
+        fallbacks = list(payload.fallback_provider_ids)
+        models = {pid: model for pid, model in payload.provider_models.items() if model.strip()}
+        _validate_route(default, fallbacks, models, existing.get("connections") or {})
+        profile.update(default_provider_id=default, fallback_provider_ids=fallbacks, provider_models=models)
+
+        overrides = existing.setdefault("agents", {})
+        section = overrides.get(agent_id, {}) if isinstance(overrides.get(agent_id), dict) else {}
+        previous = custom[index] if index is not None else {}
+        old_fallbacks = section.get("fallback_provider_ids", previous.get("fallback_provider_ids", []))
+        # The dialog edits the role's own route; drop table overrides so the
+        # saved values are what actually runs.
+        for key in _ROUTE_KEYS:
+            section.pop(key, None)
+        if old_fallbacks != fallbacks or not section.get("fallback_context_approved"):
+            section.pop("fallback_context_approved", None)
+            section.pop("fallback_context_targets", None)
+        if section:
+            overrides[agent_id] = section
+        else:
+            overrides.pop(agent_id, None)
+        if index is None:
+            custom.append(profile)
+        else:
+            custom[index] = profile
+        existing[CUSTOM_AGENTS_KEY] = custom
+        existing.setdefault("schema_version", 1)
+        hub_settings.save(file_path, existing)
+        return _build_view()
+
+    @router.post("/agents")
+    def create_custom_agent(payload: CustomAgentInput):
+        with _settings_write_lock:
+            return _save_custom_agent(None, payload)
+
+    @router.put("/agents/{agent_id}")
+    def update_custom_agent(agent_id: str, payload: CustomAgentInput):
+        with _settings_write_lock:
+            return _save_custom_agent(agent_id, payload)
+
+    @router.delete("/agents/{agent_id}")
+    def delete_custom_agent(agent_id: str):
+        with _settings_write_lock:
+            file_path = _settings_file_path()
+            existing = hub_settings.load(file_path)
+            custom = [entry for entry in existing.get(CUSTOM_AGENTS_KEY) or [] if isinstance(entry, dict)]
+            remaining = [entry for entry in custom if entry.get("id") != agent_id]
+            if len(remaining) == len(custom):
+                if get_agent_registry(settings.config_dir).get(agent_id) is not None:
+                    raise HTTPException(status_code=403, detail="内置角色不能删除")
+                raise HTTPException(status_code=404, detail="unknown agent")
+            existing[CUSTOM_AGENTS_KEY] = remaining
+            if isinstance(existing.get("agents"), dict):
+                existing["agents"].pop(agent_id, None)
+            hub_settings.save(file_path, existing)
+            return _build_view()
 
     @router.put("/settings")
     def put_hub_settings(patch: HubSettingsPatch):

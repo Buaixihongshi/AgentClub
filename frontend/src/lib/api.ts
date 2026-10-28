@@ -1,4 +1,4 @@
-import type { ArtifactContent, ConnectionCatalogView, Conversation, ConversationDetail, ConversationSummary, DiscussionControlAction, HealthView, HubConnectionView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, ObservabilityOverviewPayload, ObservabilityTurnDetailPayload, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository, RoomMode } from "../types";
+import type { ArtifactContent, ConnectionCatalogView, Conversation, ConversationDetail, ConversationSummary, DiscussionControlAction, HealthView, CustomAgentInput, HubConnectionView, HubSettingsPatch, HubSettingsView, MaintenanceRun, MaintenanceRunDetail, Mission, MissionDetail, ObservabilityOverviewPayload, ObservabilityTurnDetailPayload, OnboardingFirstChatResponse, OnboardingView, RegisteredRepository, RoomMode } from "../types";
 
 const API_ROOT = "";
 
@@ -194,6 +194,31 @@ export async function updateHubSettings(patch: HubSettingsPatch): Promise<HubSet
   return parseJson<HubSettingsView>(response, "更新 Hub 设置失败");
 }
 
+export async function createCustomAgent(input: CustomAgentInput): Promise<HubSettingsView> {
+  const response = await fetch(`${API_ROOT}/api/hub/agents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return parseJson<HubSettingsView>(response, "新增角色失败");
+}
+
+export async function updateCustomAgent(agentId: string, input: CustomAgentInput): Promise<HubSettingsView> {
+  const response = await fetch(`${API_ROOT}/api/hub/agents/${encodeURIComponent(agentId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return parseJson<HubSettingsView>(response, "保存角色失败");
+}
+
+export async function deleteCustomAgent(agentId: string): Promise<HubSettingsView> {
+  const response = await fetch(`${API_ROOT}/api/hub/agents/${encodeURIComponent(agentId)}`, {
+    method: "DELETE",
+  });
+  return parseJson<HubSettingsView>(response, "删除角色失败");
+}
+
 export async function listHubConnections(): Promise<{ connections: HubConnectionView[] }> {
   const response = await fetch(`${API_ROOT}/api/hub/connections`);
   return parseJson<{ connections: HubConnectionView[] }>(response, "加载连接列表失败");
@@ -217,6 +242,7 @@ export interface AgentSummary {
   role: string;
   aliases: string[];
   capability_hints: string[];
+  custom?: boolean;
 }
 
 export async function listAgents(): Promise<AgentSummary[]> {

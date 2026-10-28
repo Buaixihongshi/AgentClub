@@ -27,7 +27,7 @@ import { formatDiscussionError } from "./lib/roundtableView";
 import { detectUnsupportedTargetedSkill, parseDiscussCommand } from "./lib/skillCommands";
 import { buildConversationTimeline } from "./lib/conversationTimeline";
 import { buildAgentParticipants, buildMissionRuntimeSummary, buildTurnViews } from "./lib/missionView";
-import { parseMentionTarget, setMentionOptions } from "./lib/mentions";
+import { MENTION_OPTIONS, parseMentionTarget, setMentionOptions } from "./lib/mentions";
 import {
   confirmedMentionIds,
   stripConfirmedMentions,
@@ -98,22 +98,35 @@ export default function App() {
     await handleSelectConversation(id);
   }
 
-  useEffect(() => {
-    listConversations().then(setConversations).catch(() => {});
-    getHubSettings().then(setHubSettings).catch(() => {});
+  const [, setAgentDirectoryVersion] = useState(0);
+  const refreshAgentDirectory = useCallback(() => {
     listAgents()
-      .then((agents) =>
+      .then((agents) => {
         setMentionOptions(
           agents.map((a) => ({
             id: a.id,
             label: a.display_name,
             aliases: a.aliases,
             role: a.role,
+            custom: a.custom,
           })),
-        ),
-      )
+        );
+        // Names, colours and @ candidates read the directory at render time.
+        setAgentDirectoryVersion((version) => version + 1);
+      })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    listConversations().then(setConversations).catch(() => {});
+    getHubSettings().then(setHubSettings).catch(() => {});
+    refreshAgentDirectory();
+  }, [refreshAgentDirectory]);
+
+  const handleSettingsViewChange = useCallback((view: HubSettingsView) => {
+    setHubSettings(view);
+    refreshAgentDirectory();
+  }, [refreshAgentDirectory]);
 
   const loadHealth = useCallback(async () => {
     setHealthLoading(true);
@@ -516,8 +529,9 @@ export default function App() {
     setOnboardingBusy(true);
     setOnboardingError(null);
     try {
+      const teamIds = hubSettings?.agents.map((agent) => agent.id) ?? MENTION_OPTIONS.map((option) => option.id);
       const agents = Object.fromEntries(
-        ["chulan", "baobao", "wangye"].map((agentId) => [
+        teamIds.map((agentId) => [
           agentId,
           { default_provider_id: providerId, fallback_provider_ids: [] },
         ]),
@@ -607,6 +621,7 @@ export default function App() {
       displayMessages={displayMessages}
       hubSettings={hubSettings}
       onSaveSettings={handleSaveSettings}
+      onSettingsViewChange={handleSettingsViewChange}
       discussionBusy={discussionBusy}
       onRequestFinish={() => {
         void sendDiscussionControlRequest("finish");

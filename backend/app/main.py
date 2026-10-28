@@ -28,6 +28,9 @@ def create_app(
     mission_adapter: Optional[CLIAdapter] = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
+    from backend.app.domain.agent_registry import configure_custom_agents
+    from backend.app.storage import hub_settings
+    configure_custom_agents(app_settings.config_dir, hub_settings.default_path(app_settings))
     repository = Repository(app_settings.database_path)
     repository.initialize()
     from backend.app.storage.execution import ExecutionLedger

@@ -9,6 +9,8 @@ export interface MentionOption {
   abbr?: string;
   /** 候选头像底色，按 agent 固定，用于 @ 浮层身份强调。 */
   color?: string;
+  /** 用户在设置中新增的角色。 */
+  custom?: boolean;
 }
 
 const DEFAULT_MENTION_OPTIONS: MentionOption[] = [
@@ -55,6 +57,11 @@ export function setMentionOptions(options: MentionOption[]): void {
     }),
   );
   aliasMap = buildAliasMap(MENTION_OPTIONS);
+}
+
+/** Current directory entry for an agent id, including user-created roles. */
+export function mentionOptionById(agentId: string): MentionOption | undefined {
+  return MENTION_OPTIONS.find((option) => option.id === agentId);
 }
 
 /** Resolve a raw @-alias (name, latin alias, pinyin or abbr) to an option, case-insensitively. */

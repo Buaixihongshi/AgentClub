@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { Archive, ArchiveRestore, ArrowLeft, Pencil, Plus } from "lucide-react";
 import type { ConversationSummary } from "../types";
 
 export function ConversationList(props: {
@@ -56,7 +57,8 @@ export function ConversationList(props: {
         <h2>{props.scope === "archived" ? "已归档" : "会话"}</h2>
         {props.scope === "active" ? (
           <button className="conv-new-btn" onClick={props.onNew}>
-            + 新对话
+            <Plus size={14} aria-hidden="true" />
+            新对话
           </button>
         ) : null}
       </div>
@@ -113,7 +115,7 @@ export function ConversationList(props: {
                       title="重命名"
                       onClick={(event) => beginEdit(event, conv)}
                     >
-                      ✎
+                      <Pencil size={13} aria-hidden="true" />
                     </button>
                   ) : null}
                   <button
@@ -126,7 +128,11 @@ export function ConversationList(props: {
                       props.onStatusChange(conv.id, props.scope === "active" ? "archived" : "active");
                     }}
                   >
-                    {props.scope === "active" ? "⌑" : "↩"}
+                    {props.scope === "active" ? (
+                      <Archive size={13} aria-hidden="true" />
+                    ) : (
+                      <ArchiveRestore size={13} aria-hidden="true" />
+                    )}
                   </button>
                 </div>
               ) : null}
@@ -143,7 +149,11 @@ export function ConversationList(props: {
           className="conv-scope-btn"
           onClick={() => props.onScopeChange(props.scope === "active" ? "archived" : "active")}
         >
-          <span aria-hidden="true">{props.scope === "active" ? "⌑" : "←"}</span>
+          {props.scope === "active" ? (
+            <Archive size={14} aria-hidden="true" />
+          ) : (
+            <ArrowLeft size={14} aria-hidden="true" />
+          )}
           {props.scope === "active" ? "查看归档" : "返回会话"}
         </button>
       </div>

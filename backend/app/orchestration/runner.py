@@ -1110,7 +1110,7 @@ def _build_prompt(
         parts = [
             "聊天室模式：你正在 Unity 的多 Agent 房间中发言。\n"
             "你是{display_name}，主要职责是{role}。人格与交流习惯：{persona}\n"
-            "【共同原则】以各自职责为主要分工，按当前任务协作；三位伙伴都可以提方案、分析、执行和总结，用户明确指定的任务优先。人格决定交流方式，职责决定专业关注点。\n"
+            "【共同原则】以各自职责为主要分工，按当前任务协作；每位伙伴都可以提方案、分析、执行和总结，用户明确指定的任务优先。人格决定交流方式，职责决定专业关注点。\n"
             "人格保持稳定，立场随事实与交流改变；\n"
             "【交付边界】任务复杂度只决定协作轮次，不决定是否交付文件。角色性格、轮次目的、被点名或接力请求都不能单独视为文件交付要求。\n"
             "结合用户当前请求和已有会话上下文判断：讨论、比较、解释、评审修改意见时，直接在聊天中给观点、实例和建议，不主动创建或登记文件。\n"
@@ -1191,6 +1191,12 @@ def _build_prompt(
                 n=max_a2a_invocations,
             )
         )
+        teammates = [a for a in (agents_by_id or {}).values() if a.id != agent.id]
+        if teammates:
+            # Names alone do not route; give the target IDs, including user roles.
+            parts.append("可接力的成员（target_agent_id）：" + "；".join(
+                f"{a.display_name}={a.id}（{a.role}）" for a in teammates
+            ))
     a2a_enabled = max_a2a_invocations is None or max_a2a_invocations > 0
     continuation_check = (
         "2. 接下来由谁继续推进？如果该点名某个 agent 接力，用 invoke_agent；"
