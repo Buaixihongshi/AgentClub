@@ -22,6 +22,8 @@ class Settings(BaseModel):
     artifact_root: Path = Path("artifacts")
     memory_root: Path = Path("data/memory")
     config_dir: Path = Path("config")
+    # Desktop builds serve the prebuilt frontend from the backend origin.
+    frontend_dist: Optional[Path] = None
     use_fake_cli: bool = False
     demo_only: bool = False
     max_turns: int = 6
@@ -58,6 +60,7 @@ def get_settings() -> Settings:
         artifact_root=_env_path("YIREN_ARTIFACT_ROOT", default=Path("artifacts")),
         memory_root=_env_path("YIREN_MEMORY_ROOT", default=Path("data/memory")),
         config_dir=_env_path("YIREN_CONFIG_DIR", default=Path("config")),
+        frontend_dist=_env_path("YIREN_FRONTEND_DIST", default=None),
         use_fake_cli=_env_bool("YIREN_USE_FAKE_CLI", default=False),
         demo_only=_env_bool("YIREN_DEMO_ONLY", default=False),
         max_turns=_env_int("YIREN_MAX_TURNS", default=6),
@@ -134,6 +137,7 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
         "artifact_root": app_settings.artifact_root,
         "memory_root": app_settings.memory_root,
         "config_dir": app_settings.config_dir,
+        "frontend_dist": app_settings.frontend_dist,
         "use_fake_cli": app_settings.use_fake_cli,
         "demo_only": app_settings.demo_only,
         "max_turns": app_settings.max_turns,
@@ -184,7 +188,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
-def _env_path(name: str, default: Path) -> Path:
+def _env_path(name: str, default: Optional[Path]) -> Optional[Path]:
     value = os.getenv(name)
     if value is None or not value.strip():
         return default
