@@ -32,6 +32,7 @@
 - 攻击用例以修复后的期望行为写成 `backend/tests/test_a2a_adversarial.py`（9 项）。同一文件在 `1404839` 源码上运行：**9 项全部失败**；在修复分支上：**9 项全部通过**。
 - 原有 A2A 相关测试组（runner、iron laws、probe、MCP tools/server、圆桌、事件、评测适配、编排、插话，共 191 项）在修复分支上全部通过。
 - 完整 `scripts/checks.py backend` 结果见对应 PR 描述。
+- 真实 CLI（2026-10-28，修复分支 `b21504d` 的 development 环境，继承日常有效路由：楚岚走 codex，宝宝和王也走 antigravity）：嵌套 `wait_reply` 协议任务按 楚岚 → 宝宝 → 王也 → 宝宝续答 → 楚岚续答 完成。事件链依次为 `a2a.invoke`（楚岚→宝宝）、`a2a.invoke`（宝宝→王也）、`a2a.reply.deferred`（宝宝的外层答复转给其续答）、`a2a.reply`（王也→宝宝：42）、`a2a.reply`（宝宝→楚岚：42 加 1 得 43）。楚岚续答引用 N=42、M=43，mission completed；5 个回合共约 108 秒。本次未经过 claude CLI。
 
 ## 原因
 
@@ -56,7 +57,7 @@
 - **A8 的根本边界未消除。** CLI 以跳过权限模式运行并拥有 shell，与宿主同一系统用户；MCP 配置与数据库对它可读写。本次只让宿主不再信任请求里的发送者字段，具备 shell 的 Agent 仍可直接写库伪造其他事件。根治需要把 MCP 写入改为经宿主签发、按回合校验的通道（类似 `session_server` 的 token），并让 CLI 运行在拿不到数据库的沙箱里。铁律 L3 的“可审计”前提是 Agent 只通过 MCP 写入。
 - A5、A9、A10 为低危，本次未改。
 - 圆桌路径（`roundtable.py`）有独立的预算与环检测，本次未改；其 `Turn purpose` 仍原样包含邀请 purpose，但 purpose 长度上限已覆盖圆桌入口。
-- 未做真实 CLI 关键路径验证。按 SOP，合并前需要一次真实 CLI 的 `wait_reply` 往返（含嵌套）证据，以及非作者审阅调度/协议变更。
+- 真实 CLI 只验证了嵌套 `wait_reply` 这一条关键路径（codex 与 antigravity），预算超额、接力失败和 claude CLI 路径仍只有离线证据。按 SOP，调度/协议变更合并前仍需非作者审阅。
 
 ## 防复发
 
