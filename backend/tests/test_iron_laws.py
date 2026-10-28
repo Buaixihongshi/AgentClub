@@ -1,4 +1,4 @@
-"""Executable checks for AgentClub architecture iron laws (L1–L4).
+"""Executable checks for AgentClub architecture iron laws (L1–L3).
 
 See docs/architecture/iron-laws.md.
 """
@@ -6,7 +6,6 @@ See docs/architecture/iron-laws.md.
 from __future__ import annotations
 
 import ast
-import json
 import os
 import sys
 from pathlib import Path
@@ -16,7 +15,6 @@ import pytest
 from backend.app.adapters.mcp_subprocess import MCPSubprocessAdapter
 from backend.app.domain.models import Conversation, Mission, TurnStatus
 from backend.app.mcp.tools import MCPTools
-from backend.app.settings import Settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -383,15 +381,3 @@ def test_l3_a2a_only_via_invoke_agent() -> None:
                     )
 
     assert bad_enqueue == [], "\n".join(bad_enqueue)
-
-
-def test_l4_fake_default_real_providers_disabled() -> None:
-    assert Settings().use_fake_cli is True
-    cfg = _REPO_ROOT / "config" / "cli-providers.json"
-    providers = json.loads(cfg.read_text(encoding="utf-8"))
-    by_id = {p["id"]: p for p in providers}
-    assert by_id["fake"]["enabled"] is True
-    assert by_id["claude"]["enabled"] is False
-    assert by_id["codex"]["enabled"] is False
-    assert by_id["antigravity"]["enabled"] is False
-    assert "gemini" not in by_id

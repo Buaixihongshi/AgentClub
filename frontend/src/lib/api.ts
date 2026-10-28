@@ -261,9 +261,11 @@ export async function getOnboarding(): Promise<OnboardingView> {
   return parseJson<OnboardingView>(response, "加载启动引导失败");
 }
 
-export async function startOnboardingFirstChat(): Promise<OnboardingFirstChatResponse> {
+export async function startOnboardingFirstChat(providerId: string): Promise<OnboardingFirstChatResponse> {
   const response = await fetch(`${API_ROOT}/api/onboarding/first-chat`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider_id: providerId, confirmed_real_call: true }),
   });
   return parseJson<OnboardingFirstChatResponse>(response, "启动首次对话失败");
 }

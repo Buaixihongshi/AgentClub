@@ -143,7 +143,7 @@ def build_router(settings: Settings) -> APIRouter:
 
         runtime_view = {}
         _RUNTIME_DEFAULTS = {
-            "use_fake_cli": True,
+            "use_fake_cli": False,
             "max_turns": 6,
             "max_a2a_invocations": 8,
             "cli_timeout": 300,

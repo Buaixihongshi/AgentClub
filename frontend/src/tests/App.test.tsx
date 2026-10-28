@@ -221,7 +221,7 @@ describe("Unity app", () => {
     expect(screen.getAllByRole("button", { name: "含工具 · 1" })).toHaveLength(2);
   });
 
-  it("starts the first Fake conversation from the onboarding card", async () => {
+  it("starts the first real CLI conversation from the onboarding card", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const onboardingReady = {
       state: "ready_for_first_chat",
@@ -231,7 +231,15 @@ describe("Unity app", () => {
       first_reply_completed_at: null,
       completed_at: null,
       verified_provider_ids: [],
-      providers: [],
+      recommended_provider_id: "codex",
+      providers: [{
+        id: "codex",
+        label: "Codex CLI",
+        available: true,
+        version: "codex 9.9.9",
+        verified: false,
+        activated: false,
+      }],
       dismissed_real_cli_setup: false,
     };
     vi.stubGlobal("fetch", stubFetch((url, init) => {
@@ -246,6 +254,7 @@ describe("Unity app", () => {
             state: "first_chat_running",
             conversation_id: "c_welcome",
             mission_id: "m_welcome",
+            first_chat_provider_id: "codex",
           },
           conversation: makeConvDetail({
             conversation: {
@@ -255,6 +264,8 @@ describe("Unity app", () => {
               created_at: "2026-05-05T00:00:00Z",
               updated_at: "2026-05-05T00:00:00Z",
             },
+            // The welcome conversation already has a turn; the guide must stay.
+            messages: [{ id: "msg_welcome", mission_id: "m_welcome", event_type: "message", role: "user", content: "@张楚岚 你好，介绍一下自己", created_at: "2026-05-05T00:00:00Z" }],
             latest_mission_detail: {
               mission: {
                 id: "m_welcome",
@@ -274,12 +285,12 @@ describe("Unity app", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Unity 已启动")).toBeInTheDocument();
-    expect(screen.getByText("演示 Provider 可用")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "和张楚岚打个招呼" }));
+    expect(await screen.findByText("先接入一个真实 CLI")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "我已登录，用 Codex CLI 打招呼" }));
 
-    expect(await screen.findByText("张楚岚正在确认聊天室状态…")).toBeInTheDocument();
-    expect(calls.some((call) => call.url === "/api/onboarding/first-chat" && call.init?.method === "POST")).toBe(true);
+    expect(await screen.findByText("张楚岚正在通过 Codex CLI 回复…")).toBeInTheDocument();
+    const start = calls.find((call) => call.url === "/api/onboarding/first-chat" && call.init?.method === "POST");
+    expect(JSON.parse(String(start?.init?.body))).toEqual({ provider_id: "codex", confirmed_real_call: true });
   });
 
   it("renders backend MissionDetail payloads returned from mission creation", async () => {

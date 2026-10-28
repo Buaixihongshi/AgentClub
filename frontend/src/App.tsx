@@ -484,11 +484,11 @@ export default function App() {
     }
   }
 
-  async function handleStartOnboarding() {
+  async function handleStartOnboarding(providerId: string) {
     setOnboardingBusy(true);
     setOnboardingError(null);
     try {
-      const response = await startOnboardingFirstChat();
+      const response = await startOnboardingFirstChat(providerId);
       setOnboarding(response.onboarding);
       setSelectedConvId(response.conversation.conversation.id);
       setConvDetail(response.conversation);
@@ -533,7 +533,7 @@ export default function App() {
       const agents = Object.fromEntries(
         teamIds.map((agentId) => [
           agentId,
-          { default_provider_id: providerId, fallback_provider_ids: ["fake"] },
+          { default_provider_id: providerId, fallback_provider_ids: [] },
         ]),
       );
       const updated = await updateHubSettings({

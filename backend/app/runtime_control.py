@@ -38,8 +38,11 @@ def install(app, repository, settings):
         with lock:
             if app.state.draining or app.state.drain_pending:
                 return JSONResponse(status_code=503, content={"detail": "服务正在切换版本，请稍后重试"}, headers={"Retry-After": "5"})
-            if settings.demo_only and (request.url.path.endswith("/verify") or
-                    (request.url.path.endswith("/probe") and "/fake/" not in request.url.path)):
+            path = request.url.path
+            if settings.demo_only and (path.endswith("/verify") or
+                    path == "/api/onboarding/first-chat" or
+                    (path.startswith("/api/onboarding/") and path.endswith("/activate")) or
+                    (path.endswith("/probe") and "/fake/" not in path)):
                 return JSONResponse(status_code=409, content={"detail": "演示环境不调用真实 Provider；请显式启动 --real-cli 环境"})
             in_flight += 1
         try:

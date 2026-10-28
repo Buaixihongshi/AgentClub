@@ -118,6 +118,16 @@ def daily_cli(source_repo):
     return source_repo, state
 
 
+def test_only_explicit_demo_profiles_default_to_the_offline_adapter(daily_cli):
+    root, _ = daily_cli
+    local = common.environment(root, 'local', backend=8000, frontend=5173)
+    test = common.environment(root, 'test', backend=8200, frontend=5175)
+    demo = common.environment(root, 'development', backend=8100, frontend=5174)
+    assert (local['YIREN_USE_FAKE_CLI'], local['YIREN_DEMO_ONLY']) == ('false', 'false')
+    assert (test['YIREN_USE_FAKE_CLI'], test['YIREN_DEMO_ONLY']) == ('true', 'true')
+    assert (demo['YIREN_USE_FAKE_CLI'], demo['YIREN_DEMO_ONLY']) == ('true', 'true')
+
+
 def test_alpha_inherits_effective_daily_cli_without_copying_data_or_connections(daily_cli):
     root, source = daily_cli
     before = {p: p.read_bytes() for p in source.rglob('*') if p.is_file()}
