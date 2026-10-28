@@ -1,3 +1,5 @@
+<p align="center"><img src="packaging/macos/AppIcon.svg" width="128" alt="Unity logo"></p>
+
 # Unity
 
 **把平时用的几个 AI，放进同一个工作群里。**

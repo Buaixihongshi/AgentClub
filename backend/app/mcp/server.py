@@ -20,7 +20,7 @@ from backend.app.storage.repository import Repository
 
 PROTOCOL_VERSION = "2025-03-26"
 SERVER_NAME = "yiren-hub"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.2.0"
 
 JSONRPC_PARSE_ERROR = -32700
 JSONRPC_INVALID_REQUEST = -32600

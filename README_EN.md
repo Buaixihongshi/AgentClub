@@ -1,9 +1,11 @@
+<p align="center"><img src="packaging/macos/AppIcon.svg" width="128" alt="Unity logo"></p>
+
 # Unity
 
 > Turn Codex CLI, Claude Code, and Antigravity CLI into a configurable, collaborative, and observable local Agent team.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-2f6f64.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-2f6f64.svg)](CHANGELOG.md)
 
 [简体中文](README.md) | **English**
 
