@@ -1,0 +1,53 @@
+name: Bug 记录
+description: 记录开发、测试、审查或使用中发现的问题，包括已顺手修复的问题
+body:
+  - type: dropdown
+    id: status
+    attributes:
+      label: 当前状态
+      options:
+        - 待复现
+        - 已复现，待修复
+        - 已修复，待验证
+        - 已验证（补充修复 PR 与证据）
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 触发场景与复现步骤
+      description: 写清前置条件、操作和复现频率；无法复现时说明已知线索与缺失信息。
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 预期行为与实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响范围
+      description: 哪些用户、功能或数据受影响，是否存在临时处理方式。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 发现版本与环境
+      description: 填写提交 SHA、环境类型及必要版本信息；不包含完整本机路径、数据库或凭据。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏证据与原因线索
+      description: 附必要日志、报错或截图；明确区分已确认事实与推测，没有证据时如实说明。
+    validations:
+      required: true
+  - type: textarea
+    id: resolution
+    attributes:
+      label: 修复、验证与下一步
+      description: 关联修复 PR、实际提交及验证结果；未修复或暂缓时说明剩余工作与原因，保持 Issue 开放。

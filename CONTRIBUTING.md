@@ -25,6 +25,16 @@ Do not reuse a branch whose pull request has already been merged.
 
 ## Pull requests
 
+- Search for an existing issue before starting; reuse it or create one. Every
+  development task needs an issue, and every PR must link its issue.
+- Record bugs found during development, testing, or review as issues, even when
+  fixed immediately. Include reproduction steps, expected and actual behavior,
+  impact, affected version/environment, sanitized evidence, and fix/validation
+  status. Mark unconfirmed reports as awaiting reproduction. Keep deferred or
+  unresolved bugs open and document the next step; check for duplicates first.
+- Use `Closes #number` only when the PR fully resolves the issue on merge into
+  the default branch. Use `Refs #number` for partial or stacked work and record
+  what remains in the issue. CI success alone does not resolve an issue.
 - Keep one task in one branch and one pull request.
 - Target `main` unless the pull request is intentionally stacked.
 - Add tests for behavior changes and keep the pull request focused.
