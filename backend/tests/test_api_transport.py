@@ -278,7 +278,9 @@ def test_catalog_http_routes_are_real_and_do_not_probe_on_get(tmp_path):
         assert client.get('/api/hub/connections/api-live/models').json()==result
         assert len(calls)==1
         assert client.get('/api/hub/connections/missing/models').status_code==404
-        assert client.get('/api/hub/connections/claude/models').json()['status']=='unsupported'
+        claude=client.get('/api/hub/connections/claude/models').json()
+        assert claude['status']=='ready' and [m['id'] for m in claude['models']]==['fable','opus','sonnet']
+        assert client.get('/api/hub/connections/fake/models').json()['status']=='unsupported'
 
 
 def test_key_rotation_keeps_inflight_request_but_retired_snapshot_fails_closed(repository,temp_settings):

@@ -6,7 +6,7 @@ import { compactPersonaProviderLabel } from "../lib/providerLabels";
 import type { TurnView } from "../types";
 import { ThoughtBlock } from "./ThoughtBlock";
 import { TurnMetadataDisclosure } from "./TurnMetadataDisclosure";
-import { NativeActivity } from "./NativeActivity";
+import { liveActivityLabel } from "./NativeActivity";
 
 function MessageMarkdown({ content }: { content: string }) {
   return (
@@ -43,6 +43,8 @@ export function ChatBubble({ turn }: { turn: TurnView }) {
   const showStreamingStatus = isStreaming && !displayContent;
   const audit = turn.metadata.discussion_audit;
   const discussionResult = turn.metadata.discussion_visibility === 'final';
+  // Native activity is a live progress hint; once the turn finishes it lives in the thought block's tool list.
+  const activityLine = isStreaming && !discussionResult ? liveActivityLabel(turn.toolCalls) : null;
   const actions = { accepted: '已采纳', partially_accepted: '部分采纳', not_accepted: '未采纳' };
 
   return (
@@ -56,8 +58,7 @@ export function ChatBubble({ turn }: { turn: TurnView }) {
           {identity}
         </span>
       </div>
-      {!discussionResult && <NativeActivity calls={turn.toolCalls} live={isStreaming} />}
-      {!discussionResult && <ThoughtBlock thoughts={turn.thoughts} toolCalls={turn.toolCalls?.filter((call) => call.eventType !== "provider.activity")} />}
+      {!discussionResult && <ThoughtBlock thoughts={turn.thoughts} toolCalls={turn.toolCalls} />}
       {displayContent && <MessageMarkdown content={displayContent} />}
       {turn.metadata.discussion_pending_decision && <p className="discussion-result-note">其中的取舍仍待你决定。</p>}
       {turn.metadata.discussion_revision_reviewed === false && <p className="discussion-result-note">此稿已按复核意见修订，修订部分未再次独立复核。</p>}
@@ -71,15 +72,15 @@ export function ChatBubble({ turn }: { turn: TurnView }) {
           {review.action && <p>{actions[review.action]}{review.reason ? `：${review.reason}` : ''}</p>}
         </li>)}</ul>}
       </details>}
-      {showStreamingStatus && (
+      {(showStreamingStatus || activityLine) && (
         <div className="streaming-status" aria-live="polite">
-          <span>等待完整回复</span>
+          <span className={activityLine ? "streaming-activity" : undefined}>{activityLine ?? "等待完整回复"}</span>
           <span className="typing-dots" aria-hidden="true">
             <span /><span /><span />
           </span>
         </div>
       )}
-      {isStreaming && !showStreamingStatus && (
+      {isStreaming && !showStreamingStatus && !activityLine && (
         <span className="typing-dots" aria-hidden="true">
           <span /><span /><span />
         </span>

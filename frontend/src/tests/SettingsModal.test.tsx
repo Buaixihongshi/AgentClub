@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SettingsModal } from "../components/SettingsModal";
 
@@ -16,6 +16,10 @@ vi.mock("../lib/api", () => ({
   setMemoryEntryStatus: vi.fn(),
   purgeMemoryEntry: vi.fn(),
   rebuildMemoryIndex: vi.fn(),
+  fetchConnectionModels: vi.fn().mockResolvedValue({
+    connection_id: "api-openai-1", status: "error", models: [], fetched_at: null, error: "Catalog has not been fetched",
+  }),
+  refreshConnectionModels: vi.fn(),
   fetchObservabilityOverview: vi.fn().mockResolvedValue({
     generated_at: "2026-10-20T10:00:00+00:00",
     window: "all",
@@ -32,6 +36,7 @@ vi.mock("../lib/api", () => ({
   }),
 }));
 import type { HubSettingsView, HubSettingsPatch } from "../types";
+import { fetchConnectionModels } from "../lib/api";
 
 const baseView: HubSettingsView = {
   runtime: {
@@ -83,8 +88,47 @@ describe("SettingsModal", () => {
     expect(screen.queryByText("Fake")).not.toBeInTheDocument();
     expect(screen.queryByText("Gemini")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "团队配置" }));
-    expect(screen.getAllByText("演示模式（内置）").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("committed").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /王也 备用连接/ }));
+    expect(screen.queryByTestId("agent-fallback-wangye-fake")).not.toBeInTheDocument();
+    // The demo runtime switch is only offered while demo mode is on, so it can be turned off.
+    fireEvent.click(screen.getByRole("button", { name: "运行参数" }));
+    expect(screen.getByText("演示模式（离线，不调用模型）")).toBeInTheDocument();
+  });
+
+  it("keeps the demo provider visible only for roles still routed to it", () => {
+    const demoView: HubSettingsView = {
+      ...baseView,
+      runtime: { ...baseView.runtime, use_fake_cli: { value: false, source: "user" } },
+      connections: [
+        { id: "fake", name: "演示模式", kind: "cli", protocol: null, base_url: null, enabled: true, has_key: false, timeout: 120, allow_private: true },
+        { id: "codex", name: "Codex CLI", kind: "cli", protocol: null, base_url: null, enabled: true, has_key: false, timeout: 120, allow_private: true },
+      ],
+      agents: [{ ...baseView.agents[0], default_provider_id: { value: "fake", source: "user" } }],
+    };
+    render(<SettingsModal view={demoView} onSave={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByTestId("provider-card-fake")).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-default-wangye")).toHaveValue("fake");
+    expect(screen.getByRole("option", { name: "演示模式（离线）" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "运行参数" }));
+    expect(screen.queryByText(/演示模式/)).not.toBeInTheDocument();
+  });
+
+  it("shows every role in one table with its connection, model and fallbacks", () => {
+    const view: HubSettingsView = {
+      ...baseView,
+      agents: [
+        baseView.agents[0],
+        { ...baseView.agents[0], id: "baobao", display_name: "冯宝宝", default_provider_id: { value: "codex", source: "committed" }, fallback_provider_ids: { value: [], source: "committed" }, provider_models: { value: { codex: "gpt-6.1-sol" }, source: "user" } },
+      ],
+    };
+    render(<SettingsModal view={view} onSave={vi.fn()} onClose={vi.fn()} />);
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(within(table).getByRole("rowheader", { name: /王也/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("冯宝宝 codex 模型")).toHaveValue("gpt-6.1-sol");
+    expect(screen.getByRole("button", { name: "冯宝宝 备用连接：无" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/安全规范审计/)).not.toBeInTheDocument();
   });
 
   it("toggling a provider builds correct patch", () => {
@@ -143,12 +187,11 @@ describe("SettingsModal", () => {
     const onSave = vi.fn();
     render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "团队配置" }));
-    // The internal demo provider remains available as a safe route fallback,
-    // but is no longer exposed as "Fake CLI".
-    fireEvent.click(screen.getByTestId("agent-fallback-wangye-fake"));
+    fireEvent.click(screen.getByRole("button", { name: /王也 备用连接/ }));
+    fireEvent.click(screen.getByTestId("agent-fallback-wangye-codex"));
     fireEvent.click(screen.getByTestId("settings-save"));
     const patch: HubSettingsPatch = onSave.mock.calls[0][0];
-    expect(patch.agents!["wangye"].fallback_provider_ids).toEqual(["claude", "fake"]);
+    expect(patch.agents!["wangye"].fallback_provider_ids).toEqual(["claude", "codex"]);
   });
 
   it("reset button only appears when user override is active", () => {
@@ -178,7 +221,7 @@ describe("SettingsModal", () => {
     const onSave = vi.fn();
     render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: "CLI 接入" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "连接" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "团队配置" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "团队配置" }));
     expect(screen.getByRole("heading", { name: "团队配置" })).toBeInTheDocument();
@@ -186,10 +229,8 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getByTestId("team-use-codex"));
     fireEvent.click(screen.getByTestId("settings-save"));
     const patch: HubSettingsPatch = onSave.mock.calls[0][0];
-    expect(patch.agents!["wangye"]).toEqual({
-      default_provider_id: "codex",
-      fallback_provider_ids: ["fake"],
-    });
+    // Routing everyone to Codex keeps real fallbacks and never adds the demo provider.
+    expect(patch.agents!["wangye"]).toEqual({ default_provider_id: "codex" });
   });
 
   it("shows install, verification, and verified lifecycle actions", () => {
@@ -255,7 +296,7 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getByTestId("add-connection-btn"));
 
     // Verify detail pane shows API connection editor
-    expect(screen.getByText("💬 仅纯文本对话与讨论")).toBeInTheDocument();
+    expect(screen.getByText("仅纯文本对话与讨论")).toBeInTheDocument();
     expect(screen.getByText("API 端点与网络出站设置")).toBeInTheDocument();
 
     // Fill in API connection parameters
@@ -338,6 +379,7 @@ describe("SettingsModal", () => {
   it("supports fallback context approval and resets upon fallback provider change", () => {
     const onSave = vi.fn();
     render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /王也 备用连接/ }));
 
     const approveCheckbox = screen.getByTestId("agent-fallback-approve-wangye") as HTMLInputElement;
     expect(approveCheckbox.checked).toBe(false);
@@ -385,9 +427,10 @@ describe("SettingsModal", () => {
 it("keeps model choices independent for each CLI and saves them with routing", () => {
   const onSave = vi.fn();
   render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
-  expect(screen.getByRole("heading", { name: "CLI 接入" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "连接" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "团队配置" })).toBeInTheDocument();
   fireEvent.change(screen.getByTestId("agent-default-wangye"), { target: { value: "codex" } });
+  fireEvent.click(screen.getByRole("button", { name: /王也 备用连接/ }));
   fireEvent.change(screen.getByLabelText("王也 codex 模型"), { target: { value: "gpt-6.1-sol" } });
   fireEvent.change(screen.getByLabelText("王也 claude 模型"), { target: { value: "sonnet" } });
   fireEvent.click(screen.getByTestId("settings-save"));
@@ -395,4 +438,40 @@ it("keeps model choices independent for each CLI and saves them with routing", (
     default_provider_id: "codex",
     provider_models: { codex: "gpt-6.1-sol", claude: "sonnet" },
   });
+});
+
+it("lets each role pick a model listed by its CLI and keeps manual entry available", async () => {
+  vi.mocked(fetchConnectionModels).mockImplementation(async (id: string) => id === "codex"
+    ? { connection_id: id, status: "ready", fetched_at: "2026-10-28T00:00:00Z", error: null,
+        models: [{ id: "gpt-6.1-sol", label: "GPT-6.1-Sol", vendor: null }, { id: "gpt-5.5", label: "GPT-5.5", vendor: null }] }
+    : { connection_id: id, status: "unsupported", models: [], fetched_at: null, error: "该 CLI 不提供模型列表" });
+  const onSave = vi.fn();
+  const view: HubSettingsView = { ...baseView, agents: [{ ...baseView.agents[0], default_provider_id: { value: "codex", source: "user" } }] };
+  render(<SettingsModal view={view} onSave={onSave} onClose={vi.fn()} />);
+  const select = await screen.findByRole("combobox", { name: "王也 codex 模型" });
+  expect(within(select).getByRole("option", { name: "沿用 CLI 默认" })).toBeInTheDocument();
+  expect(within(select).queryByRole("group")).not.toBeInTheDocument();
+  fireEvent.change(select, { target: { value: "gpt-5.5" } });
+  fireEvent.change(select, { target: { value: "__manual__" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "王也 codex 模型" }), { target: { value: "gpt-custom" } });
+  fireEvent.click(screen.getByRole("button", { name: "从列表选择" }));
+  expect(screen.getByRole("combobox", { name: "王也 codex 模型" })).toHaveValue("gpt-custom");
+  fireEvent.click(screen.getByTestId("settings-save"));
+  expect(onSave.mock.calls[0][0].agents.wangye.provider_models).toEqual({ codex: "gpt-custom" });
+});
+
+it("shows catalog state in the connection card without an error for CLIs that have no list", async () => {
+  vi.mocked(fetchConnectionModels).mockImplementation(async (id: string) => id === "codex"
+    ? { connection_id: id, status: "stale", fetched_at: "2026-10-28T00:00:00Z", error: "获取模型列表超时",
+        models: [{ id: "gpt-5.5", label: "GPT-5.5", vendor: null }] }
+    : { connection_id: id, status: "unsupported", models: [], fetched_at: null, error: "该 CLI 不提供模型列表" });
+  render(<SettingsModal view={baseView} onSave={vi.fn()} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByTestId("provider-card-claude"));
+  expect(await screen.findByText(/这个 CLI 不提供模型列表/)).toBeInTheDocument();
+  expect(screen.queryByText(/没能获取/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("provider-card-codex"));
+  expect(await screen.findByText(/这次没能更新，仍显示上次的列表：获取模型列表超时/)).toBeInTheDocument();
+  expect(screen.getByText("上次结果")).toBeInTheDocument();
+  // A display name that only differs from the id by case is not repeated.
+  expect(screen.getByText("GPT-5.5")).toHaveAttribute("title", "gpt-5.5");
 });
