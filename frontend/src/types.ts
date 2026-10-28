@@ -557,6 +557,12 @@ export interface ConnectionCatalogView {
 export interface HubSettingsAgentView {
   id: string;
   display_name: string;
+  /** 用户在设置中新增的角色；内置角色不可删除。 */
+  custom?: boolean;
+  role?: string;
+  persona?: string;
+  aliases?: string[];
+  trigger_points?: string[];
   default_provider_id: SettingField<string>;
   fallback_provider_ids: SettingField<string[]>;
   provider_models?: SettingField<Record<string, string>>;
@@ -571,6 +577,18 @@ export interface HubSettingsView {
   providers: HubSettingsProviderView[];
   agents: HubSettingsAgentView[];
   connections?: HubConnectionView[];
+}
+
+export interface CustomAgentInput {
+  id?: string;
+  display_name: string;
+  role: string;
+  persona: string;
+  aliases: string[];
+  trigger_points: string[];
+  default_provider_id: string;
+  fallback_provider_ids: string[];
+  provider_models: Record<string, string>;
 }
 
 export interface ProviderOverridePatch {

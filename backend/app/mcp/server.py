@@ -87,6 +87,10 @@ def _load_context() -> _Context:
         max_a2a_invocations = 0
 
     memory_root = os.environ.get("YIREN_MCP_MEMORY_ROOT")
+    # Shared-work owner checks run here, outside the backend process; read the
+    # same user roles the backend saved next to the database.
+    from backend.app.domain.agent_registry import configure_custom_agents
+    configure_custom_agents(None, Path(db_path).resolve().parent / "hub_settings.json")
     repository = Repository(Path(db_path))
     tools = MCPTools(
         repository,
@@ -309,7 +313,6 @@ _TOOL_DESCRIPTORS = [
             "properties": {
                 "target_agent_id": {
                     "type": "string",
-                    "enum": ["chulan", "baobao", "wangye"],
                     "description": "目标 agent id。",
                 },
                 "purpose": {
@@ -641,6 +644,12 @@ def _handle_tools_list(ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any]
                             'required': ['result'], 'additionalProperties': False},
         })
         return {'tools': descriptors}
+    valid_agent_ids = getattr(ctx.tools, "valid_agent_ids", None)
+    if valid_agent_ids:
+        # The host passes this mission's team, including user-created roles.
+        for descriptor in descriptors:
+            if descriptor["name"] == "invoke_agent":
+                descriptor["inputSchema"]["properties"]["target_agent_id"]["enum"] = sorted(valid_agent_ids)
     if mission and mission.room_mode == "roundtable" and mission.discussion:
         for descriptor in descriptors:
             properties = descriptor["inputSchema"]["properties"]

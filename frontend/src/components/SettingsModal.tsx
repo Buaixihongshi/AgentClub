@@ -5,6 +5,7 @@ import {
   Brain,
   ChevronDown,
   KeyRound,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -14,21 +15,28 @@ import {
   X,
 } from "lucide-react";
 import type { ProviderStatusState } from "../hooks/useProviderStatus";
+import { roleToneIndex } from "../lib/personaColors";
 import { ObservabilityOverview } from "./ObservabilityOverview";
 import { MemoryPanel } from "./MemoryPanel";
+import { RoleEditor, type RoleRouteOption } from "./RoleEditor";
 import {
+  createCustomAgent,
+  deleteCustomAgent,
   fetchConnectionModels,
   refreshConnectionModels,
+  updateCustomAgent,
 } from "../lib/api";
 import type {
   AgentOverridePatch,
   ConnectionCatalogView,
+  CustomAgentInput,
   HubConnectionPatch,
   HubConnectionProtocol,
   HubConnectionView,
   HubSettingsAgentView,
   HubSettingsPatch,
   HubSettingsProviderView,
+  HubSettingsView,
   OnboardingProviderStatus,
   OnboardingView,
 } from "../types";
@@ -68,6 +76,8 @@ interface Props {
   onRefreshProviders?: () => void;
   onVerifyProvider?: (providerId: string) => void;
   onSave: (patch: HubSettingsPatch) => void;
+  /** Role add/edit/delete save immediately and hand back the fresh view. */
+  onViewChange?: (view: HubSettingsView) => void;
   onClose: () => void;
   conversationId?: string | null;
 }
@@ -79,6 +89,7 @@ export function SettingsModal({
   onRefreshProviders,
   onVerifyProvider,
   onSave,
+  onViewChange,
   onClose,
   conversationId,
 }: Props) {
@@ -92,6 +103,9 @@ export function SettingsModal({
   const [manualModelInputMode, setManualModelInputMode] = useState<Record<string, boolean>>({});
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("team");
+  /** "new" while adding a role, or the id of the custom role being edited. */
+  const [roleEditor, setRoleEditor] = useState<string | null>(null);
+  const [roleActionError, setRoleActionError] = useState<string | null>(null);
 
   const agentRows = view.agents ?? [];
 
@@ -641,6 +655,60 @@ export function SettingsModal({
     return options;
   }
 
+  /** Saved connections only: a role is stored right away, unsaved drafts do not exist yet. */
+  function roleRouteOptions(inUse: string[]): RoleRouteOption[] {
+    const options: RoleRouteOption[] = [];
+    const seen = new Set<string>();
+    for (const c of baseConnections) {
+      options.push({
+        id: c.id,
+        label: `${c.name}（${c.kind === "api" ? "API" : "CLI"}）`,
+        requiresModel: c.kind === "api",
+        disabled: !canRouteToProvider(c.id),
+      });
+      seen.add(c.id);
+    }
+    for (const p of routeProviders) {
+      if (seen.has(p.id) || (INTERNAL_PROVIDERS.has(p.id) && !inUse.includes(p.id))) continue;
+      options.push({ id: p.id, label: providerDisplayName(p), requiresModel: false, disabled: !canRouteToProvider(p.id) });
+      seen.add(p.id);
+    }
+    return options;
+  }
+
+  async function submitRole(input: CustomAgentInput) {
+    const editingId = roleEditor && roleEditor !== "new" ? roleEditor : null;
+    const updated = editingId ? await updateCustomAgent(editingId, input) : await createCustomAgent(input);
+    if (editingId) {
+      // The dialog saved this role's route; a pending table edit would overwrite it.
+      setAgentDraft((prev) => {
+        const next = { ...prev };
+        delete next[editingId];
+        return next;
+      });
+    }
+    setRoleEditor(null);
+    setRoleActionError(null);
+    onViewChange?.(updated);
+  }
+
+  async function removeRole(agent: HubSettingsAgentView) {
+    if (!window.confirm(`删除角色「${agent.display_name}」？历史消息会保留，之后不能再 @ 点名或接力给它。`)) return;
+    try {
+      const updated = await deleteCustomAgent(agent.id);
+      setAgentDraft((prev) => {
+        const next = { ...prev };
+        delete next[agent.id];
+        return next;
+      });
+      if (roleEditor === agent.id) setRoleEditor(null);
+      setRoleActionError(null);
+      onViewChange?.(updated);
+    } catch (err) {
+      setRoleActionError(err instanceof Error ? err.message : "删除角色失败");
+    }
+  }
+
   function agentModels(agent: HubSettingsAgentView): Record<string, string> {
     const draft = agentDraft[agent.id];
     return draft?.clear
@@ -793,6 +861,20 @@ export function SettingsModal({
                           为每位角色指定主用连接和模型；主用不可用时按备用连接顺序回退。
                         </p>
                       </div>
+                      <div className="team-role-actions">
+                      <button
+                        type="button"
+                        className="btn-text-action"
+                        data-testid="add-role-btn"
+                        disabled={!onViewChange || roleEditor === "new"}
+                        onClick={() => {
+                          setRoleActionError(null);
+                          setRoleEditor("new");
+                        }}
+                      >
+                        <Plus size={12} aria-hidden="true" />
+                        <span>新增角色</span>
+                      </button>
                       <button
                         type="button"
                         className="button-secondary team-apply-all"
@@ -806,6 +888,7 @@ export function SettingsModal({
                       >
                         {enabledProviders.codex ? "全部使用 Codex" : "Codex 尚未启用"}
                       </button>
+                      </div>
                     </div>
 
                     <table className="role-table">
@@ -842,12 +925,15 @@ export function SettingsModal({
                                 <th scope="row">
                                   <div className="role-identity">
                                     <span
-                                      className={`role-avatar avatar-${agent.id}`}
+                                      className={`role-avatar ${agent.custom ? `avatar-custom avatar-tone-${roleToneIndex(agent.id)}` : `avatar-${agent.id}`}`}
                                       aria-hidden="true"
                                     >
                                       {agent.display_name.slice(0, 1)}
                                     </span>
                                     <span className="role-name">{agent.display_name}</span>
+                                    {agent.custom && (
+                                      <span className="settings-source-badge">自定义</span>
+                                    )}
                                     {isUserOverride && (
                                       <span className="settings-source-badge">已修改</span>
                                     )}
@@ -891,6 +977,33 @@ export function SettingsModal({
                                   </button>
                                 </td>
                                 <td className="role-actions">
+                                  {agent.custom && onViewChange && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="role-icon-btn"
+                                        data-testid={"agent-edit-" + agent.id}
+                                        aria-label={`编辑角色 ${agent.display_name}`}
+                                        title="编辑角色"
+                                        onClick={() => {
+                                          setRoleActionError(null);
+                                          setRoleEditor(agent.id);
+                                        }}
+                                      >
+                                        <Pencil size={13} aria-hidden="true" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="role-icon-btn is-danger"
+                                        data-testid={"agent-delete-" + agent.id}
+                                        aria-label={`删除角色 ${agent.display_name}`}
+                                        title="删除角色"
+                                        onClick={() => void removeRole(agent)}
+                                      >
+                                        <Trash2 size={13} aria-hidden="true" />
+                                      </button>
+                                    </>
+                                  )}
                                   {isUserOverride && (
                                     <button
                                       type="button"
@@ -960,6 +1073,31 @@ export function SettingsModal({
                         })}
                       </tbody>
                     </table>
+
+                    {roleActionError && (
+                      <p className="role-editor-error" role="alert">
+                        {roleActionError}
+                      </p>
+                    )}
+                    {roleEditor && (
+                      <RoleEditor
+                        key={roleEditor}
+                        agent={roleEditor === "new" ? undefined : agentRows.find((a) => a.id === roleEditor)}
+                        routeOptions={roleRouteOptions(
+                          roleEditor === "new"
+                            ? []
+                            : (() => {
+                                const editing = agentRows.find((a) => a.id === roleEditor);
+                                return editing
+                                  ? [editing.default_provider_id.value, ...editing.fallback_provider_ids.value]
+                                  : [];
+                              })(),
+                        )}
+                        modelSuggestions={(id) => (catalogs[id]?.models ?? []).map((model) => model.id)}
+                        onSubmit={submitRole}
+                        onCancel={() => setRoleEditor(null)}
+                      />
+                    )}
                   </section>
 
                   <section className="settings-section team-connections" aria-labelledby="settings-providers-title">

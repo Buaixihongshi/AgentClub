@@ -3908,6 +3908,129 @@ summary:focus-visible {
   .team-connections .workbench-split { grid-template-columns: 1fr; height: auto; }
 }
 
+/* User-created roles: add/edit form below the role table. */
+.team-role-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-actions .role-icon-btn + .role-icon-btn,
+.role-actions .role-icon-btn + .settings-agent-reset {
+  margin-left: 6px;
+}
+
+.role-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--ink-soft);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink-muted);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.role-icon-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.role-icon-btn.is-danger:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.avatar-custom { background: linear-gradient(225deg, var(--sage-soft) 28%, var(--surface) 28%); }
+.avatar-custom.avatar-tone-1 { background: linear-gradient(225deg, color-mix(in srgb, var(--persona) 22%, transparent) 28%, var(--surface) 28%); }
+.avatar-custom.avatar-tone-2 { background: linear-gradient(225deg, color-mix(in srgb, var(--provider) 22%, transparent) 28%, var(--surface) 28%); }
+.avatar-custom.avatar-tone-3 { background: linear-gradient(225deg, var(--warning-soft) 28%, var(--surface) 28%); }
+
+.role-editor {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper-soft);
+  box-shadow: var(--hard-shadow-soft);
+}
+
+.role-editor-heading {
+  margin-bottom: 12px;
+}
+
+.role-editor-heading h4 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.role-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.role-editor-wide {
+  grid-column: 1 / -1;
+}
+
+.role-editor textarea.custom-input {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.role-editor-error {
+  margin: 10px 0 0;
+  padding: 7px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.role-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.role-editor-actions .settings-agent-reset {
+  padding: 6px 14px;
+  font-size: 0.82rem;
+}
+
+.role-editor-submit {
+  padding: 6px 16px;
+  border: 1px solid var(--sage-strong);
+  border-radius: 6px;
+  background: var(--sage);
+  color: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.role-editor-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 860px) {
+  .team-role-actions { flex-wrap: wrap; }
+  .role-editor-grid { grid-template-columns: 1fr; }
+}
+
 /* ========================================================
    Scheme B Master-Detail Workbench Styles
    ======================================================== */

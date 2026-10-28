@@ -12,6 +12,7 @@ import {
   replaceActiveMention,
   type MentionOption,
 } from "../lib/mentions";
+import { getPersonaColor } from "../lib/personaColors";
 import {
   findActiveSkillCommand,
   getSkillSuggestions,
@@ -257,7 +258,7 @@ export function MissionComposer(props: {
                       <span className="mention-member">
                         <span
                           className="mention-avatar"
-                          style={{ background: (opt as MentionOption).color ?? "#64748b" }}
+                          style={{ background: (opt as MentionOption).color ?? getPersonaColor((opt as MentionOption).id).accent }}
                         >
                           {avatarInitial((opt as MentionOption).label)}
                         </span>
