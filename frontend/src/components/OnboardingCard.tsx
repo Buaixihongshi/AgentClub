@@ -32,7 +32,7 @@ export function OnboardingCard(props: OnboardingCardProps) {
     return (
       <section className="onboarding-card" aria-label="启动引导" aria-live="polite">
         <p className="onboarding-kicker">首次启动</p>
-        <h2>正在确认 AgentClub 状态…</h2>
+        <h2>正在确认 Unity 状态…</h2>
         <p>马上就好，我们在检查聊天室和演示角色。</p>
       </section>
     );
@@ -42,7 +42,7 @@ export function OnboardingCard(props: OnboardingCardProps) {
     return (
       <section className="onboarding-card onboarding-card--error" aria-label="启动引导">
         <p className="onboarding-kicker">还差一步</p>
-        <h2>还没有连接到 AgentClub 后端</h2>
+        <h2>还没有连接到 Unity 后端</h2>
         <p>请回到启动项目的终端，查看第一条错误信息，然后重新连接。</p>
         {props.healthError ? <p role="alert" className="onboarding-error">{props.healthError}</p> : null}
         <button type="button" onClick={props.onRetryHealth}>重新连接</button>
@@ -89,7 +89,7 @@ export function OnboardingCard(props: OnboardingCardProps) {
       return (
         <section className="onboarding-card onboarding-card--success" aria-label="启动引导">
           <p className="onboarding-kicker">扩展 CLI 验证成功</p>
-          <h2>{currentProvider.label} 已经能够通过 AgentClub 发言</h2>
+          <h2>{currentProvider.label} 已经能够通过 Unity 发言</h2>
           <p>原有 Codex 配置没有改变。现在可以在团队配置中，把它分配给张楚岚、冯宝宝或王也，并保留 Codex 作为回退。</p>
           <div className="onboarding-actions">
             <button
@@ -262,7 +262,7 @@ export function OnboardingCard(props: OnboardingCardProps) {
   return (
     <section className={`onboarding-card${isRetry ? " onboarding-card--error" : ""}`} aria-label="启动引导">
       <p className="onboarding-kicker">第 1 步已完成</p>
-      <h2>{isRetry ? "张楚岚刚才没有成功回复" : "AgentClub 已启动"}</h2>
+      <h2>{isRetry ? "张楚岚刚才没有成功回复" : "Unity 已启动"}</h2>
       {isRetry ? (
         <p>聊天室仍然可用。重新运行一次演示对话即可，不需要安装真实 CLI。</p>
       ) : (

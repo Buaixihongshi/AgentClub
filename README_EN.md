@@ -1,4 +1,4 @@
-# AgentClub
+# Unity
 
 > Turn Codex CLI, Claude Code, and Antigravity CLI into a configurable, collaborative, and observable local Agent team.
 
@@ -7,11 +7,11 @@
 
 [简体中文](README.md) | **English**
 
-## What is AgentClub?
+## What is Unity?
 
 Once users have more than one AI CLI, calling a model is no longer the hardest part. The real challenge is deciding who should do the work, preserving context across turns, recovering from provider failures, and understanding what each Agent actually produced.
 
-AgentClub is a local Agent team workspace built on top of existing AI CLIs. It turns a user goal into an observable collaboration process: three distinct personalities exchange views, respond to each other, and advance the work requested by the user. A Provider Router then selects the appropriate CLI for each turn.
+Unity is a local Agent team workspace built on top of existing AI CLIs. It turns a user goal into an observable collaboration process: three distinct personalities exchange views, respond to each other, and advance the work requested by the user. A Provider Router then selects the appropriate CLI for each turn.
 
 ```text
 User goal
@@ -25,19 +25,19 @@ Codex CLI / Claude Code / Antigravity CLI / Demo Mode
 
 Roles, workflows, and conversation context remain stable while models are treated as configurable execution providers. Users can change the underlying CLI without rebuilding the way their Agent team works.
 
-## What can AgentClub do?
+## What can Unity do?
 
 ### Get users to a first successful conversation
 
-AgentClub includes a built-in Demo Mode that does not call a real model. Users can create a task and receive the first Agent response before installing a CLI, signing in to a model account, or spending model quota.
+Unity includes a built-in Demo Mode that does not call a real model. Users can create a task and receive the first Agent response before installing a CLI, signing in to a model account, or spending model quota.
 
 ### Turn one goal into multi-Agent teamwork
 
-AgentClub schedules roles according to task complexity and also supports directing a task to a specific role. Zhang Chulan is socially perceptive and pragmatic; Feng Baobao is candid, curious, and attentive to concrete facts; Wang Ye is relaxed, independent, and mindful of long-term choices. All three can propose, analyze, execute, and summarize. Their views can change with evidence. Without mentions, turns follow configuration order rather than job keywords; multiple mentions retain the selected order.
+Unity schedules roles according to task complexity and also supports directing a task to a specific role. Zhang Chulan is socially perceptive and pragmatic; Feng Baobao is candid, curious, and attentive to concrete facts; Wang Ye is relaxed, independent, and mindful of long-term choices. All three can propose, analyze, execute, and summarize. Their views can change with evidence. Without mentions, turns follow configuration order rather than job keywords; multiple mentions retain the selected order.
 
 ### Manage multiple AI CLIs in one place
 
-The Settings page detects installed CLIs, guides authentication, verifies a real MCP conversation, and assigns a primary provider and fallbacks to each role. AgentClub currently supports Codex CLI, Claude Code, Antigravity CLI, and the always-available Demo Mode.
+The Settings page detects installed CLIs, guides authentication, verifies a real MCP conversation, and assigns a primary provider and fallbacks to each role. Unity currently supports Codex CLI, Claude Code, Antigravity CLI, and the always-available Demo Mode.
 
 ### Make Agent execution observable
 
@@ -47,11 +47,11 @@ The mission room shows task status, Agent turns, the provider actually used, fal
 
 Users can continue work in the same conversation, archive and restore previous conversations, and keep generated artifacts isolated by mission. Conversation state, settings, and artifacts remain local by default.
 
-## Why AgentClub?
+## Why Unity?
 
 ### 1. Roles and providers are decoupled
 
-This is the central product principle behind AgentClub. A role defines **who is working**. A provider defines **which model executes the work**. Routing determines **which provider to try first and what to use when it fails**.
+This is the central product principle behind Unity. A role defines **who is working**. A provider defines **which model executes the work**. Routing determines **which provider to try first and what to use when it fails**.
 
 | Layer | Responsibility | Example |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ This separation creates four practical benefits:
 
 ### 2. Value comes before configuration
 
-AgentClub separates product activation from real-model setup. Users first complete a successful Demo Mode conversation, then follow a Codex-first onboarding path, and only add Claude Code or Antigravity CLI when needed. A failed verification does not overwrite the current team configuration or make the room unusable.
+Unity separates product activation from real-model setup. Users first complete a successful Demo Mode conversation, then follow a Codex-first onboarding path, and only add Claude Code or Antigravity CLI when needed. A failed verification does not overwrite the current team configuration or make the room unusable.
 
 ### 3. MCP provides an auditable Agent communication path
 
@@ -80,7 +80,7 @@ Conversation data, settings, and artifacts are stored locally, while SSE updates
 
 ### 5. From a single answer to a team workflow
 
-AgentClub is designed around a process—plan, execute, review, and close—not just a generated response. Distinct personalities, continuous conversations, Agent handoffs, and artifact attribution provide a foundation for reusable team templates, task workflows, and provider-routing strategies.
+Unity is designed around a process—plan, execute, review, and close—not just a generated response. Distinct personalities, continuous conversations, Agent handoffs, and artifact attribution provide a foundation for reusable team templates, task workflows, and provider-routing strategies.
 
 ### 6. Evaluable: measure when multi-agent actually helps
 
@@ -98,17 +98,19 @@ The report flags category/task-level quality regressions and cases that spend 2�
 
 ## Product Demo
 
+These screenshots were captured before the rename and show the former AgentClub branding.
+
 ### Zero-account startup and Codex-first onboarding
 
-![AgentClub onboarding](docs/images/agentclub-onboarding.jpg)
+![Unity onboarding](docs/images/agentclub-onboarding.jpg)
 
 ### CLI access and verification
 
-![AgentClub CLI settings](docs/images/agentclub-cli-settings.jpg)
+![Unity CLI settings](docs/images/agentclub-cli-settings.jpg)
 
 ### Team routing configuration
 
-![AgentClub team settings](docs/images/agentclub-team-settings.jpg)
+![Unity team settings](docs/images/agentclub-team-settings.jpg)
 
 ## Quick Start
 
@@ -121,11 +123,11 @@ The report flags category/task-level quality regressions and cases that spend 2�
 
 No real AI CLI is required for the first run.
 
-### Start AgentClub
+### Start Unity
 
 ```bash
-git clone https://github.com/Buaixihongshi/AgentClub.git
-cd AgentClub
+git clone https://github.com/Buaixihongshi/Unity.git Unity
+cd Unity
 ./scripts/start.sh
 ```
 
@@ -164,7 +166,7 @@ Real CLI verification sends one model request through the corresponding account 
 | Claude Code | `claude` | Optional role provider | Disabled until verified |
 | Antigravity CLI | `agy` | Optional role provider | Disabled until verified |
 
-AgentClub never enables a real provider merely because the application started. Installation and login guidance is available in onboarding and Settings. A failed verification keeps the previously saved routing unchanged.
+Unity never enables a real provider merely because the application started. Installation and login guidance is available in onboarding and Settings. A failed verification keeps the previously saved routing unchanged.
 
 ## How It Works
 
@@ -186,7 +188,7 @@ SQLite event and conversation state + artifacts/<mission_id>/
 
 ## Local Data and Privacy
 
-AgentClub is local-first and does not provide a hosted account or remote data service. Runtime data is stored under:
+Unity is local-first and does not provide a hosted account or remote data service. Runtime data is stored under:
 
 | Path | Contents |
 | --- | --- |
@@ -220,7 +222,7 @@ Real CLI verification is explicit because it requires authenticated CLIs and may
 
 ## Current Scope
 
-- AgentClub is currently a local, single-user MVP without hosted deployment, remote sync, or multi-user permissions.
+- Unity is currently a local, single-user MVP without hosted deployment, remote sync, or multi-user permissions.
 - User interruptions are consumed between turns and do not forcibly terminate a CLI process that has already started.
 - Real-provider availability depends on the installed CLI version, authentication state, and account quota.
 - Agent artifacts should be written under `artifacts/<mission_id>/`; avoid using sensitive workspaces for real-model verification.
@@ -238,4 +240,4 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes and [docs/ACCEPTANCE.md](docs
 
 ## License
 
-AgentClub is released under the [MIT License](LICENSE).
+Unity is released under the [MIT License](LICENSE).

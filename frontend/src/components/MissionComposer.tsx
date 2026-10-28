@@ -294,13 +294,14 @@ export function MissionComposer(props: {
             </div>
           </div>
         )}
+        <button
+          className="composer-send"
+          type="submit"
+          disabled={props.disabled || props.busy || props.submitDisabled || !props.value.trim()}
+        >
+          {submitLabel}
+        </button>
       </div>
-      <button
-        type="submit"
-        disabled={props.disabled || props.busy || props.submitDisabled || !props.value.trim()}
-      >
-        {submitLabel}
-      </button>
     </form>
   );
 }

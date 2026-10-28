@@ -1,4 +1,5 @@
 import type { SharedWorkTask } from '../types';
+import { ExternalLink, LoaderCircle, Monitor, Play, Square } from 'lucide-react';
 
 const states: Record<string, string> = {
   pending: '正在准备', preparing: '正在准备', ready: '已就绪', failed: '准备失败',
@@ -26,18 +27,21 @@ export function WorkEnvironment({ task, conversationId, busy, command }: {
   const url = localUrl(preview?.url);
   const running = preview?.status === 'ready';
   const starting = preview?.status === 'starting';
+  const deferred = task.paused && !task.active_mission_id && !(task.attempts_used || task.attempts?.length) && env.status === 'pending';
   const canStart = task.paused || ['waiting', 'done'].includes(task.status);
   return <section className="work-section work-environment" aria-label="任务工作区与预览">
-    <div className="work-section-heading"><h3>工作区与预览</h3><span className="work-muted">{states[env.status] || env.status}</span></div>
+    <div className="work-section-heading"><h3>工作区与预览</h3><span className="work-muted">{deferred ? '开始执行后准备' : states[env.status] || env.status}</span></div>
     {env.failure_reason && <p className="work-error" role="status">{env.failure_reason}</p>}
-    {env.status === 'failed' && task.status !== 'cancelled' && <button disabled={busy} onClick={() => void command('retry_environment', { task_id: task.id })}>重试准备工作区</button>}
+    {env.status === 'failed' && task.status !== 'cancelled' && <button className="work-primary" disabled={busy} onClick={() => void command('retry_environment', { task_id: task.id })}>重试准备工作区</button>}
     {env.status === 'ready' && <>
       <p className="work-muted">本任务使用独立代码目录，协作和验证沿用同一工作区。</p>
       <div className="work-preview-actions">
-        <span>预览：{previews[preview?.status || 'stopped'] || preview?.status}</span>
-        {running && url && <a className="work-primary" href={url} target="_blank" rel="noreferrer">打开预览</a>}
-        {running ? <button disabled={busy} onClick={() => void command('stop_preview', { task_id: task.id })}>停止预览</button>
-          : <button disabled={busy || starting || !!task.active_mission_id || !canStart || task.status === 'cancelled'} onClick={() => void command('start_preview', { task_id: task.id })}>{starting ? '正在准备预览…' : '启动预览'}</button>}
+        <div className="work-preview-state" data-state={preview?.status || 'stopped'}><Monitor size={17} aria-hidden="true" /><span>预览</span><strong>{previews[preview?.status || 'stopped'] || preview?.status}</strong></div>
+        <div className="work-preview-buttons">
+          {running && url && <a className="work-primary" href={url} target="_blank" rel="noreferrer"><ExternalLink size={14} aria-hidden="true" />打开预览</a>}
+          {running ? <button className="work-preview-stop" disabled={busy} onClick={() => void command('stop_preview', { task_id: task.id })}><Square size={13} aria-hidden="true" />停止预览</button>
+            : <button className="work-primary" disabled={busy || starting || !!task.active_mission_id || !canStart || task.status === 'cancelled'} onClick={() => void command('start_preview', { task_id: task.id })}>{starting ? <LoaderCircle className="work-preview-loading" size={14} aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}{starting ? '正在准备预览…' : '启动预览'}</button>}
+        </div>
       </div>
       {!running && !starting && !canStart && task.status !== 'cancelled' && <p className="work-muted">可暂停任务，或等到待验收时启动预览。</p>}
       {preview?.failure_reason && <p className="work-error" role="status">{preview.failure_reason}</p>}

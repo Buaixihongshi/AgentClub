@@ -64,7 +64,7 @@ def test_first_chat_is_idempotent_and_uses_fake_chulan(temp_settings):
     assert len(agent_messages) == 1
     assert agent_messages[0]["agent_id"] == "chulan"
     assert agent_messages[0]["provider_id"] == "fake"
-    assert "AgentClub 这边已经跑通了" in agent_messages[0]["content"]
+    assert "Unity 这边已经跑通了" in agent_messages[0]["content"]
     assert "聊天室模式" not in agent_messages[0]["content"]
     assert state["first_reply_completed_at"]
 

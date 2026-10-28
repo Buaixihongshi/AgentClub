@@ -237,7 +237,7 @@ describe("OnboardingCard", () => {
       />,
     );
 
-    expect(screen.getByText("Claude Code 已经能够通过 AgentClub 发言")).toBeInTheDocument();
+    expect(screen.getByText("Claude Code 已经能够通过 Unity 发言")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "完成并打开团队配置" }));
     expect(onOpenTeamSettings).toHaveBeenCalledOnce();
   });
@@ -248,13 +248,13 @@ describe("OnboardingCard", () => {
       <OnboardingCard
         {...props({
           health: null,
-          healthError: "AgentClub 后端尚未就绪",
+          healthError: "Unity 后端尚未就绪",
           onRetryHealth,
         })}
       />,
     );
 
-    expect(screen.getByText("还没有连接到 AgentClub 后端")).toBeInTheDocument();
+    expect(screen.getByText("还没有连接到 Unity 后端")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "重新连接" }));
 
     expect(onRetryHealth).toHaveBeenCalledOnce();

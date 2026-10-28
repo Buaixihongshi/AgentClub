@@ -33,12 +33,12 @@ from backend.app.storage.repository import Repository
 
 
 GUIDE_AGENT_ID = "chulan"
-ONBOARDING_TITLE = "欢迎使用 AgentClub"
+ONBOARDING_TITLE = "欢迎使用 Unity"
 ONBOARDING_GOAL = (
-    "@张楚岚 我刚启动 AgentClub，请用两三句话介绍你自己，并带我完成初始配置。"
+    "@张楚岚 我刚启动 Unity，请用两三句话介绍你自己，并带我完成初始配置。"
 )
 ONBOARDING_REPLY = (
-    "哥，听得见，AgentClub 这边已经跑通了。我是张楚岚，先负责带你熟悉这个聊天室。"
+    "哥，听得见，Unity 这边已经跑通了。我是张楚岚，先负责带你熟悉这个聊天室。"
     "现在用的是不会产生模型费用的演示 CLI；你可以先随便聊两句，之后再接入真实 CLI。"
 )
 PROVIDER_PRIORITY = ("codex", "claude", "antigravity")
@@ -855,4 +855,4 @@ def _mission_failure_summary(repository: Repository, mission_id: str) -> str:
         summary = event.payload.get("summary") or event.payload.get("error")
         if isinstance(summary, str) and summary.strip():
             return summary.strip()
-    return "CLI 已经运行，但没有通过 AgentClub 发布角色消息"
+    return "CLI 已经运行，但没有通过 Unity 发布角色消息"

@@ -2,7 +2,7 @@
 """Real-CLI smoke verifying MCP publish_message against Antigravity CLI.
 
 Targets the smallest possible MCP slice: one 王也 turn routed to the
-``antigravity`` provider, expecting Antigravity CLI to call the AgentClub
+``antigravity`` provider, expecting Antigravity CLI to call the Unity
 ``publish_message`` tool over MCP.
 
 Usage:

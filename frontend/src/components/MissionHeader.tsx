@@ -12,20 +12,20 @@ const STREAM_STATE_LABEL: Record<StreamState, string> = {
 export function MissionHeader(props: {
   runtimeSummary: MissionRuntimeSummary;
   streamState: StreamState;
+  showRuntime?: boolean;
 }) {
   const streamLabel = STREAM_STATE_LABEL[props.streamState] ?? props.streamState;
 
   return (
     <header className="mission-header">
       <div>
-        <div className="eyebrow">AgentClub / Mission Room</div>
         <h1>{props.runtimeSummary.title}</h1>
       </div>
-      <div className="header-status">
+      {props.showRuntime !== false && <div className="header-status">
         <span>{props.runtimeSummary.statusLabel}</span>
         <span>实时流：{streamLabel}</span>
         <span>{props.runtimeSummary.agentTurnCount} 轮对话</span>
-      </div>
+      </div>}
     </header>
   );
 }

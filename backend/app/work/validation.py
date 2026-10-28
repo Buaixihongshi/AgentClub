@@ -5,7 +5,7 @@ import re
 
 from backend.app.work.runtime import run_check
 from backend.app.work.service import WorkError, now, uid
-from backend.app.work.snapshots import snapshot
+from backend.app.work.snapshots import snapshot, read_bytes
 
 
 def validate(service, conversation_id, task, agreement, mission_id, root=None):
@@ -30,13 +30,8 @@ def validate(service, conversation_id, task, agreement, mission_id, root=None):
                        'output_sha256': hashlib.sha256(raw).hexdigest(), 'truncated': len(raw) > 24000,
                        'log_id': log_id})
     unchanged = snapshot(root, paths)['id'] == candidate['id']
-    with service.repo._transaction() as db:
-        before_row = db.execute('SELECT output FROM work_check_logs WHERE id=? AND conversation_id=?',
-            (task['attempts'][-1]['before_id'], conversation_id)).fetchone()
-        after_row = db.execute('SELECT output FROM work_check_logs WHERE id=? AND conversation_id=?',
-            (candidate['id'], conversation_id)).fetchone()
-    before = json.loads(bytes(before_row['output']))['files']
-    after = json.loads(bytes(after_row['output']))['files']
+    before = json.loads(read_bytes(service.repo, conversation_id, task['attempts'][-1]['before_id']))['files']
+    after = json.loads(read_bytes(service.repo, conversation_id, candidate['id']))['files']
     changed = {p for p in set(before) | set(after) if before.get(p) != after.get(p)}
     # Conservative project boundaries are a host-enforced floor. This does not
     # pretend to classify every semantic risk in arbitrary source code.

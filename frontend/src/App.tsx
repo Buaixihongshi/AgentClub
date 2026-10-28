@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MissionRoomPage } from "./components/MissionRoomPage";
+import { TasksWorkspace } from "./components/TasksWorkspace";
 import { useMissionStream } from "./hooks/useMissionStream";
 import { useProviderStatus } from "./hooks/useProviderStatus";
 import {
@@ -46,6 +47,10 @@ import {
 import "./styles.css";
 
 export default function App() {
+  const [section, setSection] = useState<"conversations" | "tasks">(() => readWorkspaceRoute().section);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>(() => readWorkspaceRoute().taskId);
+  const [tasksVisited, setTasksVisited] = useState(() => readWorkspaceRoute().section === "tasks");
+  const conversationRequest = useRef(0);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationScope, setConversationScope] = useState<"active" | "archived">("active");
   const [selectedConvId, setSelectedConvId] = useState<string | undefined>();
@@ -64,6 +69,34 @@ export default function App() {
   const [onboardingBusy, setOnboardingBusy] = useState(false);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const providerStatus = useProviderStatus();
+
+  useEffect(() => {
+    const sync = () => {
+      const route = readWorkspaceRoute();
+      setSection(route.section);
+      if (route.section === "tasks") {
+        setTasksVisited(true);
+        if (route.taskId) setSelectedTaskId(route.taskId);
+      }
+    };
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+
+  function navigateWorkspace(next: "conversations" | "tasks", taskId = selectedTaskId) {
+    setSection(next);
+    if (next === "tasks") {
+      setTasksVisited(true);
+      setSelectedTaskId(taskId);
+    }
+    const hash = next === "tasks" ? `#tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}` : "#conversations";
+    if (window.location.hash !== hash) window.location.hash = hash;
+  }
+
+  async function openTaskConversation(id: string) {
+    navigateWorkspace("conversations");
+    await handleSelectConversation(id);
+  }
 
   useEffect(() => {
     listConversations().then(setConversations).catch(() => {});
@@ -227,17 +260,22 @@ export default function App() {
   );
 
   async function handleSelectConversation(convId: string) {
+    const request = ++conversationRequest.current;
     setSelectedConvId(convId);
+    setConvDetail(undefined);
+    setLatestMissionDetail(undefined);
     try {
       const detail = await fetchConversation(convId);
+      if (request !== conversationRequest.current) return;
       setConvDetail(detail);
+      setConversationScope(detail.conversation.status);
       if (detail.latest_mission_detail) {
         setLatestMissionDetail(detail.latest_mission_detail);
       } else {
         setLatestMissionDetail(undefined);
       }
     } catch {
-      setError("加载会话失败");
+      if (request === conversationRequest.current) setError("加载会话失败");
     }
   }
 
@@ -257,6 +295,7 @@ export default function App() {
     try {
       await updateConversation(convId, { status });
       if (status === "archived" && convId === selectedConvId) {
+        conversationRequest.current++;
         setSelectedConvId(undefined);
         setConvDetail(undefined);
         setLatestMissionDetail(undefined);
@@ -268,6 +307,7 @@ export default function App() {
   }
 
   async function handleConversationScopeChange(scope: "active" | "archived") {
+    conversationRequest.current++;
     setConversationScope(scope);
     setError(null);
     try {
@@ -281,8 +321,10 @@ export default function App() {
   }
 
   async function handleNewConversation() {
+    const request = ++conversationRequest.current;
     try {
       const conv = await createConversation();
+      if (request !== conversationRequest.current) return;
       setSelectedConvId(conv.id);
       setConvDetail({
         conversation: conv,
@@ -533,6 +575,12 @@ export default function App() {
 
   return (
     <MissionRoomPage
+      section={section}
+      onSectionChange={navigateWorkspace}
+      onOpenTask={id => navigateWorkspace("tasks", id)}
+      taskContent={tasksVisited ? <TasksWorkspace selectedTaskId={selectedTaskId}
+        active={section === "tasks"} onSelectTask={id => navigateWorkspace("tasks", id)}
+        onOpenConversation={id => void openTaskConversation(id)} /> : undefined}
       hasAutonomousWork={convDetail?.has_autonomous_work}
       onWorkUpdate={refreshConversationState}
       detail={latestMissionDetail}
@@ -586,6 +634,13 @@ export default function App() {
       }}
     />
   );
+}
+
+function readWorkspaceRoute(): { section: "conversations" | "tasks"; taskId?: string } {
+  const match = /^#tasks(?:\/([^/]+))?$/.exec(window.location.hash);
+  if (!match) return { section: "conversations" };
+  try { return { section: "tasks", taskId: match[1] ? decodeURIComponent(match[1]) : undefined }; }
+  catch { return { section: "tasks" }; }
 }
 
 function isOlderSnapshot(nextDetail: MissionDetail, currentDetail?: MissionDetail): boolean {

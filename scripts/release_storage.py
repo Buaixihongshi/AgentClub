@@ -26,7 +26,7 @@ def sqlite_snapshot(source, dest):
     private_dir(dest.parent)
     with sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True) as db:
         if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='missions'").fetchone():
-            raise EnvironmentError("Source database is not an AgentClub mission database")
+            raise EnvironmentError("Source database is not a Unity mission database")
         with sqlite3.connect(dest) as target: db.backup(target)
     dest.chmod(0o600)
 

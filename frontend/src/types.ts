@@ -905,6 +905,7 @@ export interface WorkEnvironment {
   failure_reason?: string | null; preview?: WorkEnvironmentPreview | null;
 }
 export interface SharedWorkTask {
+  workflow_step_id?: string;
   environment?: WorkEnvironment;
   id: string; title: string; contract_id: string; owner_id: string; reviewer_id: string;
   criterion_ids: string[]; depends_on: string[]; status: 'ready' | 'running' | 'validating' | 'review' | 'done' | 'blocked' | 'waiting' | 'cancelled';
@@ -933,7 +934,7 @@ export interface WorkProposal {
   task_id?: string;
 }
 export interface SharedWorkBoardView {
-  execution?: { active: { conversation_id: string; task_id: string; title: string }[] };
+  execution?: { active: { conversation_id: string; task_id: string; title: string }[]; queued?: boolean };
   proposals?: WorkProposal[];
   protocol?: 'adaptive_v1'; decisions?: WorkDecision[]; legacy_board?: SharedWorkBoardView;
   conversation_id: string; revision: number; enabled: boolean; active_contract_id: string | null;
@@ -963,4 +964,25 @@ export interface MemoryHandoverView {
   id: string; agent_id: string; reason: string; previous: string; current: string;
   mission_id: string | null; conversation_id: string | null;
   acknowledged: boolean; created_at: string; acknowledged_at: string | null;
+}
+
+// Independent, user-facing work items; execution conversations remain an implementation carrier.
+export interface TaskWorkflowStep {
+  id: string; title: string; owner_id: string; goal: string; depends_on: string[];
+  criterion_ids?: string[]; task_id?: string;
+}
+export interface TaskOrchestration {
+  mode: 'adaptive' | 'workflow'; steps: TaskWorkflowStep[];
+}
+export interface TaskSummary {
+  protocol?: 'legacy' | 'adaptive_v1';
+  id: string; title: string; owner_id: string; status: SharedWorkTask['status']; paused: boolean;
+  delivery: 'document' | 'development' | 'online'; created_at: string; updated_at: string;
+  conversation_id: string; source_conversation_id: string | null; orchestration: TaskOrchestration;
+  current_step?: string | null; pending_decisions: number;
+}
+export interface TaskDetail {
+  protocol?: 'legacy' | 'adaptive_v1'; archived?: boolean;
+  task: SharedWorkTask; board: SharedWorkBoardView; source_conversation_id: string | null;
+  execution_conversation_id: string; orchestration: TaskOrchestration;
 }

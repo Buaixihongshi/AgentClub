@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AgentClub smoke acceptance script.
+"""Unity smoke acceptance script.
 
 Usage:
     python3 scripts/smoke_real_cli_mission.py --fake
@@ -102,7 +102,7 @@ def print_report(detail: dict, mode: str, elapsed_s: float, workspace: str) -> d
     providers_used = sorted(set(m.get("provider_id", "?") for m in agent_msgs))
 
     print("\n" + "=" * 60)
-    print("AgentClub Smoke Acceptance Report")
+    print("Unity Smoke Acceptance Report")
     print("=" * 60)
     print("Mode:            {mode}".format(mode=mode))
     print("Mission ID:      {mid}".format(mid=mission["id"]))
@@ -221,7 +221,7 @@ def run_smoke(mode: str, goal: str, max_turns: int, timeout: int) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AgentClub smoke acceptance test",
+        description="Unity smoke acceptance test",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--fake", action="store_true", help="Run with fake CLI adapter")

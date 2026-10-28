@@ -73,7 +73,7 @@ def run_fake_smoke() -> None:
             assert len(replies) == 1, replies
             assert replies[0]["agent_id"] == "chulan", replies[0]
             assert replies[0]["provider_id"] == "fake", replies[0]
-            assert "AgentClub 这边已经跑通了" in replies[0]["content"], replies[0]
+            assert "Unity 这边已经跑通了" in replies[0]["content"], replies[0]
             assert "聊天室模式" not in replies[0]["content"], replies[0]
 
             completed = client.patch(
@@ -89,7 +89,7 @@ def run_fake_smoke() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="AgentClub onboarding smoke")
+    parser = argparse.ArgumentParser(description="Unity onboarding smoke")
     parser.add_argument("--fresh", action="store_true", help="Use an isolated temporary data directory")
     parser.add_argument("--fake", action="store_true", help="Run the offline Fake onboarding path")
     args = parser.parse_args()

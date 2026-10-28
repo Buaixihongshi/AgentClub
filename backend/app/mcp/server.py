@@ -1,4 +1,4 @@
-"""Stdio MCP server exposing AgentClub tools to a CLI provider.
+"""Stdio MCP server exposing Unity tools to a CLI provider.
 
 Spawned by an MCP-aware CLI (e.g. Codex). Reads runtime context from env vars
 set by `MCPSubprocessAdapter`, then handles JSON-RPC 2.0 over stdin/stdout.
@@ -169,7 +169,7 @@ _TOOL_DESCRIPTORS = [
     {
         "name": "publish_message",
         "description": (
-            "把当前 agent 在本回合要说的话发布到 AgentClub 聊天室。"
+            "把当前 agent 在本回合要说的话发布到 Unity 聊天室。"
             "调用一次即可发出一条消息，参数 content 为要发送的中文文本。"
         ),
         "inputSchema": {
@@ -299,7 +299,7 @@ _TOOL_DESCRIPTORS = [
     {
         "name": "invoke_agent",
         "description": (
-            "请求另一个 AgentClub agent 接力处理子任务。"
+            "请求另一个 Unity agent 接力处理子任务。"
             "支持 fire_and_forget 和 wait_reply；受邀者在当前 turn 结束后顺序发言。"
             "wait_reply 接纳后结束当前发言，宿主安排受邀者及你的续答，不会在本次工具调用中返回回复正文。"
             "圆桌仅可邀请本场参与者，共享总回合预算；accepted/scheduled 表示已接纳或已有安排，不表示已发言。"

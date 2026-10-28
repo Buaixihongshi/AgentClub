@@ -1,343 +1,138 @@
-# AgentClub
+# Unity
 
-> 把 Codex CLI、Claude Code 和 Antigravity CLI 组织成一支可配置、可协作、可复盘的本地 Agent 团队。
+**把平时用的几个 AI，放进同一个工作群里。**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-2f6f64.svg)](CHANGELOG.md)
 
-**简体中文** | [English](README_EN.md)
+中文 | [English](README_EN.md)
 
-## AgentClub 是什么？
+为什么选 Unity？
 
-当用户同时拥有多个 AI CLI 时，真正困难的往往不再是“如何调用模型”，而是如何分配任务、保持上下文、处理失败，并看清每个 Agent 到底完成了什么。
+你有 Claude、GPT、Gemini — 每个都很强，各有所长。但同时用它们意味着你变成了路由器：在聊天窗口间复制粘贴上下文，手动追踪谁说了什么，把大把时间花在中间管理上。
 
-AgentClub 是运行在本地 AI CLI 之上的 Agent 团队工作台。它把一次用户目标转换成一段可观察的协作流程：三位性格不同的伙伴交流观点、回应彼此，并按用户需求推进工作；底层再由 Provider Router 选择合适的 CLI 完成每一轮工作。
+Unity 想让这些 AI 能一起工作：各自有稳定的身份和记忆，围绕同一个目标讨论、分工，也能互相检查。你不用一直在几个窗口之间来回传话。
+
+Unity 就是围绕这件事慢慢做起来的。把 Codex CLI、Claude Code、Antigravity 和模型 API 接到一起，让几个性格不同的伙伴讨论、协作，帮你解决问题。
+
+目前住在这里的是张楚岚、冯宝宝和王也。可以找他们聊想法、比较方案，也可以确认一项任务，让他们在约定的范围里继续推进。谁在负责、做到了哪、留下了什么，都能在页面里找到。
+
+## 用起来是什么样
+
+### 先聊聊
+
+在输入框里选中 `@张楚岚`，说说你想做的事情。需求没想好也没关系，可以先把使用场景、想解决的问题聊清楚。
+
+想听听几个人的看法，就输入：
 
 ```text
-用户目标
-   ↓
-Agent 团队协作：不同性格 / 共享能力 / 连续对话
-   ↓
-Provider Router：主 Provider + fallback
-   ↓
-Codex CLI / Claude Code / Antigravity CLI / 演示模式
+/discuss 我想做一个活动报名页，第一版应该保留哪些功能？
 ```
 
-因此，AgentClub 不要求用户围绕某一个模型重新建立工作方式。角色、任务流程和会话上下文保持稳定，模型则作为可以配置和替换的执行能力接入。
+他们会先各自思考，再讨论有分歧的地方。你选一位来整理方案，其他伙伴再看看有没有遗漏。最后的结果和依据都留在会话里。
 
-## AgentClub 能够做什么？
+### 想好了，再开始做
 
-### 让用户先跑起来
+需要持续推进时，让伙伴整理一份任务提议：谁负责、准备做什么、做到什么程度算完成。你看过并确认后，任务才开始。
 
-项目内置不调用真实模型的演示模式。即使没有安装 CLI、没有登录模型账号，用户也能先完成第一次角色对话，确认任务创建、Agent 回复和页面状态链路都能正常工作。
+简单的事情可以一个人完成，需要帮助时再找其他伙伴。涉及数据、权限等风险的改动，会要求另一位角色审核。
 
-### 把一个目标交给多 Agent 协作
+左侧的「会话」和「任务」分别管理交流与工作。也可以直接在任务页新建，保存后再开始。任务可以自主编排，也可以指定步骤、负责人和依赖，用 workflow 查看实际进度、决定和交付物。服务保持运行时，关掉浏览器页面，已经确认的工作也会继续。
 
-AgentClub 会根据任务复杂度安排角色轮次，也支持定向选择某个角色。张楚岚通透机敏、重视人情与现实；冯宝宝坦率好奇、关注具体事实；王也松弛笃定、重视自主与长远选择。三人都可以提方案、分析、执行和总结，立场随事实与交流改变。未点名时按配置顺序安排发言，不按工种选人；多角色点名仍按点名顺序讨论。
+### 回来看看结果
 
-人格约定、提示词对比和体验验收见 [三位讨论伙伴的人格约定](docs/PERSONALITIES.md)。
+确认后的新开发任务有自己的分支和代码目录。交付的文档、页面和图片可以打开看，也能在任务页启动独立预览。
 
-需要围绕同一个目标多聊几轮时，可以切到多人讨论模式：勾选 2～3 位角色，按选择顺序推进，最后一格留给总结。讨论中可随时插话并点名某位角色先回应，也可以在回合边界请求收尾或停止；结束后点击继续讨论，沿用原来的参与者开始下一轮。创建契约、控制语义和状态字段见 [多人讨论文档](docs/ROUNDTABLE.md)。
+中途卡住了，会留下原因；已经保存的文件也还在。可以先看看现有结果，再决定下一步。
 
-### 统一管理多个 AI CLI
+## 我比较在意的几件事
 
-用户可以在同一个设置页检测安装、完成认证、验证真实对话，并为每个角色选择主 Provider 和 fallback。当前支持 Codex CLI、Claude Code、Antigravity CLI，以及始终可用的演示模式。
+### 伙伴有自己的性格，模型可以换
 
-### 看清 Agent 的执行过程
+张楚岚通透机敏，宝宝坦率好奇，王也松弛笃定。三个人都能分析、提方案和承担工作，具体怎么分工，看这件事需要什么。
 
-页面会持续展示任务状态、Agent 轮次、实际 Provider、fallback 尝试、MCP 工具调用、A2A 路由、产物归属和阻塞原因。设置里的「观测」页签汇总全部会话的回合、工具调用、协作与产物，并给出三项检查、成本与覆盖率，可下钻到单个回合，见[回合观测](docs/OBSERVABILITY.md)。用户不仅能看到最终回答，也能判断任务是如何完成或为什么失败的。
+角色和底下的模型分开配置。可以三个人都用 Codex，也可以分别接不同的 CLI 或 API；每位角色还能单独选择模型和备用连接。只装好一种 CLI，也能先把整个工作群用起来。
 
-### 保留连续上下文和本地产物
+### 讨论里，留得住不同的看法
 
-同一会话可以持续追加任务，历史会话可以归档和恢复；Agent 产物按 mission 隔离保存。会话、任务状态和产物默认留在本机，便于继续工作和复盘。
+`/discuss` 会让大家先独立回答，同一阶段提交前，看不到彼此这一轮的结果。有分歧再交流，没有新内容就尽早收束。
 
-### 用共享开发任务持续推进
+综合稿还要交回原参与者复核。需要你做的取舍，会单独留下来，等你决定。
 
-在对话中通过 `@` 候选选择伙伴，描述你的想法，先对齐需求。角色将需要持续推进的工作保存为任务提议，你确认目标、范围和验收条件后再启动。对话页保留交流与紧凑待办，任务页查看责任、进度、决定和交付物；关闭页面后继续已授权工作。设计与协作按需加入，审核与上线批准绑定具体交付版本。操作见[自主工作](docs/AUTONOMOUS_WORK.md)，本次升级的原因与取舍见[升级复盘](docs/incidents/2026-10-24-conversation-first-autonomy-upgrade.md)。
+### 做一件事，能接着往下做
 
-## AgentClub 的核心优势
+任务会保存目标、负责人、进度和检查点。换了一个执行回合，上一次留下的工作仍然有地方可查。
 
-### 1. Provider 与角色解耦
+每项新任务使用独立目录，文件、验证和交付版本对应起来。需要调整时可以暂停，需要取舍时再回来问你。方案文档、开发交付和申请上线，各有自己的范围；上线还需要你明确批准，并核对实际结果。
 
-这是 AgentClub 最核心的产品设计。角色定义“谁在工作”，Provider 定义“由哪个模型执行”，路由配置则决定“优先使用谁、失败后切换给谁”。
+### 记忆能看见，也能改掉
 
-| 层级 | 负责什么 | 示例 |
-| --- | --- | --- |
-| 角色层 | 人格、关注点、交流习惯、会话身份 | 通透机敏的张楚岚、坦率好奇的冯宝宝、松弛笃定的王也 |
-| Provider 层 | 模型能力、CLI 命令、认证和运行方式 | Codex CLI、Claude Code、Antigravity CLI |
-| 路由层 | 主 Provider、fallback 和失败切换 | Claude → Codex → 演示模式 |
+每位伙伴有自己的长期记忆，同一会话还有短期检查点。换模型时，会带上交接信息，接着已经确认的内容往下走。
 
-这种解耦带来四个直接价值：
+记忆保存在本地 Markdown 文件里，也可以在设置里查看、修改、忘记或清除。记错了，就改掉；以后不想再带进上下文的，也可以移出去。
 
-- 只验证一个 Codex，也可以先让完整团队运行起来；
-- 可以根据任务特点，为不同角色分配不同 Provider；
-- 某个 CLI 不可用时，可以自动尝试 fallback，而不是让整项任务中断；
-- 更换模型不会改变角色身份、协作逻辑和已有会话心智。
+### 做过什么，尽量说得清楚
 
-### 2. 先体验价值，再完成配置
+文件登记交付后会单独显示出来，即使这一轮后来超时，也能继续预览和下载。现成文件可以直接导入，省得让模型重新输出一整份。
 
-AgentClub 把“产品是否可用”和“真实模型是否配置完成”拆成两个阶段。用户先通过演示模式获得第一次成功，再按 Codex-first 路径接入真实 CLI，之后按需扩展 Claude Code 和 Antigravity CLI。验证失败不会覆盖当前团队配置，也不会让聊天室失去可用状态。
+设置里的「观测」能看到每一轮用了哪个模型、调用了什么工具、有没有发生协作、最后卡在哪里。费用有实际报价就用报价，估算会标出来，缺少信息的就留空。
 
-### 3. MCP 是可审计的 Agent 通信链路
+项目里还放了单 Agent、自我反思、固定团队和动态协作的对照评测。几个人一起做，到底在哪些事情上更有用，还是想拿具体任务来看看。
 
-真实 Provider 启用 MCP 后，只有 `publish_message` 才会形成角色发言；CLI stdout 只作为调试信息。Agent 还可以通过 MCP 读取上下文、写入产物、更新状态和调用其他 Agent，使消息、工具和产物都能落到同一条可追踪的任务记录中。
+## 先跑起来
 
-### 4. Local-first，同时保留可观察性
-
-AgentClub 将会话、设置和产物保存在本地，但没有因此牺牲运行透明度。SSE 实时状态、轮次追踪、工具事件、阻塞诊断和归档恢复共同构成了一套本地可调试的 Agent 工作环境。
-
-### 5. 从单次回答升级为团队工作过程
-
-产品关注的不只是生成一段文本，而是围绕目标形成“拆解—执行—检查—收口”的过程。不同人格、连续会话、Agent 接力和产物归属，为后续扩展团队模板、任务工作流和模型路由策略提供了基础。
-
-### 6. 可评测：用对比实验回答“Multi-Agent 什么时候更好”
-
-多 Agent 不应该只靠体验描述来证明。项目内置 A/B/C/D 对比评测：同一批任务、同一个 lead、同一套 rubric，B/C 共享 4 回合检查骨架，默认使用中性人格，分别运行 Single Agent、Self Reflection、固定多 Agent 工作流和动态 A2A，并输出质量、成本、延迟、冗余和回退报告。
+准备 Python **3.11+**、Node.js **20.19+ 或 22.12+** 和 npm。开发时推荐 Python 3.12、Node 22。
 
 ```bash
-# 不调用模型，验证评测链路
-.venv/bin/python scripts/run_eval.py --mode fixture
-
-# 真实对比：固定 Provider、12 个任务、3 次重复
-.venv/bin/python scripts/run_eval.py --mode real --provider codex --repeats 3
-```
-
-报告会直接标出“Multi-Agent 在哪些类别/任务上低于 Single Agent”“哪些场景多花了 2 倍以上 token 却没有质量收益”。任务集、指标口径、有效性边界和扩展方式见 [多 Agent 评测文档](docs/EVALUATION.md)。
-
-## 项目演示
-
-### 零账号启动与 Codex-first 引导
-
-先用演示模式完成第一轮角色对话，再由页面引导用户验证 Codex CLI；验证失败不会影响已经可用的演示模式。
-
-![AgentClub 新用户引导](docs/images/agentclub-onboarding.jpg)
-
-### CLI 接入与团队配置
-
-在设置页集中查看 CLI 安装、认证和验证状态，并为三位角色配置主 Provider 与 fallback。
-
-![AgentClub CLI 接入设置](docs/images/agentclub-cli-settings.jpg)
-
-![AgentClub 团队配置](docs/images/agentclub-team-settings.jpg)
-
-## 快速开始
-
-### 环境要求
-
-- macOS 或 Linux shell 环境
-- Python 3.11+
-- Node.js `20.19+` 或 `22.12+`
-- npm
-
-首次体验不要求安装任何真实 AI CLI。
-
-### 一键启动
-
-克隆项目并在仓库根目录运行：
-
-```bash
-git clone https://github.com/Buaixihongshi/AgentClub.git
-cd AgentClub
+git clone https://github.com/Buaixihongshi/Unity.git Unity
+cd Unity
 ./scripts/start.sh
 ```
 
-脚本会自动：
+脚本会安装依赖、启动前后端，然后打开 [本地页面](http://127.0.0.1:5173/)。
 
-1. 创建 Python 虚拟环境并安装后端依赖；
-2. 安装前端依赖；
-3. 启动 FastAPI 和 Vite；
-4. 等待健康检查通过；
-5. 打开 `http://127.0.0.1:5173/`。
+**没有模型账号，也可以先试试。** 默认是演示模式，不调用真实模型。先走一遍会话流程，再到设置里检测、登录和验证 CLI，给伙伴选择连接与模型。
 
-进入页面后，按照引导先与张楚岚完成一轮演示对话即可。按 `Ctrl-C` 会同时停止前后端服务。
-
-常用启动选项：
-
-```bash
-./scripts/start.sh --no-open          # 不自动打开浏览器
-./scripts/start.sh --no-install       # 跳过依赖安装检查
-./scripts/env.sh status              # 查看环境与启动版本
-```
-
-端口冲突时可以指定其他端口：
-
-```bash
-PORT=8001 FRONTEND_PORT=5174 ./scripts/start.sh --no-open
-```
-
-## 第一次使用
-
-推荐按以下顺序完成配置：
-
-1. **先跑演示对话**：确认页面、任务创建和角色回复链路正常。
-2. **接入 Codex CLI**：在引导页按提示安装或登录 Codex，然后运行一次真实对话验证。
-3. **启用完整团队**：验证成功后，可让三位角色暂时共用 Codex，立即体验多 Agent 协作。
-4. **按需扩展 Provider**：在“设置 → CLI 接入”中继续验证 Claude Code 或 Antigravity CLI。
-5. **调整团队路由**：在“设置 → 团队配置”中为每个角色选择主 Provider 和 fallback。
-
-真实 CLI 验证会调用对应账号完成一次模型请求，可能计入套餐额度或产生费用。安装、登录、版本检测和演示模式本身不会调用真实模型。
-
-### Provider 说明
-
-| Provider | 命令 | 用途 | 仓库默认状态 |
-| --- | --- | --- | --- |
-| 演示模式 | 内置 | 无账号完成首次体验 | 启用 |
-| Codex CLI | `codex` | 推荐的首个真实 CLI，可供全队共用 | 禁用，验证后启用 |
-| Claude Code | `claude` | 可选的角色 Provider | 禁用，验证后启用 |
-| Antigravity CLI | `agy` | 可选的角色 Provider | 禁用，验证后启用 |
-
-AgentClub 不会在启动时启用真实 Provider。安装方式和登录命令会在引导页及设置页中显示；验证失败也不会覆盖已保存的角色路由，演示模式仍可继续使用。
-
-## 工作方式
-
-```text
-React / Vite 页面
-       │ REST + SSE
-       ▼
-FastAPI ── MissionRunner ── Provider Router ── 本地 AI CLI
-   │              │                              │
-   │              └──────── MCP tools ──────────┘
-   ▼
-SQLite 事件与会话记录  +  artifacts/<mission_id>/
-```
-
-- FastAPI 创建 mission，并由后台 runner 按工作流执行各角色轮次。
-- Provider Router 根据团队配置选择真实 CLI 或演示模式，并在失败时尝试 fallback。
-- MCP 是 Agent 与 AgentClub 之间的通信协议，负责发言、上下文、产物和 Agent 间调用。
-- 前端通过 SSE 获取最新任务快照，并呈现完整轮次和诊断信息。
-
-## 本地数据与隐私
-
-AgentClub 是 local-first 项目，不提供远程账号系统或托管数据服务。默认运行数据保存在：
-
-| 路径 | 内容 |
+| 连接 | 现在能做什么 |
 | --- | --- |
-| `data/` | SQLite 会话、任务和本地设置 |
-| `artifacts/` | Agent 生成的任务产物 |
-| `.yiren/` | 本地启动日志和依赖状态标记 |
+| Codex CLI、Claude Code、Antigravity CLI | 对话、讨论、工具协作，以及受限环境中的开发与验证 |
+| 自定义 API | 文本对话和结构化讨论；支持 OpenAI Responses、Chat Completions、Anthropic 协议 |
+| 演示模式 | 无账号体验页面和流程；开发任务会等待真实连接 |
 
-这些目录均不会进入发布仓。Codex 和 Claude 的 MCP 配置使用临时隔离目录，不会把 AgentClub 的 MCP 配置永久写入用户的全局配置；Antigravity 使用带锁、恢复和异常恢复语义的受控生命周期。
+真实连接会使用对应账号的额度，CLI 需要在本机安装并登录。当前讨论的真实 CLI 隔离和自主开发依赖 macOS，其他平台可以先体验演示和可用的对话能力。
 
-在公开仓库或提交 issue 前，请不要上传上述目录。项目提供发布隐私检查：
-
-```bash
-python3 scripts/privacy-check.py
-```
-
-## 手动开发
-
-开发前可运行 `./scripts/env.sh status`，只读查看现有服务、工作目录、启动版本与磁盘
-版本是否一致。页面顶部也提供前后端启动/构建身份；旧服务缺少身份时显示未知。
-使用方式与证据边界见 [环境状态说明](docs/ENVIRONMENTS.md)。
-
-推荐使用 `./scripts/env.sh dev <任务名>` 创建隔离工作目录；主线验收使用 `./scripts/env.sh alpha start --detach`。
-功能开发默认对接真实 CLI，继承日常角色路由与模型，任务数据仍隔离；只有显式传 `--demo` 才启动演示。
-完整端口、旧数据兼容与共用检查说明见 [环境文档](docs/ENVIRONMENTS.md)。
-
-### 后端
-
-```bash
-python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
-PYTHONPATH=. ./.venv/bin/python -m uvicorn backend.app.main:app \
-  --host 127.0.0.1 --port 8000
-```
-
-后端 API 默认位于 `http://127.0.0.1:8000/api`，健康检查为 `/api/health`。
-
-### 前端
-
-另开终端：
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-Vite 默认运行在 `http://127.0.0.1:5173/`，并将 `/api` 代理到本地后端。
-
-## 测试与发布验收
-
-运行统一发布检查（包含联网依赖审计，演示 smoke 不调用模型）：
-
-```bash
-./scripts/release-check.sh
-```
-
-它执行前后端全量测试、构建、引导/连续会话/多 Agent/圆桌离线 smoke、fixture eval、隐私与依赖检查，不调用付费模型。
-
-真实 CLI 验收需要本机已经完成对应 CLI 登录，并可能产生模型费用：
-
-```bash
-./scripts/release-check.sh --real-cli
-```
-
-其他常用命令：
-
-```bash
-./.venv/bin/python -m pytest backend/tests -q
-cd frontend && npm test
-cd frontend && npm run build
-```
-
-## 项目结构
+## 怎么工作的
 
 ```text
-AgentClub/
-├── backend/              # FastAPI、任务编排、Provider adapter、MCP、SQLite
-├── config/               # Provider 与三位角色的提交配置
-├── frontend/             # React、TypeScript、Vite 页面
-├── scripts/              # 一键启动、冒烟测试、发布和隐私检查
-├── docs/                 # 验收说明和架构约束
-├── artifacts/.gitkeep    # 本地产物目录占位
-├── requirements.txt
-└── README.md
+你 ↔ 本地网页：对话、任务、记忆、观测
+               │
+           FastAPI 宿主
+               ├─ 任务编排与讨论阶段
+               ├─ Provider Router → CLI / 模型 API
+               └─ SQLite、记忆文件、任务目录与产物
 ```
 
-## 常见问题
+前端用 React、TypeScript 和 Vite，后端用 FastAPI 和 SQLite。CLI 通过 MCP 读取上下文、发言、交付文件和邀请其他角色，宿主记录任务和执行结果。
 
-**没有 Codex、Claude 或 Antigravity 账号，能使用吗？**
+会话、记忆和文件主要留在本机。使用真实模型时，请求内容仍会发送给你选择的服务。
 
-可以。演示模式默认启用，足以跑通创建任务、角色对话、多 Agent 调度和产物链路。
+## 现在的样子
 
-**为什么安装了 CLI，页面仍显示“待验证”？**
+这是一个还在持续迭代的本地单用户项目。新任务的代码目录已经独立，执行目前仍然串行；默认围绕 Unity 自己的仓库工作，还没有在页面里选择任意仓库的入口。
 
-“已安装”只代表命令可执行；还需要完成 CLI 登录，并在引导页或设置页运行一次真实 MCP 对话验证。
+普通聊天有单回合时限。比较大的开发需求，先让伙伴提出任务提议、确认后再做，会更适合接着推进。模型 API 目前只承担文本对话与讨论，开发执行需要 CLI。
 
-**验证真实 CLI 失败会影响当前团队吗？**
+我还想继续把长任务接续、失败恢复和记忆做得更顺手一些。自己用的时候，也总能碰到新的问题，慢慢改吧。
 
-不会。只有验证成功并确认保存后才会更新路由；失败时会保留原配置。
+## 文档
 
-**如何查看启动失败原因？**
+| 想了解什么 | 从这里看 |
+| --- | --- |
+| 伙伴的性格和讨论方式 | [角色](docs/PERSONALITIES.md) · [讨论技能](docs/ROUNDTABLE.md) |
+| 任务提议、持续开发、预览与交付 | [自主工作](docs/AUTONOMOUS_WORK.md) |
+| 记忆与模型切换 | [上下文记忆](docs/CONTEXT_MEMORY.md) |
+| 执行过程与对照实验 | [观测](docs/OBSERVABILITY.md) · [评测](docs/EVALUATION.md) |
+| 参与开发、检查和发布 | [贡献指南](CONTRIBUTING.md) · [开发环境](docs/ENVIRONMENTS.md) · [发布与恢复](docs/RELEASING.md) |
 
-运行 `./scripts/env.sh status` 查看目标环境日志目录，通常为 `.yiren/<profile>/runtime/`。端口冲突不会自动停止已有服务。
+欢迎提 issue，也欢迎聊聊你希望几个 AI 一起做些什么。
 
-**归档会删除历史聊天吗？**
-
-不会。归档只是将会话移出当前列表，可以从左下角的归档入口恢复。
-
-## 当前边界
-
-- 当前版本是本地单用户 MVP，不包含云端部署、多用户权限或远程同步。
-- 用户插话会在轮次之间消费，不会强制终止已经开始的 CLI 进程。
-- 圆桌的收尾与停止在回合边界生效：当前 CLI 回合会先跑完，界面会说明“等当前回合结束”。
-- 真实 Provider 的可用性取决于对应 CLI 版本、认证状态和账号额度。
-- Agent 产物应写入任务对应的 `artifacts/<mission_id>/`，不要把敏感工作区直接用于真实模型验证。
-
-## 参与贡献
-
-开发入口见 [SOP](docs/SOP.md)、[环境与统一检查](docs/ENVIRONMENTS.md)和[审批、发布与恢复](docs/RELEASING.md)。
-
-
-欢迎通过 issue 提交问题、复现步骤和改进建议。提交代码前请至少运行：
-
-```bash
-./scripts/check.sh all
-```
-
-发布记录见 [CHANGELOG.md](CHANGELOG.md)，验收状态见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
-
-## License
-
-AgentClub 基于 [MIT License](LICENSE) 开源。
+Unity 采用 [MIT License](LICENSE)。

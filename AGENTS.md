@@ -1,4 +1,4 @@
-# AgentClub 协作入口
+# Unity 协作入口
 
 - 用中文回复。先读任务涉及的代码；流程见 `docs/SOP.md`，环境见 `docs/ENVIRONMENTS.md`，发布见 `docs/RELEASING.md`。
 - 操作环境前运行 `./scripts/env.sh status`。一项任务一个分支/worktree；使用 `env.sh dev <task>`，不修改正在服务用户的 checkout。
