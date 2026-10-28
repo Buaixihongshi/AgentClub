@@ -23,7 +23,7 @@ from backend.app.orchestration.events import (
     record_tool_error,
     record_tool_result,
 )
-from backend.app.orchestration.speaker import WorkflowStep
+from backend.app.orchestration.speaker import WorkflowStep, resume_purpose
 from backend.app.storage.repository import Repository
 
 
@@ -93,6 +93,11 @@ class MCPToolError(ValueError):
     pass
 
 
+# invoke_agent purpose is agent-written text shown to another agent; keep it a
+# brief hand-off, not a channel for unbounded prompt payloads.
+MAX_A2A_PURPOSE_CHARS = 4000
+
+
 def roundtable_guard(fn):
     call_signature = signature(fn)
 
@@ -131,6 +136,7 @@ class MCPTools:
         a2a_budget_used: Optional[Callable[[], int]] = None,
         peek_resume_chain: Optional[Callable[[str], List[str]]] = None,
         is_target_scheduled: Optional[Callable[[str], bool]] = None,
+        scheduled_agent_ids: Optional[Set[str]] = None,
         receipt_id: Optional[str] = None,
         current_step_origin: Optional[str] = None,
         lease_token: Optional[str] = None,
@@ -145,11 +151,20 @@ class MCPTools:
         self.max_a2a_invocations = max_a2a_invocations
         self.a2a_budget_used = a2a_budget_used or (lambda: 0)
         self._peek_resume_chain = peek_resume_chain
+        if is_target_scheduled is None and scheduled_agent_ids is not None:
+            scheduled = set(scheduled_agent_ids)
+            is_target_scheduled = scheduled.__contains__
         self._is_target_scheduled = is_target_scheduled
         self.receipt_id = receipt_id
         self._current_step_origin = current_step_origin
         self.lease_token = lease_token
         self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
+
+    def scheduled_targets(self) -> List[str]:
+        """Agents with a remaining declared turn, for the subprocess MCP server."""
+        if self._is_target_scheduled is None:
+            return []
+        return sorted(a for a in self.valid_agent_ids if self._is_target_scheduled(a))
 
     @property
     def current_step_origin(self) -> Optional[str]:
@@ -878,6 +893,12 @@ class MCPTools:
         mode: str = "fire_and_forget",
     ) -> Dict[str, int]:
         mission = self._require_mission(mission_id)
+        if isinstance(purpose, str) and len(purpose) > MAX_A2A_PURPOSE_CHARS:
+            message = "purpose exceeds {n} characters; put details in an artifact and reference it".format(
+                n=MAX_A2A_PURPOSE_CHARS)
+            record_tool_error(self.repository, mission_id, sender_turn_id, sender_agent_id,
+                              "invoke_agent", message, provider_id)
+            raise MCPToolError(message)
         from backend.app.work.service import SharedWork, WorkError
         work_context = SharedWork(self.repository, self.workspace_root).execution_context(mission_id)
         if work_context:
@@ -930,14 +951,44 @@ class MCPTools:
             if not isinstance(purpose, str) or not purpose.strip():
                 raise MCPToolError("purpose is required")
 
+            # Absorb a redundant fire-and-forget invoke when the target already
+            # has a scheduled turn in the remaining workflow. Queuing an extra
+            # a2a turn for someone about to speak makes them speak twice on the
+            # same topic ("漂移/重复发言"). wait_reply is never skipped — the
+            # sender is blocked on a real reply.
+            if (
+                mode == "fire_and_forget"
+                and self._is_target_scheduled is not None
+                and self._is_target_scheduled(target_agent_id)
+            ):
+                record_a2a_skipped(
+                    self.repository,
+                    mission_id,
+                    sender_agent_id,
+                    sender_turn_id,
+                    target_agent_id,
+                    purpose.strip(),
+                    reason="target already scheduled in workflow",
+                )
+                record_tool_result(
+                    self.repository,
+                    mission_id,
+                    sender_turn_id,
+                    sender_agent_id,
+                    "invoke_agent",
+                    summary="Skipped {target}: already scheduled to speak".format(
+                        target=target_agent_id,
+                    ),
+                    provider_id=provider_id,
+                )
+                return {"queued_position": 0, "skipped": True}
+
             if self.a2a_enqueue is None:
-                # Subprocess path: enforce budget by counting existing a2a events in the DB.
+                # Subprocess path: one unit per accepted invocation. Accepted
+                # ones are a2a.invoke events; this turn's requests are not
+                # picked up yet. Skipped requests and resumes are free.
                 if self.max_a2a_invocations > 0:
-                    existing = sum(
-                        1
-                        for e in self.repository.list_events_after(mission_id, 0)
-                        if e.event_type in ("a2a.invoke", "a2a.request")
-                    )
+                    existing = self._subprocess_a2a_used(mission_id, sender_turn_id)
                     if existing >= self.max_a2a_invocations:
                         raise MCPToolError(
                             "a2a 深度耗尽 ({used}/{limit})".format(
@@ -974,13 +1025,7 @@ class MCPTools:
                     ),
                     provider_id=provider_id,
                 )
-                # Count all mission-level a2a events (invoke + request) to compute
-                # remaining budget accurately, including events from prior turns.
-                total_used = sum(
-                    1
-                    for e in self.repository.list_events_after(mission_id, 0)
-                    if e.event_type in ("a2a.invoke", "a2a.request")
-                )
+                total_used = self._subprocess_a2a_used(mission_id, sender_turn_id)
                 remaining = (
                     max(0, self.max_a2a_invocations - total_used)
                     if self.max_a2a_invocations > 0
@@ -991,38 +1036,6 @@ class MCPTools:
                     result["reply_pending"] = True
                     result["resume_position"] = queued_position + 1
                 return result
-
-            # In-process path: absorb a redundant fire-and-forget invoke when the
-            # target already has a scheduled turn in the remaining workflow. Queuing
-            # an extra a2a turn for someone about to speak makes them speak twice on
-            # the same topic ("漂移/重复发言"). wait_reply is never skipped — the
-            # sender is blocked on a real reply.
-            if (
-                mode == "fire_and_forget"
-                and self._is_target_scheduled is not None
-                and self._is_target_scheduled(target_agent_id)
-            ):
-                record_a2a_skipped(
-                    self.repository,
-                    mission_id,
-                    sender_agent_id,
-                    sender_turn_id,
-                    target_agent_id,
-                    purpose.strip(),
-                    reason="target already scheduled in workflow",
-                )
-                record_tool_result(
-                    self.repository,
-                    mission_id,
-                    sender_turn_id,
-                    sender_agent_id,
-                    "invoke_agent",
-                    summary="Skipped {target}: already scheduled to speak".format(
-                        target=target_agent_id,
-                    ),
-                    provider_id=provider_id,
-                )
-                return {"queued_position": 0, "skipped": True}
 
             # In-process path: validate budget and enqueue immediately.
             used = self.a2a_budget_used()
@@ -1046,9 +1059,7 @@ class MCPTools:
             if mode == "wait_reply":
                 resume_step = WorkflowStep(
                     agent_id=sender_agent_id,
-                    purpose="承接 {target} 对『{purpose}』的回复".format(
-                        target=target_agent_id, purpose=purpose.strip(),
-                    ),
+                    purpose=resume_purpose(target_agent_id, purpose.strip()),
                     origin="a2a_resume",
                     sender_agent_id=sender_agent_id,
                     sender_turn_id=sender_turn_id,
@@ -1097,6 +1108,14 @@ class MCPTools:
                 provider_id,
             )
             raise
+
+    def _subprocess_a2a_used(self, mission_id: str, sender_turn_id: str) -> int:
+        return sum(
+            1
+            for e in self.repository.list_events_after(mission_id, 0)
+            if e.event_type == "a2a.invoke"
+            or (e.event_type == "a2a.request" and e.payload.get("sender_turn_id") == sender_turn_id)
+        )
 
     def _require_mission(self, mission_id: str):
         mission = self.repository.get_mission(mission_id)
