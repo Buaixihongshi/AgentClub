@@ -1,5 +1,5 @@
 .conversation-main.has-shared-work { grid-template-rows: auto minmax(0, 1fr) auto; }
-.shared-work { margin: 8px 20px; border: 1px solid var(--border-color, #d9dfdc); border-radius: 12px; background: var(--panel-bg, #fafbf9); color: var(--text-primary, #26362e); max-height: 55vh; min-height: 0; overflow: auto; }
+.shared-work { margin: 8px 20px; border: 1px solid var(--ink-line); border-radius: 12px; background: var(--surface); color: var(--ink); max-height: 55vh; min-height: 0; overflow: auto; }
 .shared-work > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; }
 .shared-work > summary span { font-weight: 400; font-size: 12px; opacity: .65; margin-left: 10px; }
 .shared-work-body { padding: 0 16px 16px; font-size: 13px; overflow-wrap: anywhere; }
@@ -21,7 +21,7 @@
 .shared-work pre { overflow: auto; white-space: pre-wrap; max-height: 250px; background: #edf1ee; padding: 10px; border-radius: 6px; }
 .shared-work small { display: block; opacity: .75; margin: 6px 0; }
 @media (max-width: 600px) { .shared-work { margin: 8px; } .shared-work > summary span { display: block; margin: 4px 0 0; } }
-.adaptive-work-body .work-decision { border: 1px solid var(--accent, #6366f1); border-radius: 10px; padding: 14px; margin: 12px 0; }
+.adaptive-work-body .work-decision { border: 1px solid var(--sage-strong); border-radius: 10px; padding: 14px; margin: 12px 0; }
 .adaptive-work-body .work-decision label { display: grid; gap: 6px; margin: 10px 0; }
 .adaptive-work-body .work-artifacts { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 0; }
 .adaptive-work-body .work-artifact { flex: 1 1 230px; min-width: 0; max-width: 100%; display: grid; gap: 8px; }

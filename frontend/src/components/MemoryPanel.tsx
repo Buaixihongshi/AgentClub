@@ -103,8 +103,11 @@ export function MemoryPanel({ conversationId }: Props) {
 
   return (
     <div className="memory-layout" aria-label="记忆管理">
+      <div className="settings-section">
+        <h3>记忆</h3>
+        <p className="settings-section-hint">长期记忆以 Markdown 文件为准；忘记仅移出上下文，清除会删除文件。</p>
+      </div>
       {error ? <div role="alert" className="error-banner">{error}</div> : null}
-      <p className="memory-intro">长期记忆以 Markdown 文件为准；忘记仅移出上下文，清除会删除文件。</p>
       <div className="memory-columns">
           <nav className="memory-agent-list" aria-label="角色记忆">
             {(overview?.agents ?? []).map((agent) => (

@@ -560,7 +560,7 @@ describe("Unity app", () => {
 
   it("clicking new conversation creates and selects an empty conversation", async () => {
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "+ 新对话" }));
+    await userEvent.click(screen.getByRole("button", { name: "新对话" }));
     await waitFor(() => {
       expect(screen.getByRole("navigation", { name: "会话列表" })).toBeInTheDocument();
     });
