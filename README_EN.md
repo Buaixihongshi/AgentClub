@@ -131,6 +131,7 @@ These screenshots were captured before the rename and show the former AgentClub 
 The app bundles its own runtime, so Python and Node are not needed. It reads `PATH` from your login shell, so CLIs installed through nvm, Homebrew and similar tools are found.
 
 - Data lives in `~/Library/Application Support/Unity/`; the partners' working directory is `workspace/` inside it. Logs go to `~/Library/Logs/Unity/backend.log`. The Unity menu opens both locations.
+- Before using Workflow (autonomous development), choose a Git repository from **Unity › Choose Project Repository…** (选择项目仓库…). Each task gets its own `codex/task-…` branch in that repository, with its worktree under `task-worktrees/` in the data directory. Without a repository, chats and discussions still work and Workflow tasks ask you to choose one.
 - If work is still running when you quit, Unity asks for confirmation first.
 - To uninstall, delete `/Applications/Unity.app`, and the data directory above if you no longer need it.
 - To build the app yourself, see [packaging/macos/README.md](packaging/macos/README.md).

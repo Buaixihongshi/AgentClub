@@ -22,7 +22,9 @@ SIGN_IDENTITY="Developer ID Application: …" NOTARY_PROFILE=<profile> ./scripts
 
 ## 运行时位置
 
-- 数据：`~/Library/Application Support/Unity/`（`UNITY_SUPPORT_DIR` 可覆盖），智能体工作区默认是其中的 `workspace/`（`UNITY_WORKSPACE` 可覆盖）
+- 数据：`~/Library/Application Support/Unity/`（`UNITY_SUPPORT_DIR` 可覆盖），智能体工作区默认是其中的 `workspace/`
+- 项目仓库：菜单“Unity › 选择项目仓库…”把所选 Git 仓库存入 UserDefaults（`ProjectDirectory`），外壳以 `UNITY_WORKSPACE` 传给后端并作为工作目录；切换会重启后端。仓库被移走时回退到 `workspace/`
+- Workflow：任务工作树在 `task-worktrees/`；包内带 `scripts/environment_*.py` 与 `config/environments.json`（工作树锁与预览），打包时逐个导入校验
 - 日志：`~/Library/Logs/Unity/backend.log`；字节码缓存：`~/Library/Caches/Unity/`
 - PATH 取自登录 shell（`$SHELL -ilc`），并补充常见 CLI 目录
 - 维护任务关闭（包内没有 Git checkout），强制真实 CLI
