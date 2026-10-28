@@ -199,3 +199,12 @@ def test_malformed_custom_entries_are_skipped(tmp_path):
     registry = get_agent_registry(REPO_ROOT / "config")
     assert registry.ids() == ["chulan", "baobao", "wangye", "ok"]
     assert registry.display_name("chulan") == "张楚岚"
+
+
+def test_observability_recognises_delegation_to_custom_role(temp_settings):
+    from backend.app.observability.checks import claims
+    client = TestClient(create_app(temp_settings))
+    assert claims("已经交给陆玲珑复核了。") == []
+    _create(client, id="linglong")
+    assert claims("已经交给陆玲珑复核了。") == [("delegation", "已经交给陆玲珑复核了")]
+    assert claims("刚才让玲珑查过一遍了。")[0][0] == "delegation"

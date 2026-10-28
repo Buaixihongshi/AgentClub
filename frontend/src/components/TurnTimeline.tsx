@@ -1,18 +1,13 @@
 import { Fragment, useLayoutEffect, useRef, type ReactNode } from "react";
+import { formatAgentName } from "../lib/missionView";
 import type { A2AInvocationRecord, TurnView } from "../types";
 import { ChatBubble } from "./ChatBubble";
 import { StatusBadge } from "./StatusBadge";
 import { ArtifactPanel } from "./ArtifactPanel";
 
-const AGENT_NAMES: Record<string, string> = {
-  chulan: "张楚岚",
-  baobao: "冯宝宝",
-  wangye: "王也",
-};
-
 function A2AArrow({ invocation }: { invocation: A2AInvocationRecord }) {
-  const sender = AGENT_NAMES[invocation.sender_agent_id] ?? invocation.sender_agent_id;
-  const target = AGENT_NAMES[invocation.target_agent_id] ?? invocation.target_agent_id;
+  const sender = formatAgentName(invocation.sender_agent_id);
+  const target = formatAgentName(invocation.target_agent_id);
   const isWaitReply = invocation.mode === "wait_reply";
   const arrow = isWaitReply ? "↳⇌" : "↳";
   return (

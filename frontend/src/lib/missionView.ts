@@ -119,7 +119,9 @@ export function buildTurnViews(
     const metadata = event.metadata ?? {};
     const capability = metadata.capability ?? inferCapability(event);
     const providerLabel = metadata.provider_label ?? event.provider_id ?? "Provider pending";
-    const personaLabel = metadata.persona_label ?? event.character_name ?? undefined;
+    // Streaming partials arrive before backend metadata; use the live directory name meanwhile.
+    const personaLabel = metadata.persona_label ?? event.character_name
+      ?? (event.agent_id ? mentionOptionById(event.agent_id)?.label : undefined);
     const isStatus = !isMessageEvent(event);
     if (event.role === "agent" && !isStatus) {
       agentTurnCount++;

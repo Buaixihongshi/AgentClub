@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsModal } from "../components/SettingsModal";
+import { TurnTimeline } from "../components/TurnTimeline";
 import { MENTION_OPTIONS, parseMentionTargets, setMentionOptions } from "../lib/mentions";
-import { buildAgentParticipants, formatAgentName } from "../lib/missionView";
+import { buildAgentParticipants, buildTurnViews, formatAgentName } from "../lib/missionView";
 import { getPersonaColor, PERSONA_COLORS } from "../lib/personaColors";
 import type { HubSettingsAgentView, HubSettingsView } from "../types";
 
@@ -150,6 +151,22 @@ describe("custom roles across the conversation UI", () => {
     expect(parseMentionTargets("@玲珑 @张楚岚 看看").targetAgentIds).toEqual(["linglong", "chulan"]);
     expect(formatAgentName("linglong")).toBe("陆玲珑");
     expect(buildAgentParticipants([]).map((p) => p.agentId)).toEqual(["chulan", "baobao", "wangye", "linglong"]);
+  });
+
+  it("names custom roles in A2A hand-offs and while a reply streams", () => {
+    const [turn] = buildTurnViews([{
+      id: 1, mission_id: "m1", role: "agent", agent_id: "linglong", provider_id: "codex",
+      event_type: "message.partial", content: "", created_at: "2026-10-28T00:00:00Z",
+    } as never]);
+    expect(turn.personaLabel).toBe("陆玲珑");
+    render(<TurnTimeline turns={[{
+      ...turn, eventType: "message", content: "收到",
+      a2aInvocation: {
+        sender_agent_id: "chulan", target_agent_id: "linglong", purpose: "补一条测试建议",
+        mode: "fire_and_forget", target_turn_id: null,
+      } as never,
+    }]} />);
+    expect(screen.getByText("张楚岚 → 陆玲珑")).toBeInTheDocument();
   });
 
   it("gives custom roles a design-token colour and initial avatar", () => {
