@@ -1130,6 +1130,13 @@ summary:focus-visible {
   font-weight: 800;
 }
 
+.streaming-activity {
+  min-width: 0;
+  color: var(--ink-muted);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .thought-block {
   margin: 0 0 10px;
   border-radius: 8px;
@@ -1291,7 +1298,6 @@ summary:focus-visible {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-
 
 /* ===== Status badge (system events) ===== */
 .status-badge {
@@ -3105,36 +3111,7 @@ summary:focus-visible {
   overflow-y: auto;
   padding: 24px 26px 28px;
 }
-.team-settings-quick-action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-  padding: 14px;
-  border: 1px solid var(--ink-soft);
-  border-radius: 10px;
-  background: var(--paper-soft);
-}
-.team-settings-quick-action p {
-  margin: 4px 0 0;
-  color: var(--ink-muted);
-  font-size: 0.82rem;
-}
-.team-settings-quick-action button {
-  flex: 0 0 auto;
-  padding: 8px 12px;
-  border: 1px solid var(--ink-soft);
-  border-radius: 8px;
-  background: var(--paper);
-  color: var(--ink);
-  font-weight: 800;
-  cursor: pointer;
-}
-.team-settings-quick-action button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
+
 .settings-section-heading {
   display: flex;
   align-items: flex-start;
@@ -3446,13 +3423,12 @@ summary:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .team-settings-quick-action,
   .settings-section-heading {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .team-settings-quick-action button,
+  .team-apply-all,
   .settings-refresh-btn {
     width: 100%;
   }
@@ -3520,21 +3496,9 @@ summary:focus-visible {
   grid-template-columns: minmax(0, 1fr);
 }
 
-
-
-
-
-
-
-
-
-
-
 @media (max-width: 980px) {
   .conversation-layout { grid-template-columns: 1fr; }
 }
-
-
 
 .artifact-modal-backdrop { z-index: 110; }
 
@@ -3659,19 +3623,7 @@ summary:focus-visible {
 
 /* ── Observability: turn-level panel replacing the side-rail trace ── */
 
-
-
-
-
 @keyframes obs-spin { to { transform: rotate(360deg); } }
-
-
-
-
-
-
-
-
 
 /* ── Settings → 观测 ── */
 
@@ -3762,7 +3714,6 @@ summary:focus-visible {
   .obsv-tables, .obsv-detail-foot { grid-template-columns: 1fr; }
 }
 
-
 /* Observability drill-down additions */
 .obsv-head-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .obsv-head-title h3 { margin-bottom: 3px; }
@@ -3806,6 +3757,157 @@ summary:focus-visible {
   .obsv-lower { grid-template-columns: 1fr; }
 }
 
+/* Team settings: one row per role on top, connection management below. */
+.team-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.team-apply-all {
+  flex: none;
+}
+
+.role-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--hard-shadow);
+  font-size: 0.84rem;
+}
+
+.role-table th,
+.role-table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--ink-line);
+}
+
+.role-table thead th {
+  background: var(--paper-soft);
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  border-bottom: 2px solid var(--ink);
+}
+
+.role-table thead th:first-child { border-top-left-radius: 4px; }
+.role-table thead th:last-child { border-top-right-radius: 4px; }
+.role-table tbody tr:last-child > * { border-bottom: 0; }
+.role-table tbody th { width: 20%; }
+.role-table tbody td:nth-of-type(1) { width: 24%; }
+.role-table tbody td:nth-of-type(2) { width: 28%; }
+.role-table tbody td:nth-of-type(3) { width: 22%; }
+
+.role-table tr.is-expanded > * {
+  background: var(--paper-soft);
+  border-bottom-color: transparent;
+}
+
+.role-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.role-avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 0.8rem;
+}
+
+.role-name {
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.role-fallback-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--ink-line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.role-fallback-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-fallback-toggle[aria-expanded="true"] {
+  border-color: var(--sage-strong);
+}
+
+.role-fallback-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.role-actions {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.role-detail-row > td {
+  padding: 4px 16px 16px;
+  background: var(--paper-soft);
+}
+
+.role-fallbacks {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.role-fallbacks legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.role-fallback-models {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0 16px;
+}
+
+.team-connections .workbench-split {
+  height: min(520px, 60vh);
+  border: 1px solid var(--ink-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+@media (max-width: 860px) {
+  .role-table thead { display: none; }
+  .role-table,
+  .role-table tbody,
+  .role-table tr,
+  .role-table th,
+  .role-table td { display: block; width: auto !important; }
+  .role-table tbody tr { border-bottom: 1px solid var(--ink-line); }
+  .role-table th,
+  .role-table td { border-bottom: 0; padding: 6px 12px; }
+  .team-connections .workbench-split { grid-template-columns: 1fr; height: auto; }
+}
+
 /* ========================================================
    Scheme B Master-Detail Workbench Styles
    ======================================================== */
@@ -3831,25 +3933,6 @@ summary:focus-visible {
   border-right: 1px solid var(--ink-soft);
   background: var(--paper-soft);
   overflow-y: auto;
-}
-
-.workbench-sidebar-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.workbench-sidebar-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.workbench-sidebar-heading h3 {
-  font-size: 0.92rem;
-  margin: 0;
-  font-weight: 700;
-  color: var(--ink);
 }
 
 .workbench-sidebar-actions {
@@ -3899,8 +3982,7 @@ summary:focus-visible {
   color: #fff;
 }
 
-.workbench-conn-list,
-.workbench-agent-list {
+.workbench-conn-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -4029,29 +4111,7 @@ summary:focus-visible {
   background: var(--danger-soft);
 }
 
-.agent-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--ink-soft);
-  background: var(--surface);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.agent-nav-item:hover {
-  border-color: var(--ink-line);
-}
-
-.agent-nav-item.is-active {
-  border-color: var(--sage-strong);
-  box-shadow: 0 0 0 1.5px var(--sage-strong);
-}
-
-.agent-nav-avatar,
-.avatar-large {
+.role-avatar {
   display: grid;
   place-items: center;
   border: 2px solid var(--ink);
@@ -4063,46 +4123,10 @@ summary:focus-visible {
   flex-shrink: 0;
 }
 
-.agent-nav-avatar {
-  width: 28px;
-  height: 28px;
-  font-size: 0.76rem;
-}
-
-.avatar-large {
-  width: 40px;
-  height: 40px;
-  font-size: 1.05rem;
-}
-
 .avatar-chulan { background: linear-gradient(225deg, rgba(212, 175, 55, 0.35) 28%, var(--surface) 28%); }
 .avatar-baobao { background: linear-gradient(225deg, rgba(75, 83, 32, 0.3) 28%, var(--surface) 28%); }
 .avatar-wangye,
 .avatar-ye { background: linear-gradient(225deg, rgba(93, 115, 126, 0.32) 28%, var(--surface) 28%); }
-
-.agent-nav-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.agent-nav-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.84rem;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.agent-nav-sub {
-  font-size: 0.71rem;
-  color: var(--ink-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .workbench-detail {
   padding: 22px 24px;
@@ -4171,27 +4195,12 @@ summary:focus-visible {
   border: 1px solid rgba(177, 83, 0, 0.32);
 }
 
-.workbench-grid-2col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
 .workbench-card {
   border: 1px solid var(--ink-soft);
   border-radius: 10px;
   background: var(--surface);
   padding: 16px;
   margin-bottom: 14px;
-}
-
-.primary-card {
-  border-top: 3px solid var(--sage-strong);
-}
-
-.fallback-card {
-  border-top: 3px solid var(--warning);
 }
 
 .card-heading {
@@ -4201,22 +4210,6 @@ summary:focus-visible {
   font-weight: 800;
   font-size: 0.86rem;
   margin-bottom: 14px;
-}
-
-.primary-heading {
-  color: var(--sage-strong);
-}
-
-.fallback-heading {
-  color: var(--warning);
-}
-
-.card-badge {
-  font-size: 0.68rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--ink-soft);
-  font-weight: 600;
 }
 
 .custom-select,
@@ -4230,16 +4223,10 @@ summary:focus-visible {
   font-size: 0.84rem;
 }
 
+.custom-select.is-invalid,
 .custom-input.is-invalid {
   border-color: var(--danger);
   background: var(--danger-soft);
-}
-
-.input-error-msg {
-  color: var(--danger);
-  font-size: 0.74rem;
-  margin: 4px 0 0;
-  font-weight: 600;
 }
 
 .form-group {
@@ -4249,7 +4236,6 @@ summary:focus-visible {
   margin-bottom: 12px;
 }
 
-.form-label-row,
 .form-label {
   display: flex;
   align-items: center;
@@ -4270,36 +4256,6 @@ summary:focus-visible {
   font-weight: 700;
 }
 
-.vendor-chips {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-bottom: 6px;
-}
-
-.chip {
-  padding: 2px 7px;
-  border-radius: 4px;
-  border: 1px solid var(--ink-soft);
-  background: var(--paper-soft);
-  font-size: 0.7rem;
-  cursor: pointer;
-}
-
-.chip.active {
-  background: var(--ink);
-  color: #fff;
-  border-color: var(--ink);
-}
-
-.card-note {
-  font-size: 0.74rem;
-  margin-top: 6px;
-}
-
-.text-ok { color: var(--ok); }
-.text-warn { color: var(--warning); }
-
 .fallback-options-grid {
   display: flex;
   flex-wrap: wrap;
@@ -4312,24 +4268,6 @@ summary:focus-visible {
   gap: 5px;
   font-size: 0.8rem;
   cursor: pointer;
-}
-
-.outbound-box {
-  margin-top: 14px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--paper-soft);
-  border: 1px dashed var(--ink-line);
-}
-
-.outbound-flow {
-  font-size: 0.76rem;
-  margin-bottom: 8px;
-}
-
-.flow-text {
-  margin-top: 3px;
-  color: var(--ink);
 }
 
 .fallback-approve-label {
@@ -4347,48 +4285,6 @@ summary:focus-visible {
   font-size: 0.7rem;
   color: var(--ink-muted);
   margin-top: 4px;
-}
-
-.security-audit-box {
-  padding: 14px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--sage-strong);
-  background: var(--sage-soft);
-}
-
-.audit-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.86rem;
-  color: var(--ink);
-  margin-bottom: 8px;
-}
-
-.audit-items {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.76rem;
-}
-
-.audit-item {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.audit-label {
-  font-weight: 600;
-  min-width: 130px;
-  color: var(--ink);
-}
-
-.audit-item code {
-  font-size: 0.74rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--surface);
 }
 
 .key-state-box {

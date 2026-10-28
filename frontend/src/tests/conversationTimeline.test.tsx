@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { buildConversationTimeline } from "../lib/conversationTimeline";
 import { buildTurnViews } from "../lib/missionView";
@@ -61,7 +62,38 @@ describe("persistent failure timeline", () => {
     });
     expect(views[0].toolCalls).toHaveLength(1);
     render(<TurnTimeline turns={views} />);
-    expect(screen.getByText(/最近活动：读取文件 · example.ts（已完成）/)).toBeInTheDocument();
-    expect(screen.getByText("等待完整回复")).toBeInTheDocument();
+    // The live activity replaces the generic waiting text with a single progress line.
+    expect(screen.getByText("最近活动：读取文件 · example.ts（已完成）")).toBeInTheDocument();
+    expect(screen.queryByText("等待完整回复")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "原生活动记录" })).not.toBeInTheDocument();
+  });
+
+  it("shows an unfinished live activity as the current step", () => {
+    const views = buildTurnViews([], [], {
+      livePartial: { t1: "" },
+      turns: [{ turn_id: "t1", agent_id: "wangye", provider_id: "antigravity", status: "started", attempts: [], message_ids: [] }],
+      toolEvents: [{ ...activity, phase: "started" }],
+    });
+    render(<TurnTimeline turns={views} />);
+    expect(screen.getByText("正在执行：读取文件 · example.ts")).toBeInTheDocument();
+  });
+
+  it("keeps the live activity line after the agent has streamed some text", () => {
+    const views = buildTurnViews([], [], {
+      livePartial: { t1: "我先读取文件。" },
+      turns: [{ turn_id: "t1", agent_id: "wangye", provider_id: "antigravity", status: "started", attempts: [], message_ids: [] }],
+      toolEvents: [{ ...activity, phase: "started" }],
+    });
+    render(<TurnTimeline turns={views} />);
+    expect(screen.getByText("我先读取文件。")).toBeInTheDocument();
+    expect(screen.getByText("正在执行：读取文件 · example.ts")).toBeInTheDocument();
+  });
+
+  it("moves native activity of a finished reply into the thought block tool list", async () => {
+    const reply: ThreadEvent = { id: "r1", mission_id: "m1", turn_id: "t1", agent_id: "wangye", role: "agent", event_type: "message", content: "已读完", created_at: "2026-10-17T15:35:00Z" };
+    render(<TurnTimeline turns={buildTurnViews([reply], [], { toolEvents: [activity] })} />);
+    expect(screen.queryByText(/最近活动/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "含工具 · 1" }));
+    expect(screen.getByText("读取文件 · example.ts")).toBeInTheDocument();
   });
 });

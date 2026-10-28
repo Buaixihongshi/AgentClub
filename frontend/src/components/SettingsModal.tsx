@@ -1,13 +1,13 @@
-import { useState, useMemo, useEffect } from "react";
+import { Fragment, useState, useMemo, useEffect } from "react";
 import {
   Activity,
   AlertTriangle,
   Brain,
+  ChevronDown,
   KeyRound,
   Plus,
   RefreshCw,
   RotateCcw,
-  ShieldCheck,
   SlidersHorizontal,
   Trash2,
   UsersRound,
@@ -37,12 +37,14 @@ const INTERNAL_PROVIDERS = new Set(["fake"]);
 const RETIRED_PROVIDERS = new Set(["gemini"]);
 
 const RUNTIME_LABELS: Record<string, string> = {
-  use_fake_cli: "使用演示模式",
+  use_fake_cli: "演示模式（离线，不调用模型）",
   max_turns: "最大 Turn 数",
   max_a2a_invocations: "最大 A2A 调用数",
   cli_timeout: "执行窗口（秒，有工具返回可续时）",
   a2a_idle_timeout: "A2A 无进展超时（秒，0=关闭）",
 };
+
+const MANUAL_MODEL = "__manual__";
 
 interface AgentDraft {
   providerModels?: Record<string, string>;
@@ -53,10 +55,6 @@ interface AgentDraft {
 }
 
 type SettingsSectionId = "team" | "runtime" | "observability" | "memory";
-
-type SelectedTarget =
-  | { type: "agent"; id: string }
-  | { type: "connection"; id: string };
 
 interface Props {
   view: {
@@ -90,17 +88,20 @@ export function SettingsModal({
   const [connectionDrafts, setConnectionDrafts] = useState<Record<string, HubConnectionPatch>>({});
   const [catalogs, setCatalogs] = useState<Record<string, ConnectionCatalogView>>({});
   const [catalogLoading, setCatalogLoading] = useState<Record<string, boolean>>({});
-  const [selectedVendorFilter, setSelectedVendorFilter] = useState<Record<string, string>>({});
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [manualModelInputMode, setManualModelInputMode] = useState<Record<string, boolean>>({});
   const [copiedCommand, setCopiedCommand] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("team");
 
   const agentRows = view.agents ?? [];
 
-  // Base connections: from view.connections if present, or synthesized from view.providers
+  // Base connections: from view.connections if present, or synthesized from view.providers.
+  // The offline demo provider is a test fixture, not a connection the user manages.
   const baseConnections: HubConnectionView[] = useMemo(() => {
     if (view.connections && view.connections.length > 0) {
-      return view.connections;
+      return view.connections.filter(
+        (c) => !INTERNAL_PROVIDERS.has(c.id) && !RETIRED_PROVIDERS.has(c.id),
+      );
     }
     return view.providers
       .filter((p) => !INTERNAL_PROVIDERS.has(p.id) && !RETIRED_PROVIDERS.has(p.id))
@@ -170,12 +171,26 @@ export function SettingsModal({
     return list;
   }, [baseConnections, connectionDrafts, providerDraft]);
 
-  const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(() => {
-    if (agentRows.length > 0) {
-      return { type: "agent", id: agentRows[0].id };
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>(
+    () => baseConnections[0]?.id ?? "",
+  );
+
+  // Cached catalogs only (no network probe), so API connections can offer a model list per role.
+  useEffect(() => {
+    let cancelled = false;
+    for (const connection of baseConnections) {
+      if (connection.kind !== "api") continue;
+      fetchConnectionModels(connection.id)
+        .then((res) => {
+          if (cancelled || !res.models?.length) return;
+          setCatalogs((prev) => (prev[connection.id] ? prev : { ...prev, [connection.id]: res }));
+        })
+        .catch(() => {});
     }
-    return { type: "connection", id: baseConnections[0]?.id || "codex" };
-  });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseConnections]);
 
   const enabledProviders = useMemo(() => {
     const map: Record<string, boolean> = {};
@@ -211,7 +226,7 @@ export function SettingsModal({
   );
 
   const providerDisplayName = (provider: { id: string; label?: string; name?: string }) => {
-    if (provider.id === "fake") return "演示模式（内置）";
+    if (provider.id === "fake") return "演示模式（离线）";
     return provider.name || provider.label || provider.id;
   };
 
@@ -490,10 +505,13 @@ export function SettingsModal({
   function routeAllAgentsTo(providerId: string) {
     const next: Record<string, AgentDraft> = {};
     for (const agent of agentRows) {
+      const { fallbacks, fallbackContextApproved } = effectiveAgent(agent);
+      // Keep each role's real fallbacks; never add the offline demo provider as a silent fallback.
+      const kept = fallbacks.filter((id) => id !== providerId && !INTERNAL_PROVIDERS.has(id));
       next[agent.id] = {
         defaultProvider: providerId,
-        fallbacks: providerId === "fake" ? [] : ["fake"],
-        fallbackContextApproved: false,
+        fallbacks: kept,
+        fallbackContextApproved: sameStringList(kept, fallbacks) && fallbackContextApproved,
         clear: false,
       };
     }
@@ -534,7 +552,7 @@ export function SettingsModal({
         api_key: "",
       },
     }));
-    setSelectedTarget({ type: "connection", id: newId });
+    setSelectedConnectionId(newId);
   }
 
   function handleDeleteConnection(id: string) {
@@ -543,9 +561,7 @@ export function SettingsModal({
         ...prev,
         [id]: { ...(prev[id] ?? {}), delete: true },
       }));
-      if (agentRows.length > 0) {
-        setSelectedTarget({ type: "agent", id: agentRows[0].id });
-      }
+      setSelectedConnectionId(baseConnections.find((c) => c.id !== id)?.id ?? "");
     }
   }
 
@@ -592,16 +608,119 @@ export function SettingsModal({
     (p) => !INTERNAL_PROVIDERS.has(p.id) && enabledProviders[p.id],
   );
 
-  // Active selected entities
-  const selectedAgent =
-    selectedTarget.type === "agent"
-      ? agentRows.find((a) => a.id === selectedTarget.id) || agentRows[0]
-      : null;
-
   const selectedConnection =
-    selectedTarget.type === "connection"
-      ? allConnections.find((c) => c.id === selectedTarget.id && !c.isDeleted)
-      : null;
+    allConnections.find((c) => c.id === selectedConnectionId && !c.isDeleted) ?? null;
+
+  function routeName(id: string): string {
+    const connection = allConnections.find((c) => c.id === id);
+    if (connection) return connection.name;
+    const provider = view.providers.find((p) => p.id === id);
+    return provider ? providerDisplayName(provider) : id;
+  }
+
+  /** Connections a role can route to; the demo provider is listed only while a role still uses it. */
+  function routeOptionsFor(inUse: string[]): Array<{ id: string; label: string }> {
+    const options: Array<{ id: string; label: string }> = [];
+    const seen = new Set<string>();
+    for (const c of allConnections) {
+      if (c.isDeleted) continue;
+      options.push({ id: c.id, label: `${c.name}（${c.kind === "api" ? "API" : "CLI"}）` });
+      seen.add(c.id);
+    }
+    for (const p of routeProviders) {
+      if (seen.has(p.id) || (INTERNAL_PROVIDERS.has(p.id) && !inUse.includes(p.id))) continue;
+      options.push({ id: p.id, label: providerDisplayName(p) });
+      seen.add(p.id);
+    }
+    for (const id of inUse) {
+      if (!seen.has(id)) {
+        options.push({ id, label: id });
+        seen.add(id);
+      }
+    }
+    return options;
+  }
+
+  function agentModels(agent: HubSettingsAgentView): Record<string, string> {
+    const draft = agentDraft[agent.id];
+    return draft?.clear
+      ? agent.base_provider_models ?? {}
+      : draft?.providerModels ?? agent.provider_models?.value ?? {};
+  }
+
+  function setAgentModel(agent: HubSettingsAgentView, providerId: string, raw: string) {
+    const next = { ...agentModels(agent) };
+    const model = raw.trim();
+    if (model) next[providerId] = model;
+    else delete next[providerId];
+    setAgentDraft((prev) => ({
+      ...prev,
+      [agent.id]: { ...(prev[agent.id] ?? {}), providerModels: next, clear: false },
+    }));
+  }
+
+  function renderModelField(
+    agent: HubSettingsAgentView,
+    providerId: string,
+    models: Record<string, string>,
+  ) {
+    const connection = allConnections.find((c) => c.id === providerId);
+    const isCli = (connection?.kind ?? "cli") === "cli";
+    const value = models[providerId] ?? "";
+    const label = `${agent.display_name} ${providerId} 模型`;
+    const missing = !isCli && !value.trim();
+    const manualKey = `${agent.id}:${providerId}`;
+    const catalogModels = catalogs[providerId]?.models ?? [];
+
+    if (catalogModels.length > 0 && !manualModelInputMode[manualKey]) {
+      const groups = new Map<string, typeof catalogModels>();
+      for (const model of catalogModels) {
+        const vendor = model.vendor || "其他";
+        groups.set(vendor, [...(groups.get(vendor) ?? []), model]);
+      }
+      const known = catalogModels.some((model) => model.id === value);
+      return (
+        <select
+          className={`custom-select${missing ? " is-invalid" : ""}`}
+          aria-label={label}
+          aria-invalid={missing || undefined}
+          value={value}
+          onChange={(e) => {
+            if (e.target.value === MANUAL_MODEL) {
+              setManualModelInputMode((prev) => ({ ...prev, [manualKey]: true }));
+              return;
+            }
+            setAgentModel(agent, providerId, e.target.value);
+          }}
+        >
+          <option value="">{isCli ? "沿用 CLI 默认" : "请选择模型"}</option>
+          {value && !known && <option value={value}>{value}</option>}
+          {Array.from(groups, ([vendor, items]) => (
+            <optgroup key={vendor} label={vendor}>
+              {items.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label === model.id ? model.id : `${model.label}（${model.id}）`}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+          <option value={MANUAL_MODEL}>手动输入…</option>
+        </select>
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        className={`custom-input${missing ? " is-invalid" : ""}`}
+        aria-label={label}
+        aria-invalid={missing || undefined}
+        value={value}
+        placeholder={isCli ? "沿用 CLI 默认" : "必填：Model ID"}
+        onChange={(e) => setAgentModel(agent, providerId, e.target.value)}
+      />
+    );
+  }
 
   return (
     <div className="settings-modal-backdrop" onClick={handleAttemptClose}>
@@ -665,1058 +784,733 @@ export function SettingsModal({
           <div className="settings-panel">
             <div className="settings-modal-body">
               {activeSection === "team" ? (
-                <div className="workbench-split">
-                  {/* 左侧连接池与伙伴导航 */}
-                  <aside className="workbench-sidebar">
-                    {/* 连接管理区 */}
-                    <div className="workbench-sidebar-section">
-                      <div className="workbench-sidebar-heading">
-                        <h3 id="settings-providers-title">CLI 接入</h3>
-                        <div className="workbench-sidebar-actions">
-                          <button
-                            type="button"
-                            className="settings-refresh-btn-sm"
-                            onClick={onRefreshProviders ?? providerStatus?.refresh}
-                            disabled={providerStatus?.loading}
-                            title="重新检测 CLI"
-                          >
-                            <RefreshCw
-                              size={12}
-                              className={providerStatus?.loading ? "animate-spin" : ""}
-                            />
-                            <span>{providerStatus?.loading ? "检测中" : "检测"}</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-text-action"
-                            data-testid="add-connection-btn"
-                            onClick={handleCreateApiConnection}
-                          >
-                            <Plus size={12} />
-                            <span>新增 API</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="workbench-conn-list">
-                        {allConnections
-                          .filter((c) => !c.isDeleted)
-                          .map((c) => {
-                            const isCli = c.kind === "cli";
-                            const lifecycle = lifecycleFor({ id: c.id, label: c.name });
-                            const isSelected =
-                              selectedTarget.type === "connection" &&
-                              selectedTarget.id === c.id;
-                            const isEnabled = enabledProviders[c.id] ?? c.enabled;
-                            const diagnostic = lifecycle.diagnostic;
-                            const setup = lifecycle.setup as OnboardingProviderStatus | undefined;
-                            const verified = lifecycle.tone === "ready";
-                            const available = Boolean(diagnostic?.available);
-
-                            return (
-                              <article
-                                key={c.id}
-                                className={`conn-list-item ${isSelected ? "is-active" : ""} ${
-                                  !isEnabled ? "is-disabled" : ""
-                                }`}
-                                data-testid={`provider-card-${c.id}`}
-                                onClick={() =>
-                                  setSelectedTarget({ type: "connection", id: c.id })
-                                }
-                              >
-                                <div className="conn-item-main">
-                                  <div className="conn-item-header">
-                                    <span
-                                      className={`status-dot dot-${
-                                        isCli ? lifecycle.tone : c.has_key ? "ready" : "warning"
-                                      }`}
-                                    />
-                                    <strong>{c.name}</strong>
-                                    <span className={`kind-tag ${c.kind}`}>
-                                      {c.kind.toUpperCase()}
-                                    </span>
-                                  </div>
-                                  <div className="conn-item-sub">
-                                    {isCli ? (
-                                      <span
-                                        className={`settings-provider-lifecycle is-${lifecycle.tone}`}
-                                      >
-                                        {lifecycle.label}
-                                      </span>
-                                    ) : (
-                                      <span className="conn-sub-url">
-                                        {c.base_url || "未设置 Base URL"} ·{" "}
-                                        {c.has_key ? "已配凭据" : "未配凭据"}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div
-                                  className="conn-item-controls"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {isCli && !available && !verified ? (
-                                    setup?.install_command ? (
-                                      <button
-                                        type="button"
-                                        className="btn-tiny"
-                                        onClick={() =>
-                                          copyCommand(`${c.id}:install`, setup.install_command)
-                                        }
-                                      >
-                                        {copiedCommand === `${c.id}:install`
-                                          ? "已复制"
-                                          : "安装命令"}
-                                      </button>
-                                    ) : null
-                                  ) : isCli && !verified && onVerifyProvider ? (
-                                    <button
-                                      type="button"
-                                      className="settings-provider-verify btn-tiny"
-                                      onClick={() => onVerifyProvider(c.id)}
-                                    >
-                                      验证真实对话
-                                    </button>
-                                  ) : null}
-
-                                  <button
-                                    type="button"
-                                    role="switch"
-                                    aria-label={`启用 ${c.name}`}
-                                    aria-checked={isEnabled}
-                                    className={"settings-toggle" + (isEnabled ? " on" : "")}
-                                    data-testid={"toggle-" + c.id}
-                                    disabled={
-                                      isCli &&
-                                      Boolean(providerStatus) &&
-                                      !available &&
-                                      !verified &&
-                                      !isEnabled
-                                    }
-                                    onClick={() => toggleProvider(c.id)}
-                                  >
-                                    {isEnabled ? "ON" : "OFF"}
-                                  </button>
-                                </div>
-                              </article>
-                            );
-                          })}
-                      </div>
-
-                      {warningProviders.length > 0 && (
-                        <p className="settings-cost-warning">
-                          启用真实 provider 将向{" "}
-                          {warningProviders.map((p) => p.label).join("、")} 发送真实请求并产生费用
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Agent 导航区 */}
-                    <div className="workbench-sidebar-section">
-                      <div className="workbench-sidebar-heading">
+                <div className="team-settings">
+                  <section className="settings-section team-roles" aria-labelledby="settings-team-title">
+                    <div className="settings-section-heading">
+                      <div>
                         <h3 id="settings-team-title">团队配置</h3>
+                        <p className="settings-section-hint">
+                          为每位角色指定主用连接和模型；主用不可用时按备用连接顺序回退。
+                        </p>
                       </div>
-
-                      <div className="team-settings-quick-action">
-                        <div>
-                          <strong>快速配置</strong>
-                          <p>三位角色统一使用 Codex</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="button-secondary"
-                          data-testid="team-use-codex"
-                          disabled={
-                            !enabledProviders.codex ||
-                            !canRouteToProvider("codex") ||
-                            agentRows.length === 0
-                          }
-                          onClick={() => routeAllAgentsTo("codex")}
-                        >
-                          {enabledProviders.codex ? "三位角色使用 Codex" : "Codex 尚未启用"}
-                        </button>
-                      </div>
-
-                      <div className="workbench-agent-list">
-                        {agentRows.map((agent) => {
-                          const { defaultProvider, fallbacks, isUserOverride } =
-                            effectiveAgent(agent);
-                          const isSelected =
-                            selectedTarget.type === "agent" &&
-                            selectedTarget.id === agent.id;
-                          const primaryConn = allConnections.find(
-                            (c) => c.id === defaultProvider,
-                          );
-
-                          return (
-                            <div
-                              key={agent.id}
-                              className={`agent-nav-item ${isSelected ? "is-active" : ""}`}
-                              onClick={() => setSelectedTarget({ type: "agent", id: agent.id })}
-                            >
-                              <div className={`agent-nav-avatar avatar-${agent.id}`}>
-                                {agent.display_name.slice(0, 1)}
-                              </div>
-                              <div className="agent-nav-info">
-                                <div className="agent-nav-name">
-                                  <span>{agent.display_name}</span>
-                                  <span className="settings-source-badge">
-                                    {sourceLabel(isUserOverride ? "user" : "committed")}
-                                  </span>
-                                </div>
-                                <div className="agent-nav-sub">
-                                  主用: {primaryConn?.name || defaultProvider} / 备用:{" "}
-                                  {fallbacks.join(", ") || "无"}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </aside>
-
-                  {/* 右侧装配与安全审计详情 */}
-                  <main className="workbench-detail">
-                    {selectedTarget.type === "agent" && selectedAgent ? (
-                      <div
-                        className="agent-workbench-panel"
-                        data-testid={"agent-row-" + selectedAgent.id}
+                      <button
+                        type="button"
+                        className="button-secondary team-apply-all"
+                        data-testid="team-use-codex"
+                        disabled={
+                          !enabledProviders.codex ||
+                          !canRouteToProvider("codex") ||
+                          agentRows.length === 0
+                        }
+                        onClick={() => routeAllAgentsTo("codex")}
                       >
-                        {(() => {
-                          const agent = selectedAgent;
+                        {enabledProviders.codex ? "全部使用 Codex" : "Codex 尚未启用"}
+                      </button>
+                    </div>
+
+                    <table className="role-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">角色</th>
+                          <th scope="col">主用连接</th>
+                          <th scope="col">模型</th>
+                          <th scope="col">备用连接</th>
+                          <th scope="col">
+                            <span className="sr-only">操作</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agentRows.map((agent) => {
                           const {
                             defaultProvider,
                             fallbacks,
                             fallbackContextApproved,
                             isUserOverride,
                           } = effectiveAgent(agent);
-                          const primaryConn = allConnections.find(
-                            (c) => c.id === defaultProvider,
-                          );
-                          const isPrimaryCli = (primaryConn?.kind ?? "cli") === "cli";
-                          const draft = agentDraft[agent.id];
-                          const models = draft?.clear
-                            ? agent.base_provider_models ?? {}
-                            : draft?.providerModels ?? agent.provider_models?.value ?? {};
-
-                          const primaryModel = models[defaultProvider] ?? "";
-                          const isApiMissingModel = !isPrimaryCli && !primaryModel.trim();
-                          const primaryCatalog = catalogs[defaultProvider];
+                          const models = agentModels(agent);
+                          const options = routeOptionsFor([defaultProvider, ...fallbacks]);
+                          const expanded = expandedAgentId === agent.id;
+                          const detailId = `agent-fallback-detail-${agent.id}`;
 
                           return (
-                            <>
-                              <div className="detail-header">
-                                <div className="detail-header-title">
-                                  <div className={`avatar-large avatar-${agent.id}`}>
-                                    {agent.display_name.slice(0, 1)}
-                                  </div>
-                                  <div>
-                                    <div className="detail-title-row">
-                                      <h3>{agent.display_name} · 调度参数与网络出站装配台</h3>
-                                      <span className="settings-source-badge">
-                                        {sourceLabel(isUserOverride ? "user" : "committed")}
-                                      </span>
-                                      {isUserOverride && (
-                                        <button
-                                          type="button"
-                                          className="settings-agent-reset"
-                                          data-testid={"agent-reset-" + agent.id}
-                                          onClick={() => resetAgent(agent.id)}
-                                        >
-                                          重置
-                                        </button>
-                                      )}
-                                    </div>
-                                    <p className="detail-sub">
-                                      {isPrimaryCli
-                                        ? "主用沙箱执行，文件与终端工具就绪"
-                                        : "主用接入自定义 API，提供纯文本对话与讨论"}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="detail-header-badges">
-                                  {isPrimaryCli ? (
-                                    <span className="ability-badge cli">
-                                      🛠️ 当前主用具备 CLI 执行权限
-                                    </span>
-                                  ) : (
-                                    <span className="ability-badge api">
-                                      💬 当前主用为仅纯文本 API
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {allConnections.map((connection) => (
-                                <datalist key={connection.id} id={`connection-models-${connection.id}`}>
-                                  {(catalogs[connection.id]?.models ?? []).map((model) => (
-                                    <option key={model.id} value={model.id}>{model.label}</option>
-                                  ))}
-                                </datalist>
-                              ))}
-
-                              <div className="workbench-grid-2col">
-                                {/* PRIMARY · 主用执行链路 */}
-                                <div className="workbench-card primary-card">
-                                  <div className="card-heading primary-heading">
-                                    <span>PRIMARY · 主用执行链路</span>
-                                    <span className="card-badge">主链路</span>
-                                  </div>
-
-                                  <div className="form-group">
-                                    <label className="form-label">指定主用连接</label>
-                                    <select
-                                      className="custom-select"
-                                      data-testid={"agent-default-" + agent.id}
-                                      value={defaultProvider}
-                                      onChange={(e) => {
-                                        setAgentDefault(agent.id, e.target.value);
-                                      }}
+                            <Fragment key={agent.id}>
+                              <tr
+                                className={expanded ? "is-expanded" : undefined}
+                                data-testid={"agent-row-" + agent.id}
+                              >
+                                <th scope="row">
+                                  <div className="role-identity">
+                                    <span
+                                      className={`role-avatar avatar-${agent.id}`}
+                                      aria-hidden="true"
                                     >
-                                      {allConnections
-                                        .filter((c) => !c.isDeleted)
-                                        .map((c) => (
-                                          <option
-                                            key={c.id}
-                                            value={c.id}
-                                            disabled={!canRouteToProvider(c.id)}
-                                          >
-                                            {c.name} ({c.kind.toUpperCase()})
-                                          </option>
-                                        ))}
-                                      {routeProviders
-                                        .filter((p) => !allConnections.some((c) => c.id === p.id))
-                                        .map((p) => (
-                                          <option
-                                            key={p.id}
-                                            value={p.id}
-                                            disabled={!canRouteToProvider(p.id)}
-                                          >
-                                            {providerDisplayName(p)}
-                                          </option>
-                                        ))}
-                                    </select>
-                                  </div>
-
-                                  <div className="form-group">
-                                    <div className="form-label-row">
-                                      <label className="form-label">
-                                        指定模型 (Model ID){" "}
-                                        {isPrimaryCli ? (
-                                          <span className="desc-tag">可选，留空沿用 CLI 默认</span>
-                                        ) : (
-                                          <span className="desc-tag required">必填</span>
-                                        )}
-                                      </label>
-                                      {primaryCatalog?.models && primaryCatalog.models.length > 0 && (
-                                        <button
-                                          type="button"
-                                          className="btn-text-action"
-                                          onClick={() =>
-                                            setManualModelInputMode((prev) => ({
-                                              ...prev,
-                                              [defaultProvider]: !prev[defaultProvider],
-                                            }))
-                                          }
-                                        >
-                                          {manualModelInputMode[defaultProvider]
-                                            ? "切换为目录选择"
-                                            : "手动输入"}
-                                        </button>
-                                      )}
-                                    </div>
-
-                                    {/* 动态目录与模型选择 */}
-                                    {primaryCatalog?.models &&
-                                    primaryCatalog.models.length > 0 &&
-                                    !manualModelInputMode[defaultProvider] ? (
-                                      <div className="catalog-model-select">
-                                        {/* 厂商快速筛选 Chip */}
-                                        <div className="vendor-chips">
-                                          {(() => {
-                                            const vendors = Array.from(
-                                              new Set(
-                                                primaryCatalog.models
-                                                  .map((m) => m.vendor || "未分类")
-                                                  .filter(Boolean),
-                                              ),
-                                            );
-                                            const curVendor =
-                                              selectedVendorFilter[defaultProvider] || "all";
-                                            return (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  className={`chip ${
-                                                    curVendor === "all" ? "active" : ""
-                                                  }`}
-                                                  onClick={() =>
-                                                    setSelectedVendorFilter((prev) => ({
-                                                      ...prev,
-                                                      [defaultProvider]: "all",
-                                                    }))
-                                                  }
-                                                >
-                                                  全部
-                                                </button>
-                                                {vendors.map((v) => (
-                                                  <button
-                                                    key={v}
-                                                    type="button"
-                                                    className={`chip ${
-                                                      curVendor === v ? "active" : ""
-                                                    }`}
-                                                    onClick={() =>
-                                                      setSelectedVendorFilter((prev) => ({
-                                                        ...prev,
-                                                        [defaultProvider]: v,
-                                                      }))
-                                                    }
-                                                  >
-                                                    {v}
-                                                  </button>
-                                                ))}
-                                              </>
-                                            );
-                                          })()}
-                                        </div>
-
-                                        <select
-                                          className="custom-select"
-                                          aria-label={`${agent.display_name} ${defaultProvider} 模型`}
-                                          value={primaryModel}
-                                          onChange={(e) => {
-                                            const next = { ...models };
-                                            const modelVal = e.target.value.trim();
-                                            if (modelVal) next[defaultProvider] = modelVal;
-                                            else delete next[defaultProvider];
-                                            setAgentDraft((prev) => ({
-                                              ...prev,
-                                              [agent.id]: {
-                                                ...(prev[agent.id] ?? {}),
-                                                providerModels: next,
-                                                clear: false,
-                                              },
-                                            }));
-                                          }}
-                                        >
-                                          <option value="">
-                                            {isPrimaryCli
-                                              ? "留空使用 CLI 默认模型"
-                                              : "-- 请选择模型 (必填) --"}
-                                          </option>
-                                          {primaryCatalog.models
-                                            .filter((m) => {
-                                              const vf =
-                                                selectedVendorFilter[defaultProvider] || "all";
-                                              if (vf === "all") return true;
-                                              const mVendor = m.vendor || "未分类";
-                                              return mVendor === vf;
-                                            })
-                                            .map((m) => (
-                                              <option key={m.id} value={m.id}>
-                                                {m.label} ({m.id})
-                                              </option>
-                                            ))}
-                                        </select>
-                                      </div>
-                                    ) : (
-                                      <input
-                                        type="text"
-                                        className={`custom-input ${
-                                          isApiMissingModel ? "is-invalid" : ""
-                                        }`}
-                                        aria-label={`${agent.display_name} ${defaultProvider} 模型`}
-                                        list={`connection-models-${defaultProvider}`}
-                                        value={primaryModel}
-                                        placeholder={
-                                          isPrimaryCli
-                                            ? "留空使用 CLI 默认模型"
-                                            : "输入接入服务提供的 Model ID（必填）"
-                                        }
-                                        onChange={(e) => {
-                                          const next = { ...models };
-                                          const modelVal = e.target.value.trim();
-                                          if (modelVal) next[defaultProvider] = modelVal;
-                                          else delete next[defaultProvider];
-                                          setAgentDraft((prev) => ({
-                                            ...prev,
-                                            [agent.id]: {
-                                              ...(prev[agent.id] ?? {}),
-                                              providerModels: next,
-                                              clear: false,
-                                            },
-                                          }));
-                                        }}
-                                      />
-                                    )}
-
-                                    {isApiMissingModel && (
-                                      <p className="input-error-msg">
-                                        ⚠️ 自定义 API 连接首期必须明确指定模型 ID
-                                      </p>
+                                      {agent.display_name.slice(0, 1)}
+                                    </span>
+                                    <span className="role-name">{agent.display_name}</span>
+                                    {isUserOverride && (
+                                      <span className="settings-source-badge">已修改</span>
                                     )}
                                   </div>
+                                </th>
+                                <td>
+                                  <select
+                                    className="custom-select"
+                                    aria-label={`${agent.display_name} 主用连接`}
+                                    data-testid={"agent-default-" + agent.id}
+                                    value={defaultProvider}
+                                    onChange={(e) => setAgentDefault(agent.id, e.target.value)}
+                                  >
+                                    {options.map((option) => (
+                                      <option
+                                        key={option.id}
+                                        value={option.id}
+                                        disabled={!canRouteToProvider(option.id)}
+                                      >
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td>{renderModelField(agent, defaultProvider, models)}</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="role-fallback-toggle"
+                                    aria-expanded={expanded}
+                                    aria-controls={detailId}
+                                    aria-label={`${agent.display_name} 备用连接：${
+                                      fallbacks.map(routeName).join("、") || "无"
+                                    }`}
+                                    onClick={() =>
+                                      setExpandedAgentId(expanded ? null : agent.id)
+                                    }
+                                  >
+                                    <span>{fallbacks.map(routeName).join("、") || "无"}</span>
+                                    <ChevronDown size={14} aria-hidden="true" />
+                                  </button>
+                                </td>
+                                <td className="role-actions">
+                                  {isUserOverride && (
+                                    <button
+                                      type="button"
+                                      className="settings-agent-reset"
+                                      data-testid={"agent-reset-" + agent.id}
+                                      onClick={() => resetAgent(agent.id)}
+                                    >
+                                      重置
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                              {expanded && (
+                                <tr className="role-detail-row" id={detailId}>
+                                  <td colSpan={5}>
+                                    <fieldset className="role-fallbacks">
+                                      <legend>{agent.display_name} 的备用连接</legend>
+                                      <div className="fallback-options-grid">
+                                        {options
+                                          .filter((option) => option.id !== defaultProvider)
+                                          .map((option) => (
+                                            <label
+                                              key={option.id}
+                                              className="fallback-checkbox-label"
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                data-testid={`agent-fallback-${agent.id}-${option.id}`}
+                                                checked={fallbacks.includes(option.id)}
+                                                disabled={!canRouteToProvider(option.id)}
+                                                onChange={() => toggleAgentFallback(agent, option.id)}
+                                              />
+                                              <span>{option.label}</span>
+                                            </label>
+                                          ))}
+                                      </div>
+                                    </fieldset>
 
-                                  <div className="card-note">
-                                    {isPrimaryCli ? (
-                                      <span className="text-ok">
-                                        ✓ 具备读写代码、执行测试与终端命令能力
-                                      </span>
-                                    ) : (
-                                      <span className="text-warn">
-                                        ⚠️ 仅支持纯文本对话与讨论，不自动提供本地执行器
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                {/* FALLBACK · 容灾备用链路 */}
-                                <div className="workbench-card fallback-card">
-                                  <div className="card-heading fallback-heading">
-                                    <span>FALLBACK · 容灾备用链路</span>
-                                    <span className="card-badge">故障降级</span>
-                                  </div>
-
-                                  <div className="form-group">
-                                    <label className="form-label">
-                                      备用连接 (容灾回退目标)
-                                    </label>
-                                    <div className="fallback-options-grid">
-                                      {routeProviders
-                                        .filter((p) => p.id !== defaultProvider)
-                                        .map((p) => (
-                                          <label
-                                            key={p.id}
-                                            className="fallback-checkbox-label"
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              data-testid={`agent-fallback-${agent.id}-${p.id}`}
-                                              checked={fallbacks.includes(p.id)}
-                                              disabled={!canRouteToProvider(p.id)}
-                                              onChange={() =>
-                                                toggleAgentFallback(agent, p.id)
-                                              }
-                                            />
-                                            <span>{providerDisplayName(p)}</span>
-                                          </label>
+                                    {fallbacks.length > 0 && (
+                                      <div className="role-fallback-models">
+                                        {fallbacks.map((fbId) => (
+                                          <div className="form-group" key={fbId}>
+                                            <span className="form-label">{routeName(fbId)} 模型</span>
+                                            {renderModelField(agent, fbId, models)}
+                                          </div>
                                         ))}
-                                    </div>
-                                  </div>
-
-                                  {/* 备用连接对应的模型输入 */}
-                                  {fallbacks.map((fbId) => {
-                                    const fbConn = allConnections.find((c) => c.id === fbId);
-                                    const fbName = fbConn?.name || fbId;
-                                    const fbModel = models[fbId] ?? "";
-                                    return (
-                                      <div className="form-group" key={fbId}>
-                                        <label className="form-label">
-                                          <span>{fbName} 备用模型</span>
-                                          <span className="desc-tag">
-                                            {fbConn?.kind === "api" ? "必填" : "可选"}
-                                          </span>
-                                        </label>
-                                        <input
-                                          type="text"
-                                          className="custom-input"
-                                          aria-label={`${agent.display_name} ${fbId} 模型`}
-                                          list={`connection-models-${fbId}`}
-                                          value={fbModel}
-                                          placeholder={
-                                            fbConn?.kind === "api"
-                                              ? "输入备用 Model ID"
-                                              : "留空沿用 CLI 默认"
-                                          }
-                                          onChange={(e) => {
-                                            const next = { ...models };
-                                            const modelVal = e.target.value.trim();
-                                            if (modelVal) next[fbId] = modelVal;
-                                            else delete next[fbId];
-                                            setAgentDraft((prev) => ({
-                                              ...prev,
-                                              [agent.id]: {
-                                                ...(prev[agent.id] ?? {}),
-                                                providerModels: next,
-                                                clear: false,
-                                              },
-                                            }));
-                                          }}
-                                        />
                                       </div>
-                                    );
-                                  })}
-
-                                  {/* 数据出站流向与端点授权 */}
-                                  <div className="outbound-box">
-                                    <div className="outbound-flow">
-                                      <strong>📡 数据出站流向：</strong>
-                                      <div className="flow-text">
-                                        主用 [
-                                        <code>
-                                          {primaryConn?.base_url ||
-                                            primaryConn?.name ||
-                                            defaultProvider}
-                                        </code>
-                                        ] ➔ 备用出站 [
-                                        <code>{fallbacks.join(", ") || "未配置"}</code>]
-                                      </div>
-                                    </div>
+                                    )}
 
                                     <label className="fallback-approve-label">
                                       <input
                                         type="checkbox"
                                         data-testid={`agent-fallback-approve-${agent.id}`}
                                         checked={fallbackContextApproved}
-                                        onChange={() =>
-                                          toggleAgentFallbackContextApproval(agent.id)
-                                        }
+                                        onChange={() => toggleAgentFallbackContextApproval(agent.id)}
                                       />
-                                      <span>
-                                        授权已选显式备用端点接收当前任务上下文
-                                      </span>
+                                      <span>允许备用连接接收当前任务上下文</span>
                                     </label>
-                                    <div className="outbound-tip">
-                                      * 熔断切换同时是数据接收方切换；修改备用连接后必须重新授权。
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* 安全与出站审计面板 */}
-                              <div className="security-audit-box">
-                                <div className="audit-header">
-                                  <ShieldCheck size={16} className="text-ok" />
-                                  <strong>
-                                    宝儿姐安全规范审计通过 (P2 Security Verification)
-                                  </strong>
-                                </div>
-                                <div className="audit-items">
-                                  <div className="audit-item">
-                                    <span className="audit-label">出站 Base URL 规范:</span>
-                                    <code>HTTPS 强制 / 禁止 30x 跨域重定向 / 防 SSRF 白名单</code>
-                                  </div>
-                                  <div className="audit-item">
-                                    <span className="audit-label">凭据安全隔离:</span>
-                                    <code>
-                                      前端仅展示已配置状态 / 严禁掩码或明文回传 / 独立存储
-                                    </code>
-                                  </div>
-                                  <div className="audit-item">
-                                    <span className="audit-label">容灾防雪崩机制:</span>
-                                    <code>
-                                      401 鉴权失效禁切备用 / 流式已输出内容严禁静默重放
-                                    </code>
-                                  </div>
-                                </div>
-                              </div>
-                            </>
+                                    <p className="outbound-tip">
+                                      切换到备用连接时，任务上下文会发给备用方；修改备用连接后需要重新勾选。鉴权失败（401）不会切换到备用，已输出的内容不会被静默重放。
+                                    </p>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
                           );
-                        })()}
-                      </div>
-                    ) : selectedTarget.type === "connection" && selectedConnection ? (
-                      <div className="conn-workbench-panel">
-                        {(() => {
-                          const c = selectedConnection;
-                          const isCli = c.kind === "cli";
-                          const lifecycle = lifecycleFor({ id: c.id, label: c.name });
-                          const catalog = catalogs[c.id];
-                          const isLoadingCat = catalogLoading[c.id];
-                          const isNew = Boolean(c.isNew);
+                        })}
+                      </tbody>
+                    </table>
+                  </section>
 
-                          return (
-                            <>
-                              <div className="detail-header">
-                                <div className="detail-header-title">
-                                  <div>
-                                    <div className="detail-title-row">
-                                      <h3>{c.name} · 连接与凭据配置</h3>
+                  <section className="settings-section team-connections" aria-labelledby="settings-providers-title">
+                    <div className="settings-section-heading">
+                      <div>
+                        <h3 id="settings-providers-title">连接</h3>
+                        <p className="settings-section-hint">
+                          本机 CLI 与自定义 API。启用并验证后，才能分配给角色。
+                        </p>
+                      </div>
+                      <div className="workbench-sidebar-actions">
+                        <button
+                          type="button"
+                          className="settings-refresh-btn-sm"
+                          onClick={onRefreshProviders ?? providerStatus?.refresh}
+                          disabled={providerStatus?.loading}
+                          title="重新检测 CLI"
+                        >
+                          <RefreshCw
+                            size={12}
+                            className={providerStatus?.loading ? "animate-spin" : ""}
+                          />
+                          <span>{providerStatus?.loading ? "检测中" : "检测"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-text-action"
+                          data-testid="add-connection-btn"
+                          onClick={handleCreateApiConnection}
+                        >
+                          <Plus size={12} />
+                          <span>新增 API</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="workbench-split">
+                      <aside className="workbench-sidebar">
+                        <div className="workbench-conn-list">
+                          {allConnections
+                            .filter((c) => !c.isDeleted)
+                            .map((c) => {
+                              const isCli = c.kind === "cli";
+                              const lifecycle = lifecycleFor({ id: c.id, label: c.name });
+                              const isSelected = selectedConnectionId === c.id;
+                              const isEnabled = enabledProviders[c.id] ?? c.enabled;
+                              const diagnostic = lifecycle.diagnostic;
+                              const setup = lifecycle.setup as OnboardingProviderStatus | undefined;
+                              const verified = lifecycle.tone === "ready";
+                              const available = Boolean(diagnostic?.available);
+
+                              return (
+                                <article
+                                  key={c.id}
+                                  className={`conn-list-item ${isSelected ? "is-active" : ""} ${
+                                    !isEnabled ? "is-disabled" : ""
+                                  }`}
+                                  data-testid={`provider-card-${c.id}`}
+                                  onClick={() => setSelectedConnectionId(c.id)}
+                                >
+                                  <div className="conn-item-main">
+                                    <div className="conn-item-header">
+                                      <span
+                                        className={`status-dot dot-${
+                                          isCli ? lifecycle.tone : c.has_key ? "ready" : "warning"
+                                        }`}
+                                      />
+                                      <strong>{c.name}</strong>
                                       <span className={`kind-tag ${c.kind}`}>
                                         {c.kind.toUpperCase()}
                                       </span>
-                                      {c.kind === "api" && (
-                                        <button
-                                          type="button"
-                                          className="btn-danger-outline btn-sm"
-                                          onClick={() => handleDeleteConnection(c.id)}
+                                    </div>
+                                    <div className="conn-item-sub">
+                                      {isCli ? (
+                                        <span
+                                          className={`settings-provider-lifecycle is-${lifecycle.tone}`}
                                         >
-                                          <Trash2 size={13} />
-                                          <span>删除连接</span>
-                                        </button>
+                                          {lifecycle.label}
+                                        </span>
+                                      ) : (
+                                        <span className="conn-sub-url">
+                                          {c.base_url || "未设置 Base URL"} ·{" "}
+                                          {c.has_key ? "已配凭据" : "未配凭据"}
+                                        </span>
                                       )}
                                     </div>
-                                    <p className="detail-sub">
-                                      {isCli
-                                        ? "本地 CLI 接入服务，具备本地工具执行权限"
-                                        : "自定义远程 API 端点，支持 OpenAI 及 Anthropic 协议"}
-                                    </p>
                                   </div>
-                                </div>
 
-                                <div className="detail-header-badges">
-                                  {isCli ? (
-                                    <span className="ability-badge cli">
-                                      🛠️ 具备工具执行环境
-                                    </span>
-                                  ) : (
-                                    <span className="ability-badge api">
-                                      💬 仅纯文本对话与讨论
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* CLI 属性详情 */}
-                              {isCli ? (
-                                <div className="workbench-card">
-                                  <div className="card-heading">
-                                    <span>CLI 本地运行环境诊断</span>
-                                    <span
-                                      className={`settings-provider-lifecycle is-${lifecycle.tone}`}
-                                    >
-                                      {lifecycle.label}
-                                    </span>
-                                  </div>
-                                  <p className="settings-provider-detail">
-                                    {lifecycle.diagnostic?.version ||
-                                      lifecycle.diagnostic?.error ||
-                                      (lifecycle.tone === "ready"
-                                        ? "已通过 MCP 真实对话验证"
-                                        : "等待本机检测")}
-                                  </p>
-
-                                  <div className="settings-provider-actions">
-                                    {lifecycle.setup?.install_command ? (
+                                  <div
+                                    className="conn-item-controls"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {isCli && !available && !verified ? (
+                                      setup?.install_command ? (
+                                        <button
+                                          type="button"
+                                          className="btn-tiny"
+                                          onClick={() =>
+                                            copyCommand(`${c.id}:install`, setup.install_command)
+                                          }
+                                        >
+                                          {copiedCommand === `${c.id}:install`
+                                            ? "已复制"
+                                            : "安装命令"}
+                                        </button>
+                                      ) : null
+                                    ) : isCli && !verified && onVerifyProvider ? (
                                       <button
                                         type="button"
-                                        onClick={() =>
-                                          copyCommand(
-                                            `${c.id}:install`,
-                                            lifecycle.setup?.install_command,
-                                          )
-                                        }
-                                      >
-                                        {copiedCommand === `${c.id}:install`
-                                          ? "安装命令已复制"
-                                          : "复制安装命令"}
-                                      </button>
-                                    ) : null}
-                                    {lifecycle.setup?.install_url ? (
-                                      <a
-                                        href={lifecycle.setup.install_url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                      >
-                                        官方说明
-                                      </a>
-                                    ) : null}
-                                    {lifecycle.setup?.auth_command ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          copyCommand(
-                                            `${c.id}:auth`,
-                                            lifecycle.setup?.auth_command,
-                                          )
-                                        }
-                                      >
-                                        {copiedCommand === `${c.id}:auth`
-                                          ? "登录命令已复制"
-                                          : `登录：${lifecycle.setup.auth_command}`}
-                                      </button>
-                                    ) : null}
-                                    {onVerifyProvider && lifecycle.tone !== "ready" ? (
-                                      <button
-                                        type="button"
-                                        className="settings-provider-verify"
+                                        className="settings-provider-verify btn-tiny"
                                         onClick={() => onVerifyProvider(c.id)}
                                       >
                                         验证真实对话
                                       </button>
                                     ) : null}
-                                  </div>
-                                </div>
-                              ) : (
-                                /* API 属性表单 */
-                                <div className="workbench-card">
-                                  <div className="card-heading">
-                                    <span>API 端点与网络出站设置</span>
-                                  </div>
 
-                                  <div className="form-group">
-                                    <label className="form-label">连接别名</label>
-                                    <input
-                                      type="text"
-                                      className="custom-input"
-                                      value={c.name}
-                                      onChange={(e) =>
-                                        updateConnectionDraft(c.id, { name: e.target.value })
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-label={`启用 ${c.name}`}
+                                      aria-checked={isEnabled}
+                                      className={"settings-toggle" + (isEnabled ? " on" : "")}
+                                      data-testid={"toggle-" + c.id}
+                                      disabled={
+                                        isCli &&
+                                        Boolean(providerStatus) &&
+                                        !available &&
+                                        !verified &&
+                                        !isEnabled
                                       }
-                                    />
-                                  </div>
-
-                                  <div className="form-group">
-                                    <label className="form-label">协议类型</label>
-                                    <select
-                                      className="custom-select"
-                                      value={c.protocol || "openai_responses"}
-                                      onChange={(e) =>
-                                        updateConnectionDraft(c.id, {
-                                          protocol: e.target.value as HubConnectionProtocol,
-                                        })
-                                      }
+                                      onClick={() => toggleProvider(c.id)}
                                     >
-                                      <option value="openai_responses">
-                                        OpenAI - Responses 协议 (官方推荐)
-                                      </option>
-                                      <option value="openai_chat">
-                                        OpenAI - Chat Completions 协议 (兼容网关)
-                                      </option>
-                                      <option value="anthropic">
-                                        Anthropic - Messages 协议 (Claude)
-                                      </option>
-                                    </select>
+                                      {isEnabled ? "ON" : "OFF"}
+                                    </button>
                                   </div>
+                                </article>
+                              );
+                            })}
+                        </div>
+                        {warningProviders.length > 0 && (
+                          <p className="settings-cost-warning">
+                            启用真实 provider 将向{" "}
+                            {warningProviders.map((p) => p.label).join("、")} 发送真实请求并产生费用
+                          </p>
+                        )}
+                      </aside>
 
-                                  <div className="form-group">
-                                    <label className="form-label">
-                                      <span>Base URL</span>
-                                      <span className="desc-tag">
-                                        默认强制 HTTPS，支持内网白名单
-                                      </span>
-                                    </label>
-                                    <input
-                                      type="text"
-                                      className="custom-input"
-                                      value={c.base_url || ""}
-                                      placeholder="https://api.openai.com/v1"
-                                      onChange={(e) =>
-                                        updateConnectionDraft(c.id, {
-                                          base_url: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </div>
+                      <div className="workbench-detail">
+                        {selectedConnection ? (
+                          <div className="conn-workbench-panel">
+                            {(() => {
+                              const c = selectedConnection;
+                              const isCli = c.kind === "cli";
+                              const lifecycle = lifecycleFor({ id: c.id, label: c.name });
+                              const catalog = catalogs[c.id];
+                              const isLoadingCat = catalogLoading[c.id];
+                              const isNew = Boolean(c.isNew);
 
-                                  <div className="form-row">
-                                    <label className="checkbox-row">
-                                      <input
-                                        type="checkbox"
-                                        checked={c.allow_private}
-                                        onChange={(e) =>
-                                          updateConnectionDraft(c.id, {
-                                            allow_private: e.target.checked,
-                                          })
-                                        }
-                                      />
-                                      <span>允许内网/本地端点 (如 http://localhost 或私有网关)</span>
-                                    </label>
+                              return (
+                                <>
+                                  <div className="detail-header">
+                                    <div className="detail-header-title">
+                                      <div>
+                                        <div className="detail-title-row">
+                                          <h3>{c.name} · 连接与凭据配置</h3>
+                                          <span className={`kind-tag ${c.kind}`}>
+                                            {c.kind.toUpperCase()}
+                                          </span>
+                                          {c.kind === "api" && (
+                                            <button
+                                              type="button"
+                                              className="btn-danger-outline btn-sm"
+                                              onClick={() => handleDeleteConnection(c.id)}
+                                            >
+                                              <Trash2 size={13} />
+                                              <span>删除连接</span>
+                                            </button>
+                                          )}
+                                        </div>
+                                        <p className="detail-sub">
+                                          {isCli
+                                            ? "本地 CLI 接入服务，具备本地工具执行权限"
+                                            : "自定义远程 API 端点，支持 OpenAI 及 Anthropic 协议"}
+                                        </p>
+                                      </div>
+                                    </div>
 
-                                    <div className="timeout-input-group">
-                                      <label>超时时间 (秒):</label>
-                                      <input
-                                        type="number"
-                                        className="custom-input input-narrow"
-                                        min="1"
-                                        max="600"
-                                        value={c.timeout}
-                                        onChange={(e) =>
-                                          updateConnectionDraft(c.id, {
-                                            timeout: Number(e.target.value) || 60,
-                                          })
-                                        }
-                                      />
+                                    <div className="detail-header-badges">
+                                      {isCli ? (
+                                        <span className="ability-badge cli">
+                                          具备工具执行环境
+                                        </span>
+                                      ) : (
+                                        <span className="ability-badge api">
+                                          仅纯文本对话与讨论
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
-                                  {/* 密钥安全三态交互 */}
-                                  <div className="form-group key-form-group">
-                                    <label className="form-label">
-                                      <span>API 凭据密钥 (API Key)</span>
-                                      <span className="desc-tag">
-                                        前端无明文或掩码回传，独立加密存储
-                                      </span>
-                                    </label>
+                                  {/* CLI 属性详情 */}
+                                  {isCli ? (
+                                    <div className="workbench-card">
+                                      <div className="card-heading">
+                                        <span>CLI 本地运行环境诊断</span>
+                                        <span
+                                          className={`settings-provider-lifecycle is-${lifecycle.tone}`}
+                                        >
+                                          {lifecycle.label}
+                                        </span>
+                                      </div>
+                                      <p className="settings-provider-detail">
+                                        {lifecycle.diagnostic?.version ||
+                                          lifecycle.diagnostic?.error ||
+                                          (lifecycle.tone === "ready"
+                                            ? "已通过 MCP 真实对话验证"
+                                            : "等待本机检测")}
+                                      </p>
 
-                                    <div className="key-state-box">
-                                      {c.has_key ? (
-                                        <div className="key-state-row">
-                                          <div className="key-status-display">
-                                            {c.patch?.key_action === "delete" ? (
-                                              <span className="badge-danger">
-                                                凭据已标记删除 (保存后生效)
-                                              </span>
-                                            ) : c.patch?.key_action === "replace" ? (
-                                              <span className="badge-warning">
-                                                凭据将被新输入的密钥替换
-                                              </span>
-                                            ) : (
-                                              <span className="key-status-badge">
-                                                <KeyRound size={13} />
-                                                <span>已配置凭据 (后端安全存储，无明文回传)</span>
-                                              </span>
-                                            )}
-                                          </div>
+                                      <div className="settings-provider-actions">
+                                        {lifecycle.setup?.install_command ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              copyCommand(
+                                                `${c.id}:install`,
+                                                lifecycle.setup?.install_command,
+                                              )
+                                            }
+                                          >
+                                            {copiedCommand === `${c.id}:install`
+                                              ? "安装命令已复制"
+                                              : "复制安装命令"}
+                                          </button>
+                                        ) : null}
+                                        {lifecycle.setup?.install_url ? (
+                                          <a
+                                            href={lifecycle.setup.install_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                          >
+                                            官方说明
+                                          </a>
+                                        ) : null}
+                                        {lifecycle.setup?.auth_command ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              copyCommand(
+                                                `${c.id}:auth`,
+                                                lifecycle.setup?.auth_command,
+                                              )
+                                            }
+                                          >
+                                            {copiedCommand === `${c.id}:auth`
+                                              ? "登录命令已复制"
+                                              : `登录：${lifecycle.setup.auth_command}`}
+                                          </button>
+                                        ) : null}
+                                        {onVerifyProvider && lifecycle.tone !== "ready" ? (
+                                          <button
+                                            type="button"
+                                            className="settings-provider-verify"
+                                            onClick={() => onVerifyProvider(c.id)}
+                                          >
+                                            验证真实对话
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    /* API 属性表单 */
+                                    <div className="workbench-card">
+                                      <div className="card-heading">
+                                        <span>API 端点与网络出站设置</span>
+                                      </div>
 
-                                          <div className="key-action-buttons">
-                                            {c.patch?.key_action === "delete" ? (
-                                              <button
-                                                type="button"
-                                                className="btn-tiny"
-                                                onClick={() =>
-                                                  updateConnectionDraft(c.id, {
-                                                    key_action: "keep",
-                                                  })
-                                                }
-                                              >
-                                                撤销删除
-                                              </button>
-                                            ) : c.patch?.key_action === "replace" ? (
-                                              <button
-                                                type="button"
-                                                className="btn-tiny"
-                                                onClick={() =>
-                                                  updateConnectionDraft(c.id, {
-                                                    key_action: "keep",
-                                                    api_key: undefined,
-                                                  })
-                                                }
-                                              >
-                                                取消替换
-                                              </button>
-                                            ) : (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  className="btn-tiny"
-                                                  onClick={() =>
-                                                    updateConnectionDraft(c.id, {
-                                                      key_action: "replace",
-                                                    })
-                                                  }
-                                                >
-                                                  替换密钥
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  className="btn-tiny btn-danger"
-                                                  onClick={() =>
-                                                    updateConnectionDraft(c.id, {
-                                                      key_action: "delete",
-                                                    })
-                                                  }
-                                                >
-                                                  彻底删除
-                                                </button>
-                                              </>
-                                            )}
-                                          </div>
-                                        </div>
-                                      ) : null}
+                                      <div className="form-group">
+                                        <label className="form-label">连接别名</label>
+                                        <input
+                                          type="text"
+                                          className="custom-input"
+                                          value={c.name}
+                                          onChange={(e) =>
+                                            updateConnectionDraft(c.id, { name: e.target.value })
+                                          }
+                                        />
+                                      </div>
 
-                                      {(!c.has_key || c.patch?.key_action === "replace") && (
-                                        <div className="key-input-row">
+                                      <div className="form-group">
+                                        <label className="form-label">协议类型</label>
+                                        <select
+                                          className="custom-select"
+                                          value={c.protocol || "openai_responses"}
+                                          onChange={(e) =>
+                                            updateConnectionDraft(c.id, {
+                                              protocol: e.target.value as HubConnectionProtocol,
+                                            })
+                                          }
+                                        >
+                                          <option value="openai_responses">
+                                            OpenAI - Responses 协议 (官方推荐)
+                                          </option>
+                                          <option value="openai_chat">
+                                            OpenAI - Chat Completions 协议 (兼容网关)
+                                          </option>
+                                          <option value="anthropic">
+                                            Anthropic - Messages 协议 (Claude)
+                                          </option>
+                                        </select>
+                                      </div>
+
+                                      <div className="form-group">
+                                        <label className="form-label">
+                                          <span>Base URL</span>
+                                          <span className="desc-tag">
+                                            默认强制 HTTPS，支持内网白名单
+                                          </span>
+                                        </label>
+                                        <input
+                                          type="text"
+                                          className="custom-input"
+                                          value={c.base_url || ""}
+                                          placeholder="https://api.openai.com/v1"
+                                          onChange={(e) =>
+                                            updateConnectionDraft(c.id, {
+                                              base_url: e.target.value,
+                                            })
+                                          }
+                                        />
+                                      </div>
+
+                                      <div className="form-row">
+                                        <label className="checkbox-row">
                                           <input
-                                            type="password"
-                                            className="custom-input"
-                                            placeholder="在此输入 API Key (保存后加密提交，前端不留存)"
-                                            value={c.patch?.api_key || ""}
+                                            type="checkbox"
+                                            checked={c.allow_private}
                                             onChange={(e) =>
                                               updateConnectionDraft(c.id, {
-                                                key_action: "replace",
-                                                api_key: e.target.value,
+                                                allow_private: e.target.checked,
+                                              })
+                                            }
+                                          />
+                                          <span>允许内网/本地端点 (如 http://localhost 或私有网关)</span>
+                                        </label>
+
+                                        <div className="timeout-input-group">
+                                          <label>超时时间 (秒):</label>
+                                          <input
+                                            type="number"
+                                            className="custom-input input-narrow"
+                                            min="1"
+                                            max="600"
+                                            value={c.timeout}
+                                            onChange={(e) =>
+                                              updateConnectionDraft(c.id, {
+                                                timeout: Number(e.target.value) || 60,
                                               })
                                             }
                                           />
                                         </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
+                                      </div>
 
-                              {/* 动态模型目录 Card */}
-                              <div className="workbench-card">
-                                <div className="card-heading">
-                                  <span>动态模型目录探测 (Dynamic Catalog)</span>
-                                  <div className="catalog-status-actions">
-                                    {catalog?.status && (
-                                      <span
-                                        className={`catalog-status-badge status-${catalog.status}`}
-                                      >
-                                        {catalog.status === "ready"
-                                          ? "就绪"
-                                          : catalog.status === "stale"
-                                          ? "过期缓存"
-                                          : catalog.status === "error"
-                                          ? "探测失败"
-                                          : catalog.status}
-                                      </span>
+                                      {/* 密钥安全三态交互 */}
+                                      <div className="form-group key-form-group">
+                                        <label className="form-label">
+                                          <span>API 凭据密钥 (API Key)</span>
+                                          <span className="desc-tag">
+                                            前端无明文或掩码回传，独立加密存储
+                                          </span>
+                                        </label>
+
+                                        <div className="key-state-box">
+                                          {c.has_key ? (
+                                            <div className="key-state-row">
+                                              <div className="key-status-display">
+                                                {c.patch?.key_action === "delete" ? (
+                                                  <span className="badge-danger">
+                                                    凭据已标记删除 (保存后生效)
+                                                  </span>
+                                                ) : c.patch?.key_action === "replace" ? (
+                                                  <span className="badge-warning">
+                                                    凭据将被新输入的密钥替换
+                                                  </span>
+                                                ) : (
+                                                  <span className="key-status-badge">
+                                                    <KeyRound size={13} />
+                                                    <span>已配置凭据 (后端安全存储，无明文回传)</span>
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              <div className="key-action-buttons">
+                                                {c.patch?.key_action === "delete" ? (
+                                                  <button
+                                                    type="button"
+                                                    className="btn-tiny"
+                                                    onClick={() =>
+                                                      updateConnectionDraft(c.id, {
+                                                        key_action: "keep",
+                                                      })
+                                                    }
+                                                  >
+                                                    撤销删除
+                                                  </button>
+                                                ) : c.patch?.key_action === "replace" ? (
+                                                  <button
+                                                    type="button"
+                                                    className="btn-tiny"
+                                                    onClick={() =>
+                                                      updateConnectionDraft(c.id, {
+                                                        key_action: "keep",
+                                                        api_key: undefined,
+                                                      })
+                                                    }
+                                                  >
+                                                    取消替换
+                                                  </button>
+                                                ) : (
+                                                  <>
+                                                    <button
+                                                      type="button"
+                                                      className="btn-tiny"
+                                                      onClick={() =>
+                                                        updateConnectionDraft(c.id, {
+                                                          key_action: "replace",
+                                                        })
+                                                      }
+                                                    >
+                                                      替换密钥
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className="btn-tiny btn-danger"
+                                                      onClick={() =>
+                                                        updateConnectionDraft(c.id, {
+                                                          key_action: "delete",
+                                                        })
+                                                      }
+                                                    >
+                                                      彻底删除
+                                                    </button>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ) : null}
+
+                                          {(!c.has_key || c.patch?.key_action === "replace") && (
+                                            <div className="key-input-row">
+                                              <input
+                                                type="password"
+                                                className="custom-input"
+                                                placeholder="在此输入 API Key (保存后加密提交，前端不留存)"
+                                                value={c.patch?.api_key || ""}
+                                                onChange={(e) =>
+                                                  updateConnectionDraft(c.id, {
+                                                    key_action: "replace",
+                                                    api_key: e.target.value,
+                                                  })
+                                                }
+                                              />
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 动态模型目录 Card */}
+                                  <div className="workbench-card">
+                                    <div className="card-heading">
+                                      <span>动态模型目录探测 (Dynamic Catalog)</span>
+                                      <div className="catalog-status-actions">
+                                        {catalog?.status && (
+                                          <span
+                                            className={`catalog-status-badge status-${catalog.status}`}
+                                          >
+                                            {catalog.status === "ready"
+                                              ? "就绪"
+                                              : catalog.status === "stale"
+                                              ? "过期缓存"
+                                              : catalog.status === "error"
+                                              ? "探测失败"
+                                              : catalog.status}
+                                          </span>
+                                        )}
+                                        <button
+                                          type="button"
+                                          className="settings-refresh-btn-sm"
+                                          disabled={isNew || isLoadingCat}
+                                          onClick={() => handleRefreshCatalog(c.id)}
+                                          title={
+                                            isNew
+                                              ? "新建未保存连接请先保存再刷新"
+                                              : "后台刷新最新模型目录"
+                                          }
+                                        >
+                                          <RefreshCw
+                                            size={12}
+                                            className={isLoadingCat ? "animate-spin" : ""}
+                                          />
+                                          <span>
+                                            {isLoadingCat
+                                              ? "探测中…"
+                                              : isNew
+                                              ? "未保存"
+                                              : "刷新目录"}
+                                          </span>
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {isNew ? (
+                                      <p className="settings-section-hint">
+                                        新建未保存连接请先点击底部「保存更改」，保存连接后再探测目录。
+                                      </p>
+                                    ) : catalog?.error ? (
+                                      <div className="catalog-error-box">
+                                        <AlertTriangle size={14} />
+                                        <span>探测失败: {catalog.error}</span>
+                                      </div>
+                                    ) : catalog?.models && catalog.models.length > 0 ? (
+                                      <div className="catalog-models-summary">
+                                        <p className="catalog-count-text">
+                                          已发现 {catalog.models.length} 个可用模型：
+                                        </p>
+                                        <div className="catalog-chips-preview">
+                                          {catalog.models.map((m) => (
+                                            <span key={m.id} className="model-chip-preview">
+                                              {m.label} ({m.id})
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <p className="settings-section-hint">
+                                        暂无缓存目录，点击上方「刷新目录」可探测后端模型。
+                                      </p>
                                     )}
-                                    <button
-                                      type="button"
-                                      className="settings-refresh-btn-sm"
-                                      disabled={isNew || isLoadingCat}
-                                      onClick={() => handleRefreshCatalog(c.id)}
-                                      title={
-                                        isNew
-                                          ? "新建未保存连接请先保存再刷新"
-                                          : "后台刷新最新模型目录"
-                                      }
-                                    >
-                                      <RefreshCw
-                                        size={12}
-                                        className={isLoadingCat ? "animate-spin" : ""}
-                                      />
-                                      <span>
-                                        {isLoadingCat
-                                          ? "探测中…"
-                                          : isNew
-                                          ? "未保存"
-                                          : "刷新目录"}
-                                      </span>
-                                    </button>
                                   </div>
-                                </div>
-
-                                {isNew ? (
-                                  <p className="settings-section-hint">
-                                    新建未保存连接请先点击底部「保存更改」，保存连接后再探测目录。
-                                  </p>
-                                ) : catalog?.error ? (
-                                  <div className="catalog-error-box">
-                                    <AlertTriangle size={14} />
-                                    <span>探测失败: {catalog.error}</span>
-                                  </div>
-                                ) : catalog?.models && catalog.models.length > 0 ? (
-                                  <div className="catalog-models-summary">
-                                    <p className="catalog-count-text">
-                                      已发现 {catalog.models.length} 个可用模型：
-                                    </p>
-                                    <div className="catalog-chips-preview">
-                                      {catalog.models.map((m) => (
-                                        <span key={m.id} className="model-chip-preview">
-                                          {m.label} ({m.id})
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p className="settings-section-hint">
-                                    暂无缓存目录，点击上方「刷新目录」可探测后端模型。
-                                  </p>
-                                )}
-                              </div>
-                            </>
-                          );
-                        })()}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        ) : (
+                          <p className="settings-section-hint">选择左侧的连接查看详情。</p>
+                        )}
                       </div>
-                    ) : null}
-                  </main>
+                    </div>
+                  </section>
                 </div>
               ) : null}
 
@@ -1739,6 +1533,8 @@ export function SettingsModal({
                     >;
                     const field = rtMap[key];
                     if (!field) return null;
+                    // Demo mode is a test fixture: only offer the switch to turn it off.
+                    if (key === "use_fake_cli" && field.value !== true) return null;
                     const isBool = typeof field.value === "boolean";
                     const currentValue =
                       key in runtimeDraft ? runtimeDraft[key] : String(field.value);
