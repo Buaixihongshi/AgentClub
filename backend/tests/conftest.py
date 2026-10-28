@@ -5,6 +5,13 @@ import pytest
 from backend.app.settings import Settings
 
 
+@pytest.fixture(autouse=True)
+def _reset_agent_registry():
+    yield
+    from backend.app.domain.agent_registry import reset_agent_registry
+    reset_agent_registry()
+
+
 @pytest.fixture()
 def temp_settings(tmp_path: Path) -> Settings:
     return Settings(

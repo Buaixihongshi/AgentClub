@@ -55,9 +55,19 @@ describe("ConversationList archive", () => {
       conversations: [{ ...conversation, status: "archived" }],
     });
 
-    expect(screen.queryByRole("button", { name: "+ 新对话" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新对话" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "恢复会话" }));
 
     expect(props.onStatusChange).toHaveBeenCalledWith("c_1", "active");
+  });
+
+  it("uses the shared icon set instead of text glyphs for row actions", () => {
+    renderList();
+
+    for (const name of ["新对话", "重命名会话", "归档会话", "查看归档"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button.querySelector("svg")).not.toBeNull();
+      expect(button.textContent).not.toMatch(/[+⌑✎↩←]/);
+    }
   });
 });

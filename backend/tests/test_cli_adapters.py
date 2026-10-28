@@ -1469,7 +1469,7 @@ def test_prompt_includes_specialized_role_and_work_guidelines(agent_id, mode):
     assert "不要抢着承担固定职责" not in prompt
     if mode is None:
         assert "以各自职责为主要分工" in prompt
-        assert "三位伙伴都可以提方案、分析、执行和总结" in prompt
+        assert "每位伙伴都可以提方案、分析、执行和总结" in prompt
         assert "立场随事实与交流改变" in prompt
     else:
         assert "本轮由你独立完成" in prompt

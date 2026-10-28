@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ThoughtEntry } from "../lib/missionView";
 import type { TurnToolCall } from "../types";
+import { phaseLabel } from "./NativeActivity";
 
 function Chevron({ expanded }: { expanded: boolean }) {
   return (
@@ -159,6 +160,23 @@ export function ThoughtBlock({
               );
             }
             const tool = item.entry;
+            if (tool.eventType === "provider.activity") {
+              // Native CLI activity already carries a readable summary; repeating the tool name adds noise.
+              return (
+                <li
+                  className="thought-item thought-item-tool"
+                  key={`tool-${tool.createdAt}-${index}`}
+                >
+                  <span className="thought-kind thought-kind-tool">tool</span>
+                  <span className="thought-content">
+                    <code className="thought-tool-name">{tool.summary ?? tool.toolName}</code>
+                    {tool.phase !== "completed" && (
+                      <span className="thought-tool-summary"> {phaseLabel(tool, false)}</span>
+                    )}
+                  </span>
+                </li>
+              );
+            }
             const inputSummary = summarizeToolInput(tool.toolInput);
             return (
               <li

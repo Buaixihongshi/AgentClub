@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useObservabilityOverview, type ObservabilityWindow } from "../hooks/useObservabilityOverview";
 import { fetchObservabilityTurn } from "../lib/api";
+import { formatAgentName } from "../lib/missionView";
 import type {
   ObservabilityCheck,
   ObservabilityOverviewPayload,
@@ -206,7 +207,7 @@ function Overview({ data, onOpenTurns, onOpenTurn }: {
               <tbody>
                 {by_agent.map((row) => (
                   <tr key={row.agent}>
-                    <td><b>{row.agent}</b></td>
+                    <td><b>{formatAgentName(row.agent)}</b></td>
                     <td>{row.turns}</td>
                     <td>{row.tools}</td>
                     <td>{money(row.cost)}</td>
@@ -361,7 +362,7 @@ function TurnsTable({ data, onOpenTurn }: {
           <h4>Agent</h4>
           {data.by_agent.map((row) => (
             <div key={row.agent} className="obsv-line">
-              <span>{row.agent}</span><b>{row.turns} 回合 · {money(row.cost)}</b>
+              <span>{formatAgentName(row.agent)}</span><b>{row.turns} 回合 · {money(row.cost)}</b>
             </div>
           ))}
         </div>

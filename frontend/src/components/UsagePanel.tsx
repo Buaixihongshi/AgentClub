@@ -1,10 +1,5 @@
+import { formatAgentName } from "../lib/missionView";
 import type { UsageSummary } from "../types";
-
-const AGENT_NAMES: Record<string, string> = {
-  chulan: "张楚岚",
-  baobao: "冯宝宝",
-  wangye: "王也",
-};
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -64,7 +59,7 @@ export function UsagePanel({ usageSummary }: { usageSummary?: UsageSummary }) {
             <tbody>
               {usageSummary.by_agent.map((a) => (
                 <tr key={a.agent_id}>
-                  <td>{AGENT_NAMES[a.agent_id] ?? a.agent_id}</td>
+                  <td>{formatAgentName(a.agent_id)}</td>
                   <td>{formatTokens(a.input_tokens)}</td>
                   <td>{formatTokens(a.cached_input_tokens)}</td>
                   <td>{formatTokens(a.output_tokens)}</td>

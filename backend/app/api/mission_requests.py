@@ -159,7 +159,9 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
         if payload.discussion:
             participants = payload.discussion.participant_ids
             if participants is None and payload.skill == 'discuss':
-                participants = registry.ids()
+                # Discuss runs with 2–3 voices; extra user roles join only
+                # when the request names them explicitly.
+                participants = registry.ids()[:3]
                 if not 2 <= len(participants) <= 3:
                     raise DiscussionError('Discuss skill requires 2–3 project agents or explicit participant_ids', 422)
             if any(p not in valid_ids for p in participants):

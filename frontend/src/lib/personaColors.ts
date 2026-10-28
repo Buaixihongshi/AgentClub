@@ -1,3 +1,5 @@
+import { mentionOptionById } from "./mentions";
+
 export type PersonaColor = {
   border: string;
   name: string;
@@ -18,9 +20,28 @@ const FALLBACK: PersonaColor = {
   accent: "#9ca3af",
 };
 
+// User-created roles take a stable tone from the shared design tokens.
+const ROLE_TONES: Array<Pick<PersonaColor, "border" | "name">> = [
+  { border: "var(--sage)", name: "var(--sage-strong)" },
+  { border: "var(--persona)", name: "var(--persona)" },
+  { border: "var(--provider)", name: "var(--provider)" },
+  { border: "var(--warning)", name: "var(--warning)" },
+];
+
+export function roleToneIndex(agentId: string): number {
+  let hash = 0;
+  for (const char of agentId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash % ROLE_TONES.length;
+}
+
 export function getPersonaColor(agentId?: string | null): PersonaColor {
   if (agentId && PERSONA_COLORS[agentId]) {
     return PERSONA_COLORS[agentId];
+  }
+  const option = agentId ? mentionOptionById(agentId) : undefined;
+  if (agentId && option) {
+    const tone = ROLE_TONES[roleToneIndex(agentId)];
+    return { ...tone, accent: tone.border, avatar: option.label.slice(0, 1) || "👤" };
   }
   return FALLBACK;
 }

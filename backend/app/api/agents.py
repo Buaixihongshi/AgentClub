@@ -18,6 +18,7 @@ def build_router(settings: Settings) -> APIRouter:
                     "role": agent.role,
                     "aliases": agent.aliases,
                     "capability_hints": agent.capability_hints,
+                    "custom": registry.is_custom(agent.id),
                 }
                 for agent in registry.all()
             ]
