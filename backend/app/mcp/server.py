@@ -86,6 +86,9 @@ def _load_context() -> _Context:
     except ValueError:
         max_a2a_invocations = 0
 
+    scheduled_raw = os.environ.get("YIREN_MCP_SCHEDULED_AGENTS", "")
+    scheduled_agent_ids = {a.strip() for a in scheduled_raw.split(",") if a.strip()}
+
     memory_root = os.environ.get("YIREN_MCP_MEMORY_ROOT")
     repository = Repository(Path(db_path))
     tools = MCPTools(
@@ -94,6 +97,7 @@ def _load_context() -> _Context:
         memory_root=Path(memory_root) if memory_root else Path(db_path).resolve().parent / "memory",
         valid_agent_ids=valid_agent_ids,
         max_a2a_invocations=max_a2a_invocations,
+        scheduled_agent_ids=scheduled_agent_ids,
         receipt_id=receipt_id,
         lease_token=os.environ.get('YIREN_MCP_LEASE_TOKEN'),
         workspace_root=Path(os.environ.get('YIREN_MCP_WORKSPACE_ROOT', os.getcwd())),
@@ -314,7 +318,8 @@ _TOOL_DESCRIPTORS = [
                 },
                 "purpose": {
                     "type": "string",
-                    "description": "给被叫 agent 的中文接力说明。",
+                    "maxLength": 4000,
+                    "description": "给被叫 agent 的中文接力说明；不超过 4000 字符，长材料写入产物后引用路径。",
                 },
                 "mode": {
                     "type": "string",

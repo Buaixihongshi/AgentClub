@@ -211,6 +211,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                 provider_id,
                 valid_agent_ids=tools.valid_agent_ids,
                 max_a2a_invocations=tools.max_a2a_invocations,
+                scheduled_agent_ids=tools.scheduled_targets(),
             )
             receipt_id = "mcp_{suffix}".format(suffix=uuid4().hex)
             mcp_env["YIREN_MCP_RECEIPT_ID"] = receipt_id
@@ -681,6 +682,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         provider_id: str,
         valid_agent_ids: "Optional[set]" = None,
         max_a2a_invocations: int = 0,
+        scheduled_agent_ids: "Optional[list]" = None,
     ) -> dict:
         env: dict = {
             "YIREN_MCP_DB_PATH": str(self.db_path),
@@ -696,6 +698,8 @@ class MCPSubprocessAdapter(CLIAdapter):
             env["YIREN_MCP_VALID_AGENTS"] = ",".join(sorted(valid_agent_ids))
         if max_a2a_invocations > 0:
             env["YIREN_MCP_MAX_A2A_INVOCATIONS"] = str(max_a2a_invocations)
+        if scheduled_agent_ids:
+            env["YIREN_MCP_SCHEDULED_AGENTS"] = ",".join(sorted(scheduled_agent_ids))
         return env
 
     def _render_claude_mcp_config(self, env: dict) -> str:
