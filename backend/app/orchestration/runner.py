@@ -417,11 +417,13 @@ class MissionRunner:
     def _run_adaptive(self, mission):
         """One necessary action per mission; durable work controls continuation."""
         from backend.app.work.service import SharedWork
+        from backend.app.work.snapshots import workspace_state
         import json
         work = SharedWork(self.repository)
         context = work.execution_context(mission.id)
         if not context or context['task']['status'] == 'cancelled':
             return mission
+        context['workspace_state'] = workspace_state(context['workspace_root'])
         agent_id = mission.target_agent_id
         agent = next(a for a in self.agents if a.id == agent_id)
         mission = mission.model_copy(update={'status': MissionStatus.RUNNING, 'updated_at': utc_now()})
@@ -434,6 +436,9 @@ class MissionRunner:
             '你负责推进持久工作卡的一项必要动作。按实际缺口决定调查、设计、实现、验证或协作，简单工作可本轮完成。'
             '先 shared_work(read) 读取最新 revision。读取持久约定、已记录的人类决定及子任务结果，不依赖聊天记忆。'
             '通过 CLI 原生工具在授权目录工作；文档工作只能写 docs/，审核只能只读，不允许自行提交、合并或发布。'
+            '你在受限沙箱中运行，无法读取用户 Git 配置、仓库 .git 元数据、其他环境目录或本机服务；'
+            '分支、HEAD 与未提交改动以上下文 workspace_state 为准（宿主本轮开始时读取），'
+            '不要在沙箱内运行 env.sh status 或 git 核对环境，这类命令失败不构成阻塞。'
             '本轮必须用 shared_work 写结构化结果并通过 publish_message 给出简洁进度。'
             '首次接单可用 refine_agreement(data:{task_id,agreement:{criteria:[{id,text}],validation_commands:[[命令参数]]}}) '
             '把原始目标整理为可测试约定；不得改变 source/goal/scope/delivery，实质变更须请用户决定。'

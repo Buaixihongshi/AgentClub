@@ -499,6 +499,42 @@ def test_runner_mcp_delegation_and_integration_flow(adaptive, temp_settings, mon
     assert board['tasks'][0]['attempts_used'] == 3
 
 
+def test_work_prompt_carries_host_read_workspace_state(adaptive, temp_settings, monkeypatch):
+    # #54：沙箱内读不到 Git 元数据，宿主每轮把分支、HEAD 与未提交改动放进提示。
+    from backend.app.adapters.base import CLIAdapter, TurnOutcome
+    from backend.app.domain.models import TurnStatus
+    from backend.app.api.shared_work import drain
+    monkeypatch.chdir(adaptive.root)
+    task_id = create(adaptive)
+    states = []
+    class Worker(CLIAdapter):
+        def run_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):
+            assert '不要在沙箱内运行 env.sh status 或 git 核对环境' in prompt
+            states.append(json.loads(prompt.split('持久工作上下文：\n', 1)[1].split('\n', 1)[0])['workspace_state'])
+            view = tools.shared_work(mission_id, agent_id, turn_id, provider_id)
+            put(adaptive, 'docs/result.md', '真实结果')
+            if len(states) == 1:
+                tools.shared_work(mission_id, agent_id, turn_id, provider_id, 'continue_work', {
+                    'task_id': task_id, 'text': '已写入草稿', 'next_action': '提交'}, view['revision'], operation_id='draft')
+            else:
+                tools.shared_work(mission_id, agent_id, turn_id, provider_id, 'submit', {
+                    'task_id': task_id, 'kind': 'code', 'summary': '已交付', 'artifact_paths': ['docs/result.md'],
+                    'observations': [{'id': 'AC-1', 'text': '读取文件，内容为真实结果'}]}, view['revision'], operation_id='deliver')
+            tools.publish_message(mission_id, agent_id, turn_id, '进展已保存', provider_id)
+            return TurnOutcome(status=TurnStatus.COMPLETED)
+    drain(adaptive.repo, temp_settings.model_copy(update={'config_dir': Path('config').resolve()}), 'c_work', Worker())
+    env = adaptive.read('c_work')['tasks'][0]['environment']
+    assert len(states) == 2
+    assert states[0] == {'source': 'host', 'head': env['base_sha'], 'branch': env['branch'], 'dirty': False,
+                         'changes': [], 'changes_truncated': False}
+    assert states[1]['dirty'] and states[1]['changes'] == ['?? docs/result.md']
+
+
+def test_workspace_state_reports_unreadable_directory(tmp_path):
+    from backend.app.work.snapshots import workspace_state
+    assert workspace_state(tmp_path) == {'source': 'host', 'error': '宿主无法读取该工作区的 Git 状态'}
+
+
 def test_api_intake_document_and_snapshot_scope(adaptive, temp_settings, monkeypatch):
     from backend.app.adapters.base import CLIAdapter, TurnOutcome
     from backend.app.domain.models import TurnStatus

@@ -1,7 +1,7 @@
 # Unity 协作入口
 
 - 用中文回复。先读任务涉及的代码；流程见 `docs/SOP.md`，环境见 `docs/ENVIRONMENTS.md`，发布见 `docs/RELEASING.md`。
-- 操作环境前运行 `./scripts/env.sh status`。一项任务一个分支/worktree；使用 `env.sh dev <task>`，不修改正在服务用户的 checkout。
+- 操作环境前运行 `./scripts/env.sh status`；在 Unity 工作卡的受限沙箱内不运行，以宿主提供的 `workspace_state` 为准。一项任务一个分支/worktree；使用 `env.sh dev <task>`，不修改正在服务用户的 checkout。
 - 开发、测试和审查中发现的 bug 必须记录 Issue，即使当场修复也要记录，注明复现、影响、版本、证据与修复/验证状态；先查重，未确认的标注待复现，未修复的保持开放。修复 bug 的 PR 必须关联其 Issue。新功能、重构、文档等非 bug 改动不强制建 Issue，在 PR 写清需求与验收条件即可，已有对应 Issue 时关联。具体记录与关闭方式见 `docs/SOP.md`。
 - 功能分支在自身环境自验，合入 main 后在 alpha 验收。alpha 只能是干净的主线镜像，不能用日常 runtime 代替测试。
 - 端口及热更新规则以 `config/environments.json` 为准；检查命令以 `scripts/checks.py` 为准。旧脚本是兼容入口，不另建一套启动或门禁流程。
