@@ -36,6 +36,7 @@ vi.mock("../lib/api", () => ({
   }),
 }));
 import type { HubSettingsView, HubSettingsPatch } from "../types";
+import { fetchConnectionModels } from "../lib/api";
 
 const baseView: HubSettingsView = {
   runtime: {
@@ -437,4 +438,40 @@ it("keeps model choices independent for each CLI and saves them with routing", (
     default_provider_id: "codex",
     provider_models: { codex: "gpt-6.1-sol", claude: "sonnet" },
   });
+});
+
+it("lets each role pick a model listed by its CLI and keeps manual entry available", async () => {
+  vi.mocked(fetchConnectionModels).mockImplementation(async (id: string) => id === "codex"
+    ? { connection_id: id, status: "ready", fetched_at: "2026-10-28T00:00:00Z", error: null,
+        models: [{ id: "gpt-6.1-sol", label: "GPT-6.1-Sol", vendor: null }, { id: "gpt-5.5", label: "GPT-5.5", vendor: null }] }
+    : { connection_id: id, status: "unsupported", models: [], fetched_at: null, error: "该 CLI 不提供模型列表" });
+  const onSave = vi.fn();
+  const view: HubSettingsView = { ...baseView, agents: [{ ...baseView.agents[0], default_provider_id: { value: "codex", source: "user" } }] };
+  render(<SettingsModal view={view} onSave={onSave} onClose={vi.fn()} />);
+  const select = await screen.findByRole("combobox", { name: "王也 codex 模型" });
+  expect(within(select).getByRole("option", { name: "沿用 CLI 默认" })).toBeInTheDocument();
+  expect(within(select).queryByRole("group")).not.toBeInTheDocument();
+  fireEvent.change(select, { target: { value: "gpt-5.5" } });
+  fireEvent.change(select, { target: { value: "__manual__" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "王也 codex 模型" }), { target: { value: "gpt-custom" } });
+  fireEvent.click(screen.getByRole("button", { name: "从列表选择" }));
+  expect(screen.getByRole("combobox", { name: "王也 codex 模型" })).toHaveValue("gpt-custom");
+  fireEvent.click(screen.getByTestId("settings-save"));
+  expect(onSave.mock.calls[0][0].agents.wangye.provider_models).toEqual({ codex: "gpt-custom" });
+});
+
+it("shows catalog state in the connection card without an error for CLIs that have no list", async () => {
+  vi.mocked(fetchConnectionModels).mockImplementation(async (id: string) => id === "codex"
+    ? { connection_id: id, status: "stale", fetched_at: "2026-10-28T00:00:00Z", error: "获取模型列表超时",
+        models: [{ id: "gpt-5.5", label: "GPT-5.5", vendor: null }] }
+    : { connection_id: id, status: "unsupported", models: [], fetched_at: null, error: "该 CLI 不提供模型列表" });
+  render(<SettingsModal view={baseView} onSave={vi.fn()} onClose={vi.fn()} />);
+  fireEvent.click(screen.getByTestId("provider-card-claude"));
+  expect(await screen.findByText(/这个 CLI 不提供模型列表/)).toBeInTheDocument();
+  expect(screen.queryByText(/没能获取/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("provider-card-codex"));
+  expect(await screen.findByText(/这次没能更新，仍显示上次的列表：获取模型列表超时/)).toBeInTheDocument();
+  expect(screen.getByText("上次结果")).toBeInTheDocument();
+  // A display name that only differs from the id by case is not repeated.
+  expect(screen.getByText("GPT-5.5")).toHaveAttribute("title", "gpt-5.5");
 });

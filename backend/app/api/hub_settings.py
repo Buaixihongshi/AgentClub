@@ -150,10 +150,11 @@ def build_router(settings: Settings) -> APIRouter:
         data = hub_settings.load(_settings_file_path())
         connection = data.get("connections", {}).get(cid)
         if connection is None:
-            if cid not in _committed_provider_ids():
+            from backend.app.adapters.cli_catalog import cli_catalog
+            provider = next((p for p in load_cli_providers(settings.config_dir) if p.id == cid), None)
+            if provider is None:
                 raise HTTPException(status_code=404, detail="unknown connection")
-            return dict(connection_id=cid, status="unsupported", models=[], fetched_at=None,
-                        error="CLI catalog is unavailable; enter a model ID manually")
+            return cli_catalog(provider, scope=str(settings.config_dir), refresh=refresh)
         return catalog(settings, cid, connection, refresh=refresh)
 
     @router.get("/connections/{connection_id}/models")
