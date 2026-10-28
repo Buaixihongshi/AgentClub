@@ -54,6 +54,21 @@ const RUNTIME_LABELS: Record<string, string> = {
 
 const MANUAL_MODEL = "__manual__";
 
+/** Show the id only when the display name does not already say it. */
+function modelLabel(model: { id: string; label: string }, open: string, close = ""): string {
+  return model.label.toLowerCase() === model.id.toLowerCase()
+    ? model.label
+    : `${model.label}${open}${model.id}${close}`;
+}
+
+const CATALOG_STATUS_LABELS: Record<string, string> = {
+  ready: "已获取",
+  stale: "上次结果",
+  error: "获取失败",
+  unsupported: "不提供列表",
+  loading: "获取中",
+};
+
 interface AgentDraft {
   providerModels?: Record<string, string>;
   defaultProvider?: string;
@@ -189,15 +204,19 @@ export function SettingsModal({
     () => baseConnections[0]?.id ?? "",
   );
 
-  // Cached catalogs only (no network probe), so API connections can offer a model list per role.
+  // Load model lists so each role can pick from them: CLIs are listed by the local binary
+  // (no prompt, no usage); API connections only return their cached catalog.
   useEffect(() => {
     let cancelled = false;
     for (const connection of baseConnections) {
-      if (connection.kind !== "api") continue;
+      setCatalogLoading((prev) => ({ ...prev, [connection.id]: true }));
       fetchConnectionModels(connection.id)
         .then((res) => {
-          if (cancelled || !res.models?.length) return;
+          if (cancelled) return;
           setCatalogs((prev) => (prev[connection.id] ? prev : { ...prev, [connection.id]: res }));
+        })
+        .finally(() => {
+          if (!cancelled) setCatalogLoading((prev) => ({ ...prev, [connection.id]: false }));
         })
         .catch(() => {});
     }
@@ -740,6 +759,12 @@ export function SettingsModal({
     const manualKey = `${agent.id}:${providerId}`;
     const catalogModels = catalogs[providerId]?.models ?? [];
 
+    const modelOption = (model: (typeof catalogModels)[number]) => (
+      <option key={model.id} value={model.id}>
+        {modelLabel(model, "（", "）")}
+      </option>
+    );
+
     if (catalogModels.length > 0 && !manualModelInputMode[manualKey]) {
       const groups = new Map<string, typeof catalogModels>();
       for (const model of catalogModels) {
@@ -763,30 +788,47 @@ export function SettingsModal({
         >
           <option value="">{isCli ? "沿用 CLI 默认" : "请选择模型"}</option>
           {value && !known && <option value={value}>{value}</option>}
-          {Array.from(groups, ([vendor, items]) => (
-            <optgroup key={vendor} label={vendor}>
-              {items.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.label === model.id ? model.id : `${model.label}（${model.id}）`}
-                </option>
-              ))}
-            </optgroup>
-          ))}
+          {groups.size > 1
+            ? Array.from(groups, ([vendor, items]) => (
+                <optgroup key={vendor} label={vendor}>
+                  {items.map(modelOption)}
+                </optgroup>
+              ))
+            : catalogModels.map(modelOption)}
           <option value={MANUAL_MODEL}>手动输入…</option>
         </select>
       );
     }
 
-    return (
+    const input = (
       <input
         type="text"
         className={`custom-input${missing ? " is-invalid" : ""}`}
         aria-label={label}
         aria-invalid={missing || undefined}
         value={value}
-        placeholder={isCli ? "沿用 CLI 默认" : "必填：Model ID"}
+        placeholder={
+          catalogLoading[providerId]
+            ? "正在获取模型列表…"
+            : isCli
+            ? "沿用 CLI 默认"
+            : "必填：Model ID"
+        }
         onChange={(e) => setAgentModel(agent, providerId, e.target.value)}
       />
+    );
+    if (catalogModels.length === 0) return input;
+    return (
+      <div className="model-manual-field">
+        {input}
+        <button
+          type="button"
+          className="btn-tiny"
+          onClick={() => setManualModelInputMode((prev) => ({ ...prev, [manualKey]: false }))}
+        >
+          从列表选择
+        </button>
+      </div>
     );
   }
 
@@ -1238,9 +1280,12 @@ export function SettingsModal({
                             })}
                         </div>
                         {warningProviders.length > 0 && (
-                          <p className="settings-cost-warning">
-                            启用真实 provider 将向{" "}
-                            {warningProviders.map((p) => p.label).join("、")} 发送真实请求并产生费用
+                          <p className="settings-cost-warning" role="note">
+                            <AlertTriangle size={14} aria-hidden="true" />
+                            <span>
+                              已启用的 {warningProviders.map((p) => p.label).join("、")}{" "}
+                              会用你的账号发起真实请求，可能计入额度或产生费用。
+                            </span>
                           </p>
                         )}
                       </aside>
@@ -1567,76 +1612,79 @@ export function SettingsModal({
                                     </div>
                                   )}
 
-                                  {/* 动态模型目录 Card */}
-                                  <div className="workbench-card">
+                                  {/* 模型目录：角色表的模型下拉来自这里 */}
+                                  <div className="workbench-card catalog-card">
                                     <div className="card-heading">
-                                      <span>动态模型目录探测 (Dynamic Catalog)</span>
+                                      <span>模型目录</span>
                                       <div className="catalog-status-actions">
-                                        {catalog?.status && (
+                                        {catalog?.status && !isLoadingCat && (
                                           <span
                                             className={`catalog-status-badge status-${catalog.status}`}
                                           >
-                                            {catalog.status === "ready"
-                                              ? "就绪"
-                                              : catalog.status === "stale"
-                                              ? "过期缓存"
-                                              : catalog.status === "error"
-                                              ? "探测失败"
-                                              : catalog.status}
+                                            {CATALOG_STATUS_LABELS[catalog.status] ?? catalog.status}
                                           </span>
                                         )}
-                                        <button
-                                          type="button"
-                                          className="settings-refresh-btn-sm"
-                                          disabled={isNew || isLoadingCat}
-                                          onClick={() => handleRefreshCatalog(c.id)}
-                                          title={
-                                            isNew
-                                              ? "新建未保存连接请先保存再刷新"
-                                              : "后台刷新最新模型目录"
-                                          }
-                                        >
-                                          <RefreshCw
-                                            size={12}
-                                            className={isLoadingCat ? "animate-spin" : ""}
-                                          />
-                                          <span>
-                                            {isLoadingCat
-                                              ? "探测中…"
-                                              : isNew
-                                              ? "未保存"
-                                              : "刷新目录"}
-                                          </span>
-                                        </button>
+                                        {catalog?.status !== "unsupported" && (
+                                          <button
+                                            type="button"
+                                            className="settings-refresh-btn-sm"
+                                            disabled={isNew || isLoadingCat}
+                                            onClick={() => handleRefreshCatalog(c.id)}
+                                            title={isNew ? "保存连接后才能获取模型" : "重新获取模型列表"}
+                                          >
+                                            <RefreshCw
+                                              size={12}
+                                              className={isLoadingCat ? "animate-spin" : ""}
+                                            />
+                                            <span>{isLoadingCat ? "获取中…" : "重新获取"}</span>
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
 
                                     {isNew ? (
                                       <p className="settings-section-hint">
-                                        新建未保存连接请先点击底部「保存更改」，保存连接后再探测目录。
+                                        先点击底部「保存更改」保存连接，再获取模型列表。
                                       </p>
-                                    ) : catalog?.error ? (
-                                      <div className="catalog-error-box">
-                                        <AlertTriangle size={14} />
-                                        <span>探测失败: {catalog.error}</span>
-                                      </div>
-                                    ) : catalog?.models && catalog.models.length > 0 ? (
-                                      <div className="catalog-models-summary">
-                                        <p className="catalog-count-text">
-                                          已发现 {catalog.models.length} 个可用模型：
-                                        </p>
-                                        <div className="catalog-chips-preview">
-                                          {catalog.models.map((m) => (
-                                            <span key={m.id} className="model-chip-preview">
-                                              {m.label} ({m.id})
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ) : (
+                                    ) : isLoadingCat && !catalog ? (
+                                      <p className="settings-section-hint">正在获取模型列表…</p>
+                                    ) : catalog?.status === "unsupported" ? (
                                       <p className="settings-section-hint">
-                                        暂无缓存目录，点击上方「刷新目录」可探测后端模型。
+                                        {isCli
+                                          ? "这个 CLI 不提供模型列表，可以在角色表里手动输入模型 ID。"
+                                          : "这个连接不提供模型列表，可以在角色表里手动输入模型 ID。"}
                                       </p>
+                                    ) : (
+                                      <>
+                                        {catalog?.error && (
+                                          <div className="catalog-notice" role="status">
+                                            <AlertTriangle size={14} aria-hidden="true" />
+                                            <span>
+                                              {catalog.status === "stale"
+                                                ? `这次没能更新，仍显示上次的列表：${catalog.error}`
+                                                : `没能获取模型列表：${catalog.error}`}
+                                            </span>
+                                          </div>
+                                        )}
+                                        {catalog?.models && catalog.models.length > 0 ? (
+                                          <div className="catalog-models-summary">
+                                            <p className="catalog-count-text">
+                                              共 {catalog.models.length} 个模型，可在上方角色表中为每位角色选择。
+                                            </p>
+                                            <div className="catalog-chips-preview">
+                                              {catalog.models.map((m) => (
+                                                <span key={m.id} className="model-chip-preview" title={m.id}>
+                                                  {modelLabel(m, " · ")}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        ) : !catalog?.error ? (
+                                          <p className="settings-section-hint">
+                                            还没有模型列表，点击「重新获取」。
+                                          </p>
+                                        ) : null}
+                                      </>
                                     )}
                                   </div>
                                 </>

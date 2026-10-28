@@ -313,7 +313,8 @@ class AntigravitySessionPool:
             token, receipt = ledger.begin(worker.id, mission_id, agent_id, turn_id, provider_id,
                                          timeout=max(0.001, progress.remaining()),
                                          valid_agent_ids=sorted(tools.valid_agent_ids or []),
-                                         max_a2a_invocations=tools.max_a2a_invocations)
+                                         max_a2a_invocations=tools.max_a2a_invocations,
+                                         scheduled_agent_ids=tools.scheduled_targets())
             instruction = (
                 '\n【本轮执行凭证】context_token=' + token + '\n'
                 '每次调用 yiren_hub 工具都必须携带本轮 context_token；旧凭证已失效。'

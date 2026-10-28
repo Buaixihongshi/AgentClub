@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsModal } from "../components/SettingsModal";
+import { fetchConnectionModels } from "../lib/api";
 import { TurnTimeline } from "../components/TurnTimeline";
 import { MENTION_OPTIONS, parseMentionTargets, setMentionOptions } from "../lib/mentions";
 import { buildAgentParticipants, buildTurnViews, formatAgentName } from "../lib/missionView";
@@ -106,6 +107,26 @@ describe("custom roles in team settings", () => {
     fireEvent.change(within(form).getByPlaceholderText(/说话方式/), { target: { value: "y" } });
     fireEvent.click(within(form).getByRole("button", { name: "添加角色" }));
     expect(await within(form).findByRole("alert")).toHaveTextContent("冯宝宝");
+  });
+
+  it("offers the CLI catalog while editing a custom role and saves the selected model", async () => {
+    vi.mocked(fetchConnectionModels).mockResolvedValueOnce({
+      connection_id: "codex", status: "ready", fetched_at: null, error: null,
+      models: [{ id: "gpt-5.5", label: "GPT-5.5", vendor: null }],
+    });
+    api.updateCustomAgent.mockResolvedValue(withCustom);
+    render(<SettingsModal view={withCustom} onSave={vi.fn()} onClose={vi.fn()} onViewChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("agent-edit-linglong"));
+    const form = screen.getByTestId("role-editor");
+    const modelInput = within(form).getByLabelText("Codex CLI（CLI） 模型");
+    await waitFor(() => expect(modelInput).toHaveAttribute("list"));
+    const suggestions = document.getElementById(modelInput.getAttribute("list")!);
+    expect(suggestions?.querySelector('option[value="gpt-5.5"]')).not.toBeNull();
+    fireEvent.change(modelInput, { target: { value: "gpt-5.5" } });
+    fireEvent.click(within(form).getByRole("button", { name: "保存角色" }));
+    await waitFor(() => expect(api.updateCustomAgent).toHaveBeenCalledWith(
+      "linglong", expect.objectContaining({ provider_models: { codex: "gpt-5.5" } }),
+    ));
   });
 
   it("edits and deletes only custom roles", async () => {

@@ -18,6 +18,14 @@ class WorkflowStep:
     is_closing: bool = False
 
 
+def resume_purpose(target: str, purpose: str) -> str:
+    """Host-owned single line naming what a resumed requester waited for."""
+    flat = " ".join(str(purpose).split())
+    if len(flat) > 80:
+        flat = flat[:79] + "…"
+    return "承接 {target} 对『{purpose}』的回复".format(target=target, purpose=flat)
+
+
 DISCUSSION_ALTERNATION_STEPS = 5
 
 
