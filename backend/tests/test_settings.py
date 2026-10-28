@@ -1,6 +1,9 @@
+import json
+from pathlib import Path
+
 import pytest
 
-from backend.app.settings import get_settings
+from backend.app.settings import Settings, get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -20,12 +23,23 @@ def test_get_settings_reads_use_fake_cli_env(monkeypatch):
     assert settings.use_fake_cli is False
 
 
-def test_get_settings_defaults_to_fake_cli(monkeypatch):
+def test_get_settings_defaults_to_real_cli(monkeypatch):
     monkeypatch.delenv("YIREN_USE_FAKE_CLI", raising=False)
 
     settings = get_settings()
 
-    assert settings.use_fake_cli is True
+    assert settings.use_fake_cli is False
+    assert Settings().use_fake_cli is False
+
+
+def test_committed_real_providers_start_disabled():
+    # Real CLIs are switched on by onboarding or settings, never by startup.
+    providers = json.loads((Path(__file__).resolve().parents[2] / "config/cli-providers.json").read_text(encoding="utf-8"))
+    by_id = {p["id"]: p for p in providers}
+    assert by_id["claude"]["enabled"] is False
+    assert by_id["codex"]["enabled"] is False
+    assert by_id["antigravity"]["enabled"] is False
+    assert "gemini" not in by_id
 
 
 def test_get_settings_reads_runtime_paths_and_max_turns(monkeypatch, tmp_path):

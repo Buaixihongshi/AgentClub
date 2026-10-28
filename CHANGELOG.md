@@ -24,6 +24,7 @@
 
 ### Changed
 
+- 移除 L4 铁律：`Settings.use_fake_cli` 与 local/runtime 启动默认改为真实 CLI；只有显式 `--demo`、test 环境与测试 fixture 使用离线适配器。仓库内真实 Provider 仍默认关闭，由引导或设置开启。
 - 首次启动引导不再使用演示模式：先检测本机 CLI，确认后由张楚岚通过所选真实 CLI 完成第一次对话（同时作为接入验证），再让三位角色使用该 CLI 并通过真实 CLI 互相介绍；没有可用 CLI 时显示安装与登录说明。离线演示环境（`--demo`/test）拦截这些真实调用。
 - 观测入口移入设置页签：移除右侧栏按钮、`ObservabilityDialog` 与 `useObservability`，会话主区域不再预留侧栏宽度；原来的单会话细节改为在设置 → 观测里点击回合查看。
 

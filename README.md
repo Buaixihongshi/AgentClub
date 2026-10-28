@@ -96,7 +96,7 @@ cd Unity
 | --- | --- |
 | Codex CLI、Claude Code、Antigravity CLI | 对话、讨论、工具协作，以及受限环境中的开发与验证 |
 | 自定义 API | 文本对话和结构化讨论；支持 OpenAI Responses、Chat Completions、Anthropic 协议 |
-| 演示模式 | 无账号体验页面和流程；开发任务会等待真实连接 |
+| 演示模式 | 仅用于离线测试和显式 `--demo` 开发环境，不调用模型 |
 
 真实连接会使用对应账号的额度，CLI 需要在本机安装并登录。当前讨论的真实 CLI 隔离和自主开发依赖 macOS，其他平台可以先体验演示和可用的对话能力。
 

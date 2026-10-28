@@ -45,7 +45,7 @@ def test_get_returns_resolved_view_with_sources(tmp_path):
     rt = data["runtime"]
     assert rt["max_turns"]["value"] == 6
     assert rt["max_turns"]["source"] == "default"
-    assert rt["use_fake_cli"]["value"] is True
+    assert rt["use_fake_cli"] == {"value": False, "source": "default"}
     assert rt["a2a_idle_timeout"] == {"value": 90, "source": "default"}
     providers = {p["id"]: p for p in data["providers"]}
     assert providers["claude"]["enabled"]["value"] is False

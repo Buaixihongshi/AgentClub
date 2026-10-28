@@ -20,7 +20,7 @@ Agent teamwork: distinct personalities / shared abilities / continuous dialogue
    ↓
 Provider Router: primary provider + fallbacks
    ↓
-Codex CLI / Claude Code / Antigravity CLI / Demo Mode
+Codex CLI / Claude Code / Antigravity CLI
 ```
 
 Roles, workflows, and conversation context remain stable while models are treated as configurable execution providers. Users can change the underlying CLI without rebuilding the way their Agent team works.
@@ -29,7 +29,7 @@ Roles, workflows, and conversation context remain stable while models are treate
 
 ### Get users to a first successful conversation
 
-Unity includes a built-in Demo Mode that does not call a real model. Users can create a task and receive the first Agent response before installing a CLI, signing in to a model account, or spending model quota.
+On first run Unity detects the installed CLIs and lets the user pick one. Zhang Chulan replies through it, which also verifies the connection, and then the whole team switches to it. When no CLI is installed, onboarding shows install and login steps.
 
 ### Turn one goal into multi-Agent teamwork
 
@@ -37,7 +37,7 @@ Unity schedules roles according to task complexity and also supports directing a
 
 ### Manage multiple AI CLIs in one place
 
-The Settings page detects installed CLIs, guides authentication, verifies a real MCP conversation, and assigns a primary provider and fallbacks to each role. Unity currently supports Codex CLI, Claude Code, Antigravity CLI, and the always-available Demo Mode.
+The Settings page detects installed CLIs, guides authentication, verifies a real MCP conversation, and assigns a primary provider and fallbacks to each role. Unity currently supports Codex CLI, Claude Code and Antigravity CLI.
 
 ### Make Agent execution observable
 
@@ -57,7 +57,7 @@ This is the central product principle behind Unity. A role defines **who is work
 | --- | --- | --- |
 | Role | Personality, perspective, communication habits, conversation identity | Perceptive Chulan, candid Baobao, independent Wang Ye |
 | Provider | Model capability, CLI command, authentication, runtime behavior | Codex CLI, Claude Code, Antigravity CLI |
-| Routing | Primary provider, fallbacks, and failure recovery | Claude → Codex → Demo Mode |
+| Routing | Primary provider, fallbacks, and failure recovery | Claude → Codex |
 
 This separation creates four practical benefits:
 
@@ -149,13 +149,13 @@ PORT=8001 FRONTEND_PORT=5174 ./scripts/start.sh --no-open
 
 ## Recommended First-Run Path
 
-1. Run the first conversation in Demo Mode.
-2. Install or sign in to Codex CLI and verify one real MCP conversation.
-3. Let all three roles reuse the verified Codex connection.
+1. Install and sign in to one supported CLI (Codex CLI is recommended).
+2. Let Zhang Chulan greet you through it; this verifies one real MCP conversation.
+3. Let all three roles reuse the verified connection.
 4. Add Claude Code or Antigravity CLI when a task benefits from them.
 5. Configure the primary provider and fallbacks for each role in Team Settings.
 
-Real CLI verification sends one model request through the corresponding account and may consume plan quota or incur charges. Installation, login detection, version detection, and Demo Mode do not call a real model.
+Real CLI verification sends one model request through the corresponding account and may consume plan quota or incur charges. Installation, login detection and version detection do not call a real model.
 
 ### Supported providers
 
@@ -182,7 +182,7 @@ SQLite event and conversation state + artifacts/<mission_id>/
 ```
 
 - FastAPI creates a mission and runs role turns in a background workflow.
-- The Provider Router selects Demo Mode or a real CLI and tries configured fallbacks.
+- The Provider Router selects a real CLI and tries configured fallbacks; explicit `--demo` and test environments use an offline adapter instead.
 - MCP carries Agent messages, context reads, artifacts, status updates, and Agent-to-Agent calls.
 - The frontend consumes SSE snapshots and renders turns, progress, and diagnostics.
 

@@ -160,8 +160,8 @@ def test_first_chat_is_idempotent_and_verifies_the_selected_cli(temp_settings, m
     from backend.app.storage import hub_settings
 
     _installed(monkeypatch, "codex")
-    # Even when the process default is still the offline demo, the first chat
-    # must run through the CLI the user selected.
+    # Even when this process runs the offline demo, the first chat must run
+    # through the CLI the user selected.
     assert temp_settings.use_fake_cli is True
     adapter = _ScriptedCLI()
     client = TestClient(create_app(temp_settings, onboarding_verification_adapter=adapter))
