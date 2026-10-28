@@ -1,6 +1,6 @@
 # Unity
 
-**把平时用的几个 AI，放进同一个工作群里。**
+**从对话开始，和团队一起把想法变成现实**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -12,7 +12,7 @@
 
 Unity 想让这些 AI 能一起工作：各自有稳定的身份和记忆，围绕同一个目标讨论、分工，也能互相检查。你不用一直在几个窗口之间来回传话。
 
-Unity 就是围绕这件事慢慢做起来的。把 Codex CLI、Claude Code、Antigravity 和模型 API 接到一起，让几个性格不同的伙伴讨论、协作，帮你解决问题。
+Unity 就是围绕这个初心慢慢做起来的。把 Codex CLI、Claude Code、Antigravity 或其他模型 API 接到一起，让几个性格不同的伙伴讨论、协作，帮你解决问题。
 
 目前住在这里的是张楚岚、冯宝宝和王也。可以找他们聊想法、比较方案，也可以确认一项任务，让他们在约定的范围里继续推进。谁在负责、做到了哪、留下了什么，都能在页面里找到。
 
