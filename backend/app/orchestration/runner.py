@@ -1,6 +1,6 @@
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional
 from uuid import uuid4
 
@@ -20,6 +20,7 @@ from backend.app.mcp.tools import MCPTools
 from backend.app.settings import AgentOverride
 from backend.app.orchestration.complexity import classify_task
 from backend.app.orchestration.discussion_rules import COMMON_DISCUSSION_RULES
+from backend.app.orchestration.interaction import CASUAL_RULES, is_casual_turn
 from backend.app.orchestration.events import (
     fetch_a2a_requests_for_turn,
     find_pending_interrupts,
@@ -139,6 +140,8 @@ class MissionRunner:
         a2a_used = 0
         workflow_cursor = 0
         turn_index = 0
+        work_prompt_required = False
+        casual_policy = orchestration_mode == OrchestrationMode.AUTO and is_casual_turn(mission.goal, self.agents)
 
         def enqueue_a2a(step: WorkflowStep) -> int:
             a2a_queue.append(step)
@@ -146,6 +149,14 @@ class MissionRunner:
 
         while True:
             pending_interrupt = self._check_pending_interrupt(mission)
+            if pending_interrupt is not None:
+                work_prompt_required = True
+                if casual_policy:
+                    # The new user request can require real collaboration. Lift
+                    # the greeting's A2A restriction for this and later turns.
+                    casual_policy = False
+                    max_a2a = max(0, self.settings.max_a2a_invocations)
+                    plan = replace(plan, max_a2a_invocations=max_a2a)
             if pending_interrupt is not None and (a2a_queue or pending_replies):
                 cancelled_steps = [
                     {"step_id": s.step_id, "origin": s.origin, "agent_id": s.agent_id}
@@ -232,6 +243,7 @@ class MissionRunner:
                 agents_by_id=agents,
                 max_a2a_invocations=max_a2a,
                 orchestration_mode=orchestration_mode,
+                casual=False if work_prompt_required else None,
             )
 
             def peek_resume_chain(sender_agent_id: str) -> list:
@@ -449,11 +461,14 @@ class MissionRunner:
                     callee_turn = next((e.payload['turn_id'] for e in self.repository.list_events_after(mission_id, 0)
                                         if e.event_type == 'discussion.turn_claimed' and e.payload.get('step_id') == step.parent_step_id), None)
                     reply = '\n'.join(m.content for m in self.repository.list_messages(mission_id) if m.turn_id == callee_turn and m.role == 'agent')[:1500]
-                purpose = '圆桌讨论：仅交流观点，不执行代码修改或自动生成文件。\n' + step.purpose + '\n' + notes + '\n参与者：{}；阶段：{}；已用回合：{}/{}（含当前回合，总结占一回合）。'.format(
-                    ', '.join(mission.discussion.participant_ids), state['phase'], state['turns_used'], mission.discussion.max_turns)
+                casual = state.get('casual', False) and not step.is_closing
+                purpose = step.purpose + '\n' + notes
+                if not casual:
+                    purpose = '圆桌讨论：仅交流观点，不执行代码修改或自动生成文件。\n' + purpose + '\n参与者：{}；阶段：{}；已用回合：{}/{}（含当前回合，总结占一回合）。'.format(
+                        ', '.join(mission.discussion.participant_ids), state['phase'], state['turns_used'], mission.discussion.max_turns)
                 if step.is_closing:
                     purpose += '\n当前为总结，不再邀请其他角色。'
-                else:
+                elif not casual:
                     purpose += ('\n其他参与者已有基础发言安排；只有确需特定接力时才调 invoke_agent。'
                                 '需要对方回复后续答时用 mode=wait_reply；接纳后结束当前回合，由宿主安排受邀者和你的续答。'
                                 '邀请共享本场总回合预算；工具返回未接纳时继续当前发言，不承诺额外回合。')
@@ -461,7 +476,7 @@ class MissionRunner:
                                        artifact_index=build_artifact_index(self.repository, mission_id),
                                        memory_blocks=sections_into_prompt(sections),
                                        a2a_step=step if step.origin != 'workflow' else None, a2a_reply_text=reply,
-                                       agents_by_id=agents, max_a2a_invocations=None)
+                                       agents_by_id=agents, max_a2a_invocations=None, casual=casual)
                 tools = MCPTools(self.repository, self.settings.artifact_root,
                                  valid_agent_ids=set(agents), current_step_origin=step.origin)
                 outcome = self._run_turn_with_fallbacks(mission, step.agent_id, turn_id,
@@ -981,7 +996,24 @@ def _build_prompt(
     agents_by_id: Optional[Dict[str, AgentProfile]] = None,
     max_a2a_invocations: Optional[int] = None,
     orchestration_mode: Optional[OrchestrationMode] = None,
+    casual: Optional[bool] = None,
 ) -> str:
+    if casual is None:
+        casual = a2a_step is None and orchestration_mode in (None, OrchestrationMode.AUTO) and is_casual_turn(
+            mission.goal, agents_by_id.values() if agents_by_id else None,
+        )
+    if casual:
+        parts = [
+            f"聊天室模式：你是{agent.display_name}。",
+            CASUAL_RULES,
+            f"人格与交流习惯：{agent.persona}",
+        ]
+        if memory_blocks:
+            parts.extend(memory_blocks)
+        if conversation_context:
+            parts.append(conversation_context)
+        parts.append(f"用户当前的话：{mission.goal}\n本次回应缘由：{purpose}")
+        return "\n".join(parts)
     single_agent = orchestration_mode in (
         OrchestrationMode.SINGLE,
         OrchestrationMode.REFLECTION,
@@ -1093,7 +1125,8 @@ def _build_prompt(
     a2a_enabled = max_a2a_invocations is None or max_a2a_invocations > 0
     continuation_check = (
         "2. 接下来由谁继续推进？如果该点名某个 agent 接力，用 invoke_agent；"
-        "不能只在正文里喊对方名字或说“你来收尾”。如果你认为流程到此可以收口，直接说『到此为止』。\n"
+        "不能只在正文里喊对方名字或说“你来收尾”。回答完成就结束消息，"
+        "无需宣布流程结束或使用固定结束语；实际调度与任务状态由宿主记录。\n"
         if a2a_enabled
         else
         "2. 接下来是否还有必须由你完成的事？如果已经能给出完整答案，直接收口，"

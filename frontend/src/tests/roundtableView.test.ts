@@ -30,6 +30,7 @@ describe("roundtable view helpers", () => {
   });
 
   it("labels every end reason the backend can report", () => {
+    expect(formatDiscussionEndReason("responses_complete")).toBe("本次回应已完成");
     expect(formatDiscussionEndReason("budget_exhausted")).toBe("回合预算用尽，正常结束");
     expect(formatDiscussionEndReason("user_finish")).toBe("你要求收尾");
     expect(formatDiscussionEndReason("user_stop")).toBe("你要求停止");

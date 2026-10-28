@@ -12,7 +12,7 @@ RUNTIME_DEFAULTS = {"use_fake_cli": True, "max_turns": 6, "max_a2a_invocations":
 PROVIDER_FIELDS = {"id", "label", "command", "args", "enabled", "mcp_enabled"}
 
 
-def runtime_cli_snapshot(checkout):
+def runtime_cli_snapshot(checkout, *, real=False):
     source = home(checkout) / "runtime-state"
     paths = [source / "config/cli-providers.json", source / "config/agents.json",
              source / "data/hub_settings.json"]
@@ -30,21 +30,26 @@ def runtime_cli_snapshot(checkout):
             item["enabled"] = overrides.get("providers", {}).get(item["id"], {}).get("enabled", item.get("enabled", False))
             if not isinstance(item["enabled"], bool) or not isinstance(item.get("command"), str):
                 raise ValueError("Invalid provider")
+            if real and item["id"] == "fake":
+                item["enabled"] = False
             exported.append(item)
         ids = {p["id"] for p in exported}
         if len(ids) != len(exported): raise ValueError("Duplicate provider")
+        route_ids = ids - {"fake"} if real else ids
         routes = {}
         for agent in entries:
             override = overrides.get("agents", {}).get(agent["id"], {})
             primary = override.get("default_provider_id", agent["default_provider_id"])
             fallbacks = override.get("fallback_provider_ids", agent.get("fallback_provider_ids", []))
-            if primary not in ids or not isinstance(fallbacks, list) or any(p not in ids for p in fallbacks):
-                raise EnvironmentError("Daily role uses a non-CLI connection; CLI-only inheritance cannot silently change its route")
+            if primary not in route_ids or not isinstance(fallbacks, list) or any(p not in route_ids for p in fallbacks):
+                raise EnvironmentError("Daily role uses a demo or non-CLI connection; CLI-only inheritance cannot silently change its route")
             routes[agent["id"]] = {"default_provider_id": primary, "fallback_provider_ids": fallbacks,
                 "provider_models": {k: v for k, v in override.get("provider_models", agent.get("provider_models", {})).items() if k in ids},
                 "fallback_context_approved": bool(override.get("fallback_context_approved", False))}
         runtime = {k: overrides.get("runtime", {}).get(k, v) for k, v in RUNTIME_DEFAULTS.items()}
         if not isinstance(runtime["use_fake_cli"], bool): raise ValueError("Invalid runtime mode")
+        if real:
+            runtime["use_fake_cli"] = False
         if any((p.read_bytes() if p.exists() else None) != value for p, value in zip(paths, raw)):
             raise EnvironmentError("Daily CLI configuration changed while reading; retry without using a mixed snapshot")
         result = {"providers": exported, "agents": routes, "runtime": runtime}
@@ -54,10 +59,10 @@ def runtime_cli_snapshot(checkout):
         raise EnvironmentError("Cannot read valid daily CLI settings; no fallback or credential copy was performed") from exc
 
 
-def inherit_runtime_cli(checkout, state):
+def inherit_runtime_cli(checkout, state, *, real=False):
     if state.resolve() == (home(checkout) / "runtime-state").resolve():
         raise EnvironmentError("CLI inheritance must not write to the daily state")
-    snapshot = runtime_cli_snapshot(checkout)
+    snapshot = runtime_cli_snapshot(checkout, real=real)
     agents = json.loads((state / "config/agents.json").read_text())
     target_ids = {a["id"] for a in (agents["agents"] if isinstance(agents, dict) else agents)}
     if target_ids != set(snapshot["agents"]):

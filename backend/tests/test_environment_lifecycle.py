@@ -168,6 +168,110 @@ def test_cli_inheritance_refuses_missing_daily_config(source_repo):
         cli_config.runtime_cli_snapshot(source_repo)
 
 
+def test_development_entrypoint_defaults_to_real_daily_routes(daily_cli, monkeypatch):
+    root, source = daily_cli
+    (root / 'backend/app').mkdir(parents=True)
+    (root / 'backend/app/runtime_control.py').touch()
+    before = {p: p.read_bytes() for p in source.rglob('*') if p.is_file()}
+    captured = {}
+
+    def start(checkout, profile, **kwargs):
+        captured.update(kwargs)
+        captured['env'] = common.environment(checkout, profile, real=kwargs['real'],
+                                              inherit_cli=kwargs['inherit_cli'])
+
+    monkeypatch.setattr(cli, 'start', start)
+    monkeypatch.setattr(cli, 'checkout_listening', lambda _: False)
+    cli.main(['start', 'development', '--checkout', str(root), '--no-install'])
+    assert captured['real'] and captured['inherit_cli']
+    env = captured['env']
+    assert env['YIREN_USE_FAKE_CLI'] == 'false' and env['YIREN_DEMO_ONLY'] == 'false'
+    state = root / '.yiren/development-real'
+    settings = json.loads((state / 'data/hub_settings.json').read_text())
+    assert settings['agents']['designer']['default_provider_id'] == 'antigravity'
+    assert settings['agents']['designer']['provider_models'] == {'antigravity': 'daily-model'}
+    assert all(p.read_bytes() == raw for p, raw in before.items())
+
+
+def test_dev_command_defaults_to_real_but_demo_does_not_read_daily_settings(source_repo, monkeypatch):
+    (source_repo / 'backend/app').mkdir(parents=True)
+    (source_repo / 'backend/app/runtime_control.py').touch()
+    calls = []
+    monkeypatch.setattr(cli, 'feature', lambda *a: source_repo)
+    monkeypatch.setattr(cli, 'checkout_listening', lambda _: False)
+    monkeypatch.setattr(cli, 'start', lambda *a, **kwargs: calls.append(kwargs))
+    cli.main(['dev', 'feature-validation', '--no-install'])
+    assert calls[-1]['real'] and calls[-1]['inherit_cli'] and calls[-1]['allocate']
+    cli.main(['dev', 'offline', '--demo', '--no-install'])
+    assert calls[-1]['real'] is False and calls[-1]['inherit_cli'] is False
+
+
+@pytest.mark.parametrize('profile,options,expected', [
+    ('development', {}, (True, True)),
+    ('development', {'demo': True}, (False, False)),
+    ('development', {'providers': 'codex'}, (True, False)),
+    ('development', {'real_cli': True}, (True, False)),
+    ('development', {'real_cli': True, 'inherit_runtime_cli': True}, (True, True)),
+    ('test', {}, (False, False)),
+    ('test', {'real_cli': True}, (True, False)),
+    ('alpha', {}, (False, True)),
+    ('local', {}, (False, False)),
+])
+def test_cli_mode_keeps_demo_explicit_and_test_offline(profile, options, expected):
+    values = {'real_cli': False, 'demo': False, 'providers': None, 'inherit_runtime_cli': False}
+    values.update(options)
+    assert cli.cli_mode(SimpleNamespace(**values), profile) == expected
+
+
+@pytest.mark.parametrize('options,real', [([], True), (['--demo'], False), (['--real-cli'], True)])
+def test_development_stop_selects_the_matching_state(source_repo, monkeypatch, options, real):
+    calls = []
+    monkeypatch.setattr(cli, 'stop', lambda *args: calls.append(args))
+    cli.main(['stop', 'development', '--checkout', str(source_repo), *options])
+    assert calls == [(source_repo, 'development', real)]
+
+
+@pytest.mark.parametrize('options', [
+    {'demo': True, 'inherit_runtime_cli': True},
+    {'demo': True, 'providers': 'codex'},
+])
+def test_demo_cannot_silently_enable_real_inheritance(options):
+    with pytest.raises(common.EnvironmentError, match='--demo'):
+        cli.cli_mode(SimpleNamespace(real_cli=False, **options), 'development')
+
+
+def test_real_development_never_inherits_the_daily_demo_toggle(daily_cli):
+    root, source = daily_cli
+    path = source / 'data/hub_settings.json'
+    settings = json.loads(path.read_text())
+    settings['runtime']['use_fake_cli'] = True
+    common.write_json(path, settings)
+    env = common.environment(root, 'development', real=True, inherit_cli=True)
+    target = root / '.yiren/development-real'
+    assert env['YIREN_USE_FAKE_CLI'] == 'false'
+    assert json.loads((target / 'data/hub_settings.json').read_text())['runtime']['use_fake_cli'] is False
+    assert not next(p for p in json.loads((target / 'config/cli-providers.json').read_text()) if p['id'] == 'fake')['enabled']
+    assert json.loads(path.read_text())['runtime']['use_fake_cli'] is True
+
+
+def test_real_development_refuses_a_demo_role_route(daily_cli):
+    root, source = daily_cli
+    path = source / 'data/hub_settings.json'
+    settings = json.loads(path.read_text())
+    settings['agents']['designer']['default_provider_id'] = 'fake'
+    common.write_json(path, settings)
+    with pytest.raises(common.EnvironmentError, match='demo or non-CLI'):
+        common.environment(root, 'development', real=True, inherit_cli=True)
+
+
+def test_real_development_missing_config_does_not_fall_back_to_demo(daily_cli):
+    root, source = daily_cli
+    (source / 'config/cli-providers.json').unlink()
+    with pytest.raises(common.EnvironmentError, match='missing'):
+        common.environment(root, 'development', real=True, inherit_cli=True)
+    assert not (root / '.yiren/development-real/data/hub_settings.json').exists()
+
+
 def test_conflicting_listener_is_never_killed_and_parallel_ports_are_distinct():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0));s.listen()

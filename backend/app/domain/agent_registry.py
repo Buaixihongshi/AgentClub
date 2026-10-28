@@ -12,10 +12,31 @@ changes — they're routing keys, not labels.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from backend.app.domain.models import AgentProfile
+
+
+def strip_leading_addressees(content: str, agents: Iterable[AgentProfile]) -> str:
+    """Normalize known leading names for text interpretation, never routing.
+
+    This returns text only, not recipient IDs. Scheduling must continue to use
+    explicit request targets or invoke_agent. Unknown tokens/body names remain
+    intact so normalization cannot silently erase an actual work request.
+    """
+    names = {name for agent in agents for name in (agent.id, agent.display_name, *agent.aliases) if name}
+    text = content.strip()
+    if not names:
+        return text
+    aliases = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+    prefix = re.compile(
+        rf"^@?(?:{aliases})(?:[\s,，、:：]+|(?=你|在|大家|各位)|$)", re.IGNORECASE,
+    )
+    while (match := prefix.match(text)) is not None:
+        text = text[match.end():].lstrip()
+    return text
 
 
 _BUILTIN_AGENTS: List[AgentProfile] = [

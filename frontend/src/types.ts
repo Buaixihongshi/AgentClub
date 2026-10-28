@@ -67,6 +67,7 @@ export interface DiscussionAgreement {
 }
 
 export type DiscussionEndReason =
+  | "responses_complete"
   | "budget_exhausted"
   | "user_finish"
   | "user_stop"

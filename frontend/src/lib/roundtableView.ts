@@ -61,6 +61,7 @@ export function formatDiscussionPhase(phase?: string | null): string {
 }
 
 const END_REASON_LABEL: Record<DiscussionEndReason, string> = {
+  responses_complete: "本次回应已完成",
   budget_exhausted: "回合预算用尽，正常结束",
   user_finish: "你要求收尾",
   user_stop: "你要求停止",
