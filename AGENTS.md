@@ -2,7 +2,7 @@
 
 - 用中文回复。先读任务涉及的代码；流程见 `docs/SOP.md`，环境见 `docs/ENVIRONMENTS.md`，发布见 `docs/RELEASING.md`。
 - 操作环境前运行 `./scripts/env.sh status`。一项任务一个分支/worktree；使用 `env.sh dev <task>`，不修改正在服务用户的 checkout。
-- 每项开发任务先搜索并关联已有 Issue，没有则创建；PR 必须关联 Issue。开发、测试和审查中发现的 bug，即使当场修复也记录 Issue，注明复现、影响、版本、证据与修复/验证状态；未确认的标注待复现，未修复的保持开放，避免重复建单。具体记录与关闭方式见 `docs/SOP.md`。
+- 开发、测试和审查中发现的 bug 必须记录 Issue，即使当场修复也要记录，注明复现、影响、版本、证据与修复/验证状态；先查重，未确认的标注待复现，未修复的保持开放。修复 bug 的 PR 必须关联其 Issue。新功能、重构、文档等非 bug 改动不强制建 Issue，在 PR 写清需求与验收条件即可，已有对应 Issue 时关联。具体记录与关闭方式见 `docs/SOP.md`。
 - 功能分支在自身环境自验，合入 main 后在 alpha 验收。alpha 只能是干净的主线镜像，不能用日常 runtime 代替测试。
 - 端口及热更新规则以 `config/environments.json` 为准；检查命令以 `scripts/checks.py` 为准。旧脚本是兼容入口，不另建一套启动或门禁流程。
 - 开发时按影响运行检查分组；交付时记录实际 SHA、源码摘要、检查结果和预览入口。检查失败、跳过或未验证的内容如实说明。
