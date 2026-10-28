@@ -114,7 +114,28 @@ These screenshots were captured before the rename and show the former AgentClub 
 
 ## Quick Start
 
-### Requirements
+### macOS app
+
+1. Download the latest `Unity-<version>-arm64.dmg` from [Releases](https://github.com/Buaixihongshi/Unity/releases). Only Apple silicon builds are available for now; macOS 12 or later is required.
+2. Open the dmg and drag Unity into Applications.
+3. Preview builds are not notarized by Apple yet. Before the first launch, run once in Terminal:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Unity.app
+   ```
+
+4. Open Unity from Applications or Launchpad, then follow the first-run onboarding to connect a CLI.
+
+The app bundles its own runtime, so Python and Node are not needed. It reads `PATH` from your login shell, so CLIs installed through nvm, Homebrew and similar tools are found.
+
+- Data lives in `~/Library/Application Support/Unity/`; the partners' working directory is `workspace/` inside it. Logs go to `~/Library/Logs/Unity/backend.log`. The Unity menu opens both locations.
+- If work is still running when you quit, Unity asks for confirmation first.
+- To uninstall, delete `/Applications/Unity.app`, and the data directory above if you no longer need it.
+- To build the app yourself, see [packaging/macos/README.md](packaging/macos/README.md).
+
+### Run from source
+
+#### Requirements
 
 - macOS or a Linux shell environment
 - Python 3.11+
@@ -123,7 +144,7 @@ These screenshots were captured before the rename and show the former AgentClub 
 
 The first run asks you to install and sign in to one supported CLI (Codex CLI, Claude Code or Antigravity CLI).
 
-### Start Unity
+#### Start Unity
 
 ```bash
 git clone https://github.com/Buaixihongshi/Unity.git Unity
