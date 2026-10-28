@@ -80,6 +80,27 @@ Unity 就是围绕这件事慢慢做起来的。把 Codex CLI、Claude Code、An
 
 ## 先跑起来
 
+### macOS：下载安装包
+
+1. 在 [Releases](https://github.com/Buaixihongshi/Unity/releases) 下载最新的 `Unity-<版本>-arm64.dmg`。目前只提供 Apple 芯片（M 系列）版本，需要 macOS 12 或更高版本。
+2. 双击打开 dmg，把 Unity 拖进“应用程序”。
+3. 预览版还没有经过 Apple 公证，第一次打开前先在终端执行一次：
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Unity.app
+   ```
+
+4. 从“应用程序”或启动台打开 Unity，窗口出现后按下面的首次引导接入 CLI。
+
+桌面版自带运行环境，不用另装 Python 或 Node。它会读取登录 shell 的 PATH，通过 nvm、Homebrew 等方式安装的 CLI 也能找到。
+
+- 数据在 `~/Library/Application Support/Unity/`，伙伴的工作目录是其中的 `workspace/`。日志在 `~/Library/Logs/Unity/backend.log`。菜单“Unity › 打开数据目录 / 显示后端日志”可以直接打开这两个位置。
+- 退出时如果还有任务在进行，会先请你确认。
+- 卸载时删除 `/Applications/Unity.app`；如果不再需要数据，再删除上面的数据目录。
+- 想自己打包，请看 [macOS 打包说明](packaging/macos/README.md)。
+
+### 从源码运行
+
 准备 Python **3.11+**、Node.js **20.19+ 或 22.12+** 和 npm。开发时推荐 Python 3.12、Node 22。
 
 ```bash
