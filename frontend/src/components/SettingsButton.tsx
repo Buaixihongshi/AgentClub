@@ -14,6 +14,7 @@ interface Props {
   onRefreshProviders?: () => void;
   onVerifyProvider?: (providerId: string) => void;
   onSave: (patch: HubSettingsPatch) => void;
+  onViewChange?: (view: HubSettingsView) => void;
 }
 
 export function SettingsButton({
@@ -26,6 +27,7 @@ export function SettingsButton({
   onRefreshProviders,
   onVerifyProvider,
   onSave,
+  onViewChange,
 }: Props) {
   const [localOpen, setLocalOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
@@ -73,6 +75,7 @@ export function SettingsButton({
             onVerifyProvider(providerId);
           } : undefined}
           onSave={handleSave}
+          onViewChange={onViewChange}
           onClose={handleClose}
         />
       )}

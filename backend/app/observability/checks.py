@@ -25,12 +25,28 @@ from backend.app.observability.turns import A2A, NATIVE, TOOL, Turn
 PASS, FAIL, NA = 1, 0, None
 
 # ---- claim extraction -------------------------------------------------------
+def _delegation_pattern(names) -> re.Pattern:
+    alternation = "|".join(re.escape(n) for n in sorted(set(names), key=len, reverse=True))
+    return re.compile(
+        rf"已委派|委派给|已通知|交给({alternation})|"
+        rf"(让|请|叫)({alternation})[^，。；]{{0,6}}(复核|看|查|确认|处理)")
+
+
+_BUILTIN_NAMES = ("冯宝宝", "宝宝", "楚岚", "张楚岚", "王也")
+
+
+def _team_names() -> tuple:
+    """Display names and non-latin aliases of the current team, user roles included."""
+    from backend.app.domain.agent_registry import get_agent_registry
+    names = {n for a in get_agent_registry().all() for n in (a.display_name, *a.aliases) if n and not n.isascii()}
+    return tuple(sorted(names | set(_BUILTIN_NAMES)))
+
+
 # High precision on purpose: a false claim is worse than a missed one. Each
 # pattern requires completed aspect ("已/了") so plans and advice do not count.
+# claims() rebuilds the delegation entry with the live team names.
 _CLAIM_PATTERNS: list[tuple[str, re.Pattern]] = [
-    ("delegation", re.compile(
-        r"已委派|委派给|已通知|交给(冯宝宝|宝宝|楚岚|张楚岚|王也)|"
-        r"(让|请|叫)(冯宝宝|宝宝|楚岚|张楚岚|王也)[^，。；]{0,6}(复核|看|查|确认|处理)")),
+    ("delegation", _delegation_pattern(_BUILTIN_NAMES)),
     ("artifact", re.compile(
         r"已写入|写入了|写入到|保存到|已保存|生成(了)?(文件|报告|方案)|已创建|产出了|artifacts/")),
     ("exec", re.compile(
@@ -65,10 +81,11 @@ def _negated(sentence: str, match: re.Match) -> bool:
 def claims(reply: str) -> list[tuple[str, str]]:
     """(kind, sentence) for each sentence that asserts something happened."""
     found = []
+    patterns = [("delegation", _delegation_pattern(_team_names())), *_CLAIM_PATTERNS[1:]]
     for sentence in _sentences(reply):
         if _PLAN.search(sentence):
             continue
-        for kind, pattern in _CLAIM_PATTERNS:
+        for kind, pattern in patterns:
             if any(not _negated(sentence, m) for m in pattern.finditer(sentence)):
                 found.append((kind, sentence))
                 break
