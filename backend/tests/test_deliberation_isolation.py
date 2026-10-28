@@ -256,3 +256,24 @@ def test_installed_codex_initializes_managed_preferences_without_user_credential
             stdout, stderr = proc.communicate(timeout=5)
         assert b'Failed to synchronize managed preferences' not in stderr
         assert b'"type":"thread.started"' in stdout, stderr.decode(errors='replace')[-1000:]
+
+
+def test_mcp_proxy_runtime_stays_readable_wherever_the_app_lives(tmp_path, monkeypatch):
+    """The packaged app's interpreter may sit under /Users, /Volumes or /private/var/folders (#51)."""
+    runtime, private = tmp_path / 'Unity.app/Contents/Resources/python', tmp_path / 'user-notes.txt'
+    runtime.mkdir(parents=True)
+    (runtime / 'stdlib.py').write_text('RUNTIME_OK')
+    private.write_text('PRIVATE_CANARY')
+    monkeypatch.setattr(sys, 'base_prefix', str(runtime))
+    with tempfile.TemporaryDirectory(prefix='acv2-test-', dir='/tmp') as temp:
+        work = Path(temp).resolve()
+        profile = work / 'profile.sb'
+        profile.write_text(sandbox_profile(work, '/bin/cat'))
+
+        def read(path):
+            return subprocess.run(['/usr/bin/sandbox-exec', '-f', str(profile), '/bin/cat', str(path)],
+                                  capture_output=True, text=True, timeout=20)
+
+        assert read(runtime.resolve() / 'stdlib.py').stdout == 'RUNTIME_OK'
+        denied = read(private.resolve())
+        assert denied.returncode != 0 and 'PRIVATE_CANARY' not in denied.stdout
