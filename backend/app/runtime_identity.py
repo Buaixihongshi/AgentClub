@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,10 @@ if TYPE_CHECKING:
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_PATHS = ("backend", "frontend", "scripts", "config", "requirements.txt")
+# Packaged builds have no Git checkout; the packager freezes the identity the
+# frontend bundle was built with so both sides still report the same source.
+BUILD_IDENTITY = "build-identity.json"
+IDENTITY_FIELDS = ("git_sha", "branch", "dirty", "source_digest", "checkout_id")
 
 
 def git(root: Path, *args: str) -> str | None:
@@ -29,6 +34,12 @@ def git(root: Path, *args: str) -> str | None:
 def source_snapshot(root: Path = ROOT) -> dict:
     root = root.resolve()
     sha = git(root, "rev-parse", "--verify", "HEAD")
+    if not sha and (root / BUILD_IDENTITY).is_file():
+        try:
+            frozen = json.loads((root / BUILD_IDENTITY).read_text(encoding="utf-8"))
+            return {key: frozen.get(key) for key in IDENTITY_FIELDS}
+        except (OSError, ValueError):
+            pass
     status = git(root, "status", "--porcelain", "--untracked-files=normal")
     digest = None
     # Hash source contents, including staged and untracked code, so two dirty

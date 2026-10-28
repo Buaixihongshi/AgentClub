@@ -94,6 +94,10 @@ def create_app(
     )
     app.include_router(build_providers_router(app_settings))
     app.include_router(build_observability_router(repository))
+    if app_settings.frontend_dist is not None:
+        # Mounted last so every /api route above keeps precedence.
+        from fastapi.staticfiles import StaticFiles
+        app.mount("/", StaticFiles(directory=app_settings.frontend_dist, html=True), name="frontend")
     # A persisted human choice may have committed just before a crash and
     # before its worker started. Reservations make rescheduling idempotent.
     from backend.app.orchestration.deliberation import is_v2
