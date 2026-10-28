@@ -1,6 +1,6 @@
 # 共享对话与用户插话（RT-1）
 
-本次实现[多人讨论方案 PR #6](https://github.com/Buaixihongshi/AgentClub/pull/6)的第一阶段。已有任务模式、人格和发言顺序继续适用；圆桌模式、统一回合预算、收尾/停止控制和界面入口留给 RT-2 / RT-3。
+本次实现[多人讨论方案 PR #6](https://github.com/Buaixihongshi/Unity/pull/6)的第一阶段。已有任务模式、人格和发言顺序继续适用；圆桌模式、统一回合预算、收尾/停止控制和界面入口留给 RT-2 / RT-3。
 
 ## 数据与读取约定
 

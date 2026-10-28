@@ -4,7 +4,7 @@ Antigravity CLI 1.0.2 loads MCP servers ONLY from the hardcoded global
 ``~/.gemini/config/mcp_config.json`` — it ignores ``GEMINI_CLI_HOME`` /
 ``XDG_CONFIG_HOME`` / ``--app_data_dir``, ``HOME`` redirect breaks its OS
 keyring auth, and there is no ``--mcp-config`` flag. So the only way to inject
-the AgentClub MCP server is to temporarily rewrite that global file for the
+the Unity MCP server is to temporarily rewrite that global file for the
 duration of the agy subprocess, then restore it.
 
 Safety mechanisms (all required, see the amending ADR
@@ -155,7 +155,7 @@ def recover_antigravity_global_config() -> None:
     """Startup crash recovery. No-op when ~/.gemini/config does not exist.
 
     Covers the window where a hard-kill left our temp config behind and the
-    user ran agy manually before the next AgentClub turn.
+    user ran agy manually before the next Unity turn.
 
     Fast path: if no sentinel exists there is nothing to recover, so we skip
     acquiring the lock entirely — this keeps the common (no-crash) case

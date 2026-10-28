@@ -3,7 +3,7 @@
 
 Targets the smallest possible MCP slice: a single mission with
 ``target_agent_id="chulan"`` (张楚岚 → Claude by default), one turn, expecting
-Claude to call the AgentClub ``publish_message`` tool over MCP rather than
+Claude to call the Unity ``publish_message`` tool over MCP rather than
 printing to stdout.
 
 Pass criteria:

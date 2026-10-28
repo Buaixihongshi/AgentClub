@@ -55,6 +55,9 @@ class LegacySharedWork:
     def read_log(self, conversation_id, log_id):
         with self.repo._transaction() as db:
             self._load(db, conversation_id)
+            if isinstance(log_id, str) and log_id.startswith('ws_'):
+                from backend.app.work.snapshots import read_bytes
+                return read_bytes(self.repo, conversation_id, log_id)
             row = db.execute('SELECT output FROM work_check_logs WHERE id=? AND conversation_id=?',
                              (log_id, conversation_id)).fetchone()
             if not row:

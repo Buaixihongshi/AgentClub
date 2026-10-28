@@ -255,7 +255,7 @@ class DeliberationCLIAdapter:
                     if endpoint.hostname in {'localhost', '127.0.0.1', '::1'}:
                         port = endpoint.port or (443 if endpoint.scheme == 'https' else 80)
                         if port in {8000, 5173}:
-                            raise ValueError('Provider endpoint cannot be the local AgentClub application')
+                            raise ValueError('Provider endpoint cannot be the local Unity application')
                         loopback_ports.append(port)
                     token = claude_oauth_token(env)
                     if token:

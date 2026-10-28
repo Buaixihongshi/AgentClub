@@ -54,7 +54,7 @@ def create_app(
                 from backend.app.adapters.antigravity_session import SESSION_POOL
                 SESSION_POOL.close(app_settings.database_path)
 
-    app = FastAPI(title="AgentClub", lifespan=lifespan)
+    app = FastAPI(title="Unity", lifespan=lifespan)
     from backend.app.runtime_control import install as install_runtime_control
     install_runtime_control(app, repository, app_settings)
 
@@ -78,6 +78,8 @@ def create_app(
     app.include_router(build_missions_router(app_settings, repository, adapter_override=mission_adapter))
     from backend.app.api.shared_work import build_router as build_work_router
     app.include_router(build_work_router(app_settings, repository, mission_adapter))
+    from backend.app.api.tasks import build_router as build_tasks_router
+    app.include_router(build_tasks_router(app_settings, repository, mission_adapter))
     from backend.app.api.memory import build_router as build_memory_router
     app.include_router(build_memory_router(app_settings, repository))
     app.include_router(

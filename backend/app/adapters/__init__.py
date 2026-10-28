@@ -1,1 +1,1 @@
-"""CLI adapter implementations for AgentClub mission turns."""
+"""CLI adapter implementations for Unity mission turns."""

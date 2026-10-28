@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AgentClub conversation flow smoke acceptance script.
+"""Unity conversation flow smoke acceptance script.
 
 Validates:
   - Conversation continuity (messages persist across missions)
@@ -270,7 +270,7 @@ def run_smoke(mode: str, goal_1: str, goal_2: str, goal_directed: str,
 
         # --- Print report ---
         print("\n" + "=" * 60)
-        print("AgentClub Conversation Flow Smoke Report")
+        print("Unity Conversation Flow Smoke Report")
         print("=" * 60)
         print("Mode:              {m}".format(m=mode))
         print("Elapsed:           {t:.1f}s".format(t=elapsed))
@@ -368,7 +368,7 @@ def run_smoke(mode: str, goal_1: str, goal_2: str, goal_directed: str,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AgentClub conversation flow smoke acceptance test",
+        description="Unity conversation flow smoke acceptance test",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--fake", action="store_true", help="Run with fake CLI adapter")

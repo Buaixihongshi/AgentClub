@@ -47,7 +47,7 @@ class WorkCommand(Input):
     action: Literal['propose_work', 'accept_proposal', 'reject_proposal', 'propose_contract', 'activate_contract', 'create_task', 'start', 'pause',
                     'retry', 'progress', 'submit', 'review', 'block', 'create_work', 'revise_work',
                     'decide', 'resume', 'cancel', 'adjust_budget', 'grant_execution', 'continue_work',
-                    'request_decision', 'raise_risk', 'propose_revision', 'propose_transfer', 'accept_transfer', 'refine_agreement', 'retry_environment', 'start_preview', 'stop_preview']
+                    'request_decision', 'raise_risk', 'propose_revision', 'propose_transfer', 'accept_transfer', 'refine_agreement', 'retry_environment', 'start_preview', 'stop_preview', 'configure_workflow']
     expected_revision: int = Field(ge=0)
     data: dict = Field(default_factory=dict)
     operation_id: str | None = Field(default=None, min_length=1, max_length=120)

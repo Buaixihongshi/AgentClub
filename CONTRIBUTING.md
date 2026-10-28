@@ -1,6 +1,6 @@
-# Contributing to AgentClub
+# Contributing to Unity
 
-AgentClub uses a lightweight trunk-based workflow. `main` is the only
+Unity uses a lightweight trunk-based workflow. `main` is the only
 long-lived branch and should remain releasable.
 
 ## Branches
@@ -98,7 +98,7 @@ and relevant review before merging it.
 
 ## Development, testing, and production
 
-Use one shared remote, `https://github.com/Buaixihongshi/AgentClub`, with
+Use one shared remote, `https://github.com/Buaixihongshi/Unity`, with
 separate task worktrees, a clean main-only alpha checkout, and managed release
 checkouts. Use `scripts/env.sh dev <task>` for task branches; never edit the
 running daily-service checkout. Existing legacy test clones are retained until

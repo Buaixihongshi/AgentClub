@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { MessagesSquare, Workflow } from "lucide-react";
 import type { StreamState } from "../hooks/useMissionStream";
 import type { ProviderStatusState } from "../hooks/useProviderStatus";
 import {
@@ -23,8 +24,13 @@ import { SettingsButton } from "./SettingsButton";
 import { TurnTimeline } from "./TurnTimeline";
 import { EnvironmentBadge } from "./EnvironmentBadge";
 import { SharedWorkWorkspace } from "./SharedWorkWorkspace";
+import "./WorkspaceShell.css";
 
 export function MissionRoomPage(props: {
+  section?: "conversations" | "tasks";
+  onSectionChange?: (section: "conversations" | "tasks") => void;
+  onOpenTask?: (id: string) => void;
+  taskContent?: ReactNode;
   detail?: MissionDetail;
   turns: TurnView[];
   agentParticipants: AgentParticipant[];
@@ -99,7 +105,7 @@ export function MissionRoomPage(props: {
   return (
     <main className="mission-room task-room">
       <div className="mission-header-bar">
-        <MissionHeader runtimeSummary={props.runtimeSummary} streamState={props.streamState} />
+        <MissionHeader runtimeSummary={props.runtimeSummary} streamState={props.streamState} showRuntime={props.section !== "tasks"} />
         <SettingsButton
           view={props.hubSettings ?? null}
           conversationId={props.selectedConversationId}
@@ -116,10 +122,16 @@ export function MissionRoomPage(props: {
         />
       </div>
       <EnvironmentBadge runtime={props.onboarding?.health?.runtime} loading={props.onboarding?.healthLoading} />
-      {props.error ? (
+      {props.error && props.section !== "tasks" ? (
         <div role="alert" className="error-banner">{props.error}</div>
       ) : null}
-      <div className="workspace-layout">
+      <div className="unity-shell">
+        <nav className="unity-navigation" aria-label="工作区导航">
+          <button type="button" aria-current={props.section !== "tasks" ? "page" : undefined} onClick={() => props.onSectionChange?.("conversations")}><MessagesSquare size={22} /><span>会话</span></button>
+          <button type="button" aria-current={props.section === "tasks" ? "page" : undefined} onClick={() => props.onSectionChange?.("tasks")}><Workflow size={22} /><span>任务</span></button>
+        </nav>
+        <div className="unity-workspace-pane" hidden={props.section === "tasks"}>
+        <div className="workspace-layout">
         <ConversationList
           conversations={props.conversations}
           selectedId={props.selectedConversationId}
@@ -135,9 +147,13 @@ export function MissionRoomPage(props: {
             {props.selectedConversationId ? <SharedWorkWorkspace key={props.selectedConversationId}
               conversationId={props.selectedConversationId} goal={props.detail?.mission.goal ?? ''}
               archived={props.conversationScope === 'archived'} onUpdate={props.onWorkUpdate}
+              onOpenTask={props.onOpenTask}
               chat={timeline} composer={composer} /> : <>{timeline}{composer}</>}
           </section>
         </div>
+      </div>
+        </div>
+        <div className="unity-workspace-pane unity-tasks-pane" hidden={props.section !== "tasks"}>{props.taskContent}</div>
       </div>
     </main>
   );

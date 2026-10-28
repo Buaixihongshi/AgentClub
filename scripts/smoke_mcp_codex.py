@@ -2,7 +2,7 @@
 """Real-CLI smoke verifying the Gamma G2-1 MCP handshake against Codex.
 
 Targets the smallest possible MCP slice: a single mission with `target_agent_id="baobao"`
-(冯宝宝 → Codex by default), one turn, expecting Codex to call the AgentClub
+(冯宝宝 → Codex by default), one turn, expecting Codex to call the Unity
 `publish_message` tool over MCP rather than printing to stdout.
 
 Pass criteria:

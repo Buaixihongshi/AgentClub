@@ -1,6 +1,6 @@
-# AgentClub Iron Laws（L1–L4）
+# Unity Iron Laws（L1–L4）
 
-AgentClub 在 ADR、`CLAUDE.md` 与本仓库 MCP 语义下实际执行的四条**铁律**：破坏任一条应由 `backend/tests/test_iron_laws.py` 在 CI 中拦截。
+Unity 在 ADR、`CLAUDE.md` 与本仓库 MCP 语义下实际执行的四条**铁律**：破坏任一条应由 `backend/tests/test_iron_laws.py` 在 CI 中拦截。
 
 ---
 

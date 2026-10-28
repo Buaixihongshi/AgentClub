@@ -91,7 +91,7 @@ class MaintenanceService:
             updated = run.model_copy(
                 update={
                     "phase": MaintenancePhase.BLOCKED,
-                    "last_error": "AgentClub restarted during an in-flight maintenance action",
+                    "last_error": "Unity restarted during an in-flight maintenance action",
                     "updated_at": utc_now(),
                 }
             )

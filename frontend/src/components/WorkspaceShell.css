@@ -1,0 +1,23 @@
+/* Three columns follow the user's sketch: global rail, contextual list, workspace. */
+.unity-shell { display:flex; flex:1; min-height:0; min-width:0; overflow:hidden; }
+.unity-navigation { flex:0 0 76px; display:flex; flex-direction:column; gap:10px; padding:20px 9px; background:var(--surface); border-right:2px solid var(--ink-soft); }
+.unity-navigation button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; width:56px; min-height:66px; padding:10px 4px; border:2px solid transparent; border-radius:6px; color:var(--ink-muted); background:transparent; font-size:12px; }
+.unity-navigation button:hover { background:var(--paper-soft); color:var(--ink); }
+.unity-navigation button[aria-current=page] { background:var(--sage-soft); border-color:var(--ink); color:var(--ink); box-shadow:var(--hard-shadow-sm); }
+.unity-workspace-pane { flex:1; min-height:0; min-width:0; overflow:hidden; }
+.unity-workspace-pane[hidden] { display:none !important; }
+.unity-workspace-pane>.workspace-layout { height:100%; }
+.unity-tasks-pane { display:flex; }
+.conversation-workspace.work-workspace { display:flex; flex-direction:column; }
+.conversation-workspace>.work-chat-panel { flex:1; min-height:0; }
+@media (max-width:700px) {
+ .unity-navigation { flex-basis:58px; padding:12px 5px; gap:8px; }
+ .unity-navigation button { width:46px; min-height:58px; gap:5px; font-size:11px; }
+ .unity-workspace-pane>.workspace-layout { display:flex; flex-direction:column; }
+ .unity-workspace-pane .conversation-list { height:120px; min-height:120px; max-height:120px; border-right:0; border-bottom:1px solid var(--ink-soft); }
+ .unity-workspace-pane .conversation-layout { flex:1; min-height:0; }
+ .unity-workspace-pane .conversation-list-footer { display:none; }
+ .unity-workspace-pane .conversation-list-header { min-height:46px; height:46px; padding:7px 12px; }
+ .unity-workspace-pane .conv-items { padding:4px 10px; }
+ .unity-workspace-pane .conv-item-preview { display:none; }
+}
