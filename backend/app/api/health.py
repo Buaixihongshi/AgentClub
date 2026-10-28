@@ -38,7 +38,7 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
         runtime["draining"] = request.app.state.draining or request.app.state.drain_pending
         return {
             "status": "ok",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "database": "ready",
             "config": "ready",
             "fake_provider": "ready",
