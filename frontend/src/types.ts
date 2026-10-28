@@ -669,6 +669,8 @@ export interface OnboardingView {
   guide_agent_id: string;
   conversation_id?: string | null;
   mission_id?: string | null;
+  first_chat_provider_id?: string | null;
+  first_chat_error?: string | null;
   verification_provider_id?: string | null;
   verification_mission_id?: string | null;
   activated_provider_id?: string | null;
@@ -681,6 +683,8 @@ export interface OnboardingView {
   recommended_provider_id?: string | null;
   verification_error?: string | null;
   dismissed_real_cli_setup: boolean;
+  /** Offline demo environments block every real onboarding call. */
+  real_cli_blocked?: boolean;
 }
 
 export interface OnboardingFirstChatResponse {

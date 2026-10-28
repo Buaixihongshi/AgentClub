@@ -84,7 +84,7 @@ development 的默认模式与 alpha 每次停止后重新启动时，从 `runti
 
 development 已获用户授权进行真实功能验证，按日常路由执行；自动化离线检查不受此默认值影响。显式 development --demo / 默认 test 环境在读取保存设置及每次任务快照后
 仍强制使用演示适配器，并拦截真实验证/探测，不能被旧设置中的 use_fake_cli=false 放开。
-日常 local 兼容模式保留用户在设置页明确完成的真实 Provider 接入方式。
+local 与 runtime 默认使用真实 CLI（`use_fake_cli=false`），保留用户在设置页或启动引导中完成的 Provider 接入；未接入前角色会明确报告 Provider 未启用，不回退演示。
 
 旧脚本 start.sh、start-isolated.sh、dev-backend.sh、dev-real.sh 保留为新入口别名。
 start.sh 保留 local 的旧数据位置；dev-backend.sh 默认改用开发端口 8100 并隔离数据。

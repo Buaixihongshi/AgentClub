@@ -1,6 +1,6 @@
-# Unity Iron Laws（L1–L4）
+# Unity Iron Laws（L1–L3）
 
-Unity 在 ADR、`CLAUDE.md` 与本仓库 MCP 语义下实际执行的四条**铁律**：破坏任一条应由 `backend/tests/test_iron_laws.py` 在 CI 中拦截。
+Unity 在 ADR、`CLAUDE.md` 与本仓库 MCP 语义下实际执行的三条**铁律**：破坏任一条应由 `backend/tests/test_iron_laws.py` 在 CI 中拦截。
 
 ---
 
@@ -45,17 +45,3 @@ Unity 在 ADR、`CLAUDE.md` 与本仓库 MCP 语义下实际执行的四条**铁
 **例外（显式 allowlist）：** `backend/app/orchestration/speaker.py` 对 API 字段 `target_agent_id` 的处理属于**显式请求参数**，不是从消息体解析 `@xxx`；测试中对 `speaker.py` 的静态规则与对 `invoke_agent` / `a2a_enqueue` 的约束分别说明。
 
 **违反示例：** 在 `orchestration/` 或 `api/` 中根据用户消息字符串解析 `@` 来改写 speaker 或 workflow。
-
----
-
-## L4: 默认 Fake CLI；仓库内真实 provider 保持关闭
-
-**Rule：** `Settings.use_fake_cli` 默认为 `True`；提交到仓库的 `config/cli-providers.json` 中内部 `fake` 为 `enabled: true`，`claude` / `codex` / `antigravity` 为 `enabled: false`；已退役的 `gemini` 不得出现在 Provider 配置中。
-
-**Why：** Clone 即可离线跑通；避免默认误连真实账号与配额。
-
-**Code anchor：** `backend/app/settings.py`（`use_fake_cli` 默认值）、`config/cli-providers.json`（各 provider 的 `enabled` 字段）。
-
-**Test：** `test_l4_fake_default_real_providers_disabled`
-
-**违反示例：** 将默认 `use_fake_cli` 改为 `False`，把已提交的真实 Provider 改为 `enabled: true`，或重新加入 `gemini` Provider 配置。

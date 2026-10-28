@@ -22,7 +22,7 @@ class Settings(BaseModel):
     artifact_root: Path = Path("artifacts")
     memory_root: Path = Path("data/memory")
     config_dir: Path = Path("config")
-    use_fake_cli: bool = True
+    use_fake_cli: bool = False
     demo_only: bool = False
     max_turns: int = 6
     roundtable_max_turns: int = Field(default=12, ge=3, le=12)
@@ -58,7 +58,7 @@ def get_settings() -> Settings:
         artifact_root=_env_path("YIREN_ARTIFACT_ROOT", default=Path("artifacts")),
         memory_root=_env_path("YIREN_MEMORY_ROOT", default=Path("data/memory")),
         config_dir=_env_path("YIREN_CONFIG_DIR", default=Path("config")),
-        use_fake_cli=_env_bool("YIREN_USE_FAKE_CLI", default=True),
+        use_fake_cli=_env_bool("YIREN_USE_FAKE_CLI", default=False),
         demo_only=_env_bool("YIREN_DEMO_ONLY", default=False),
         max_turns=_env_int("YIREN_MAX_TURNS", default=6),
         roundtable_max_turns=_env_int("YIREN_ROUNDTABLE_MAX_TURNS", default=12),

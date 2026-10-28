@@ -65,7 +65,14 @@ export function MissionRoomPage(props: {
   onWorkUpdate?: () => void;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const showOnboarding = props.turns.length === 0 && props.onboarding?.onboarding?.state !== "completed" && !props.hasAutonomousWork;
+  // Ordinary conversations hide the guide once they have turns; the welcome
+  // conversation keeps it below its first real replies until setup finishes.
+  const inOnboardingConversation = Boolean(
+    props.selectedConversationId
+    && props.selectedConversationId === props.onboarding?.onboarding?.conversation_id,
+  );
+  const showOnboarding = (props.turns.length === 0 || inOnboardingConversation)
+    && props.onboarding?.onboarding?.state !== "completed" && !props.hasAutonomousWork;
   const hasActiveMission = Boolean(
     props.detail && (!isTerminalMissionStatus(props.detail.mission.status) ||
       (props.detail.discussion?.protocol === 'deliberation_v2' && props.detail.discussion.phase !== 'ended')),
