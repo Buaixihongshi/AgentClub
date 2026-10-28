@@ -7,8 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from backend.app.adapters.fake import FakeCLIAdapter
-from backend.app.adapters.base import CLIAdapter, TurnOutcome
+from backend.app.adapters.base import CLIAdapter
 from backend.app.api.conversations import _conversation_detail
 from backend.app.api.missions import _run_mission_in_background
 from backend.app.config.providers import (
@@ -23,24 +22,24 @@ from backend.app.domain.models import (
     Mission,
     MissionKind,
     MissionStatus,
-    TurnStatus,
     utc_now,
 )
-from backend.app.mcp.tools import MCPTools
-from backend.app.settings import AgentOverride, ProviderOverride, Settings
+from backend.app.settings import (
+    AgentOverride,
+    ProviderOverride,
+    Settings,
+    snapshot_settings,
+)
 from backend.app.storage import hub_settings
 from backend.app.storage.repository import Repository
 
 
 GUIDE_AGENT_ID = "chulan"
 ONBOARDING_TITLE = "欢迎使用 Unity"
-ONBOARDING_GOAL = (
-    "@张楚岚 我刚启动 Unity，请用两三句话介绍你自己，并带我完成初始配置。"
-)
-ONBOARDING_REPLY = (
-    "哥，听得见，Unity 这边已经跑通了。我是张楚岚，先负责带你熟悉这个聊天室。"
-    "现在用的是不会产生模型费用的演示 CLI；你可以先随便聊两句，之后再接入真实 CLI。"
-)
+# Both onboarding prompts are deliberately plain social turns: the runner
+# then gives each named role exactly one chat reply, with no A2A and no work
+# such as editing files, while the user's real CLI account is being verified.
+ONBOARDING_GOAL = "@张楚岚 你好，介绍一下自己"
 PROVIDER_PRIORITY = ("codex", "claude", "antigravity")
 PROVIDER_HELP = {
     "codex": {
@@ -66,49 +65,9 @@ _TERMINAL_STATUSES = {
     MissionStatus.FAILED,
 }
 TEAM_AGENT_IDS = ("baobao", "wangye")
-TEAM_INTRO_GOAL = (
-    "@冯宝宝 @王也 张楚岚已经接入 {provider_label}。请你们各用一句话向新用户介绍自己，"
-    "说说自己的性格和交流习惯，不介绍固定分工。"
-)
-TEAM_INTRO_REPLIES = {
-    "baobao": "我是冯宝宝。有啥子就直说，不懂的我会问，想明白了也会告诉你。",
-    "wangye": "王也。慢慢聊，我有自己的想法，也愿意听能让我改主意的道理。",
-}
-
-
-class _TeamIntroAdapter(CLIAdapter):
-    """Deterministic onboarding replies; never invokes a real provider."""
-
-    def run_turn(
-        self,
-        mission_id: str,
-        agent_id: str,
-        turn_id: str,
-        provider_id: str,
-        prompt: str,
-        tools: MCPTools,
-    ) -> TurnOutcome:
-        content = TEAM_INTRO_REPLIES.get(
-            agent_id,
-            "我已经加入聊天室，很高兴和你一起聊聊、解决问题。",
-        )
-        tools.publish_message(
-            mission_id,
-            agent_id,
-            turn_id,
-            content,
-            provider_id,
-        )
-        if agent_id == "baobao":
-            tools.invoke_agent(
-                mission_id,
-                sender_agent_id=agent_id,
-                sender_turn_id=turn_id,
-                target_agent_id="wangye",
-                purpose="向新用户介绍你的性格和交流习惯",
-                provider_id=provider_id,
-            )
-        return TurnOutcome(status=TurnStatus.COMPLETED)
+TEAM_INTRO_GOAL = "@冯宝宝 @王也 你们好，请各用一句话介绍自己"
+_SUCCESS_STATUSES = {MissionStatus.COMPLETED, MissionStatus.COMPLETED_WITH_WARNINGS}
+_FIRST_CHAT_STARTABLE = {"ready_for_first_chat", "first_chat_failed"}
 
 
 class UpdateOnboardingRequest(BaseModel):
@@ -124,11 +83,20 @@ class VerifyProviderRequest(BaseModel):
     confirmed_real_call: bool
 
 
+class StartFirstChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str
+    confirmed_real_call: bool
+
+
 def build_router(
     settings: Settings,
     repository: Repository,
     verification_adapter: Optional[CLIAdapter] = None,
 ) -> APIRouter:
+    """``verification_adapter`` replaces the real CLI router for every
+    onboarding mission (first chat, verification, team intro) in tests."""
     router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
     state_lock = threading.Lock()
 
@@ -138,34 +106,40 @@ def build_router(
             return _build_state(repository, settings, persist=True)
 
     @router.post("/first-chat", status_code=202)
-    def start_first_chat():
+    def start_first_chat(payload: StartFirstChatRequest):
+        if not payload.confirmed_real_call:
+            raise HTTPException(
+                status_code=400,
+                detail="必须明确确认后才能发起一次真实 CLI 请求",
+            )
+
+        provider_id = payload.provider_id
         with state_lock:
+            provider = _get_onboarding_provider(settings, provider_id)
             state = _build_state(repository, settings, persist=True)
             conversation = _get_state_conversation(repository, state)
-            mission = _get_state_mission(repository, state)
+            startable = state["state"] in _FIRST_CHAT_STARTABLE or (
+                state["state"] == "provider_verification_failed"
+                and not state.get("activated_provider_id")
+            )
 
-            if state["state"] in {
-                "first_chat_running",
-                "first_chat_succeeded",
-                "provider_verifying",
-                "provider_verification_failed",
-                "provider_verified",
-                "team_intro_running",
-                "team_intro_failed",
-                "team_intro_completed",
-                "completed",
-            } and conversation is not None and mission is not None:
+            if not startable:
+                if conversation is None:
+                    raise HTTPException(status_code=409, detail="启动引导会话不存在")
                 return {
                     "onboarding": state,
                     "conversation": _conversation_detail(repository, settings, conversation),
                 }
 
-            if conversation is None:
-                conversation = Conversation(
-                    id="c_{suffix}".format(suffix=uuid4().hex[:12]),
-                    title=ONBOARDING_TITLE,
+            readiness = _provider_readiness(settings, provider_id)
+            if not readiness["available"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail=readiness.get("error") or "未找到 {label}".format(label=provider.label),
                 )
-                repository.create_conversation(conversation)
+
+            if conversation is None:
+                conversation = _create_onboarding_conversation(repository)
 
             mission = Mission(
                 id="m_{suffix}".format(suffix=uuid4().hex),
@@ -195,6 +169,8 @@ def build_router(
                     "guide_agent_id": GUIDE_AGENT_ID,
                     "conversation_id": conversation.id,
                     "mission_id": mission.id,
+                    "first_chat_provider_id": provider_id,
+                    "first_chat_error": None,
                     "first_reply_completed_at": None,
                     "completed_at": None,
                     "dismissed_real_cli_setup": False,
@@ -202,27 +178,17 @@ def build_router(
             )
             _save_file(settings, data)
 
-            fake_settings = settings.model_copy(
-                update={
-                    "use_fake_cli": True,
-                    "max_turns": 1,
-                    "max_a2a_invocations": 0,
-                    "provider_overrides": {},
-                    "agent_overrides": {
-                        GUIDE_AGENT_ID: AgentOverride(
-                            default_provider_id="fake",
-                            fallback_provider_ids=[],
-                        )
-                    },
-                }
-            )
             threading.Thread(
                 target=_run_mission_in_background,
                 args=(
                     repository,
-                    fake_settings,
+                    _real_cli_settings(
+                        settings,
+                        {GUIDE_AGENT_ID: provider_id},
+                        max_turns=1,
+                    ),
                     mission.id,
-                    FakeCLIAdapter(response=ONBOARDING_REPLY),
+                    verification_adapter,
                 ),
                 daemon=True,
             ).start()
@@ -257,8 +223,11 @@ def build_router(
         with state_lock:
             provider = _get_onboarding_provider(settings, provider_id)
             state = _build_state(repository, settings, persist=True)
-            if not state.get("first_reply_completed_at"):
-                raise HTTPException(status_code=409, detail="请先完成 Fake 首次对话")
+            if state["state"] == "first_chat_running":
+                raise HTTPException(
+                    status_code=409,
+                    detail="首次对话正在进行，请等待它结束",
+                )
 
             existing_id = state.get("verification_mission_id")
             existing = repository.get_mission(existing_id) if existing_id else None
@@ -294,7 +263,7 @@ def build_router(
 
             conversation = _get_state_conversation(repository, state)
             if conversation is None:
-                raise HTTPException(status_code=409, detail="启动引导会话不存在")
+                conversation = _create_onboarding_conversation(repository)
 
             mission = Mission(
                 id="m_{suffix}".format(suffix=uuid4().hex),
@@ -313,6 +282,7 @@ def build_router(
             onboarding = _onboarding_section(data)
             onboarding.update(
                 {
+                    "conversation_id": conversation.id,
                     "verification_provider_id": provider_id,
                     "verification_mission_id": mission.id,
                     "verification_started_at": utc_now().isoformat(),
@@ -392,26 +362,22 @@ def build_router(
             onboarding = _onboarding_section(data)
 
             runtime["use_fake_cli"] = False
-            providers.setdefault("fake", {})["enabled"] = True
             providers.setdefault(provider_id, {})["enabled"] = True
-            agents[GUIDE_AGENT_ID] = {
-                "default_provider_id": provider_id,
-                "fallback_provider_ids": ["fake"],
-            }
-            agents["baobao"] = {
-                "default_provider_id": "fake",
-                "fallback_provider_ids": [],
-            }
-            agents["wangye"] = {
-                "default_provider_id": "fake",
-                "fallback_provider_ids": [],
-            }
+            # The single verified CLI serves the whole team; no role silently
+            # falls back to the offline demo provider. Model choices stay.
+            for agent_id in (GUIDE_AGENT_ID, *TEAM_AGENT_IDS):
+                current = agents.get(agent_id)
+                agents[agent_id] = {
+                    **(current if isinstance(current, dict) else {}),
+                    "default_provider_id": provider_id,
+                    "fallback_provider_ids": [],
+                }
             activated_at = utc_now().isoformat()
             onboarding["activated_provider_id"] = provider_id
             onboarding["provider_activated_at"] = activated_at
             onboarding.pop("completed_at", None)
             onboarding["dismissed_real_cli_setup"] = False
-            intro_goal = TEAM_INTRO_GOAL.format(provider_label=provider.label)
+            intro_goal = TEAM_INTRO_GOAL
 
             intro_mission = Mission(
                 id="m_{suffix}".format(suffix=uuid4().hex),
@@ -419,7 +385,7 @@ def build_router(
                 goal=intro_goal,
                 conversation_id=conversation.id,
                 target_agent_id=TEAM_AGENT_IDS[0],
-                target_agent_ids=[TEAM_AGENT_IDS[0]],
+                target_agent_ids=list(TEAM_AGENT_IDS),
             )
             repository.create_mission(intro_mission)
             repository.add_message(
@@ -438,28 +404,17 @@ def build_router(
             onboarding.pop("team_intro_completed_at", None)
             _save_file(settings, data)
 
-            intro_settings = settings.model_copy(
-                update={
-                    "use_fake_cli": True,
-                    "max_turns": 1,
-                    "max_a2a_invocations": 1,
-                    "provider_overrides": {},
-                    "agent_overrides": {
-                        agent_id: AgentOverride(
-                            default_provider_id="fake",
-                            fallback_provider_ids=[],
-                        )
-                        for agent_id in TEAM_AGENT_IDS
-                    },
-                }
-            )
             threading.Thread(
                 target=_run_mission_in_background,
                 args=(
                     repository,
-                    intro_settings,
+                    _real_cli_settings(
+                        settings,
+                        {agent_id: provider_id for agent_id in TEAM_AGENT_IDS},
+                        max_turns=len(TEAM_AGENT_IDS),
+                    ),
                     intro_mission.id,
-                    _TeamIntroAdapter(),
+                    verification_adapter,
                 ),
                 daemon=True,
             ).start()
@@ -510,22 +465,58 @@ def _build_state(
         mission_id = None
         changed = True
 
-    first_reply_completed_at = _optional_string(
-        onboarding.get("first_reply_completed_at")
+    verified = onboarding.get("verified_providers")
+    if not isinstance(verified, dict):
+        verified = {}
+        onboarding["verified_providers"] = verified
+        changed = True
+
+    # A first chat without a recorded real provider is a legacy demo greeting:
+    # keep its conversation, but the user still has to connect a real CLI.
+    first_chat_provider_id = _optional_string(onboarding.get("first_chat_provider_id"))
+    first_chat_mission = mission if first_chat_provider_id else None
+    first_reply_completed_at = (
+        _optional_string(onboarding.get("first_reply_completed_at"))
+        if first_chat_mission is not None
+        else None
     )
-    if mission is not None and first_reply_completed_at is None:
+    if (
+        first_chat_mission is not None
+        and first_reply_completed_at is None
+        and first_chat_mission.status in _SUCCESS_STATUSES
+    ):
         reply = next(
             (
                 message
-                for message in repository.list_messages(mission.id)
+                for message in repository.list_messages(first_chat_mission.id)
                 if message.role == MessageRole.AGENT
                 and message.agent_id == GUIDE_AGENT_ID
+                and message.provider_id == first_chat_provider_id
             ),
             None,
         )
         if reply is not None:
             first_reply_completed_at = reply.created_at.isoformat()
             onboarding["first_reply_completed_at"] = first_reply_completed_at
+            onboarding["first_chat_error"] = None
+            if first_chat_provider_id not in verified:
+                readiness = _provider_readiness(settings, first_chat_provider_id)
+                verified[first_chat_provider_id] = {
+                    "verified_at": first_reply_completed_at,
+                    "version": readiness.get("version"),
+                    "method": "mcp_publish_message",
+                }
+            changed = True
+
+    first_chat_failed = (
+        first_chat_mission is not None
+        and first_chat_mission.status in _TERMINAL_STATUSES
+        and first_reply_completed_at is None
+    )
+    if first_chat_failed:
+        failure = _mission_failure_summary(repository, first_chat_mission.id)
+        if onboarding.get("first_chat_error") != failure:
+            onboarding["first_chat_error"] = failure
             changed = True
 
     verification_provider_id = _optional_string(
@@ -566,17 +557,8 @@ def _build_state(
         team_intro_mission_id = None
         changed = True
 
-    verified = onboarding.get("verified_providers")
-    if not isinstance(verified, dict):
-        verified = {}
-        onboarding["verified_providers"] = verified
-        changed = True
-
     verification_succeeded = False
-    if verification_mission is not None and verification_mission.status in {
-        MissionStatus.COMPLETED,
-        MissionStatus.COMPLETED_WITH_WARNINGS,
-    }:
+    if verification_mission is not None and verification_mission.status in _SUCCESS_STATUSES:
         verification_reply = next(
             (
                 message
@@ -611,10 +593,7 @@ def _build_state(
             changed = True
 
     team_intro_succeeded = False
-    if team_intro_mission is not None and team_intro_mission.status in {
-        MissionStatus.COMPLETED,
-        MissionStatus.COMPLETED_WITH_WARNINGS,
-    }:
+    if team_intro_mission is not None and team_intro_mission.status in _SUCCESS_STATUSES:
         intro_replies = {
             message.agent_id: message
             for message in repository.list_messages(team_intro_mission.id)
@@ -669,13 +648,13 @@ def _build_state(
         state = "provider_verified"
     elif verification_mission is not None and verification_mission.status not in _TERMINAL_STATUSES:
         state = "provider_verifying"
-    elif verification_failed:
-        state = "provider_verification_failed"
     elif first_reply_completed_at:
         state = "first_chat_succeeded"
-    elif mission is not None and mission.status not in _TERMINAL_STATUSES:
+    elif first_chat_mission is not None and not first_chat_failed:
         state = "first_chat_running"
-    elif mission is not None:
+    elif verification_failed:
+        state = "provider_verification_failed"
+    elif first_chat_failed:
         state = "first_chat_failed"
     else:
         state = "ready_for_first_chat"
@@ -688,10 +667,7 @@ def _build_state(
         settings,
         verified,
         activated_provider_id=activated_provider_id,
-        diagnose=bool(
-            first_reply_completed_at
-            and not completed_at
-        ),
+        diagnose=not completed_at,
     )
     recommended_provider_id = _recommended_provider_id(provider_views)
     return {
@@ -699,6 +675,8 @@ def _build_state(
         "guide_agent_id": GUIDE_AGENT_ID,
         "conversation_id": conversation_id,
         "mission_id": mission_id,
+        "first_chat_provider_id": first_chat_provider_id,
+        "first_chat_error": _optional_string(onboarding.get("first_chat_error")),
         "verification_provider_id": verification_provider_id,
         "verification_mission_id": verification_mission_id,
         "team_intro_mission_id": team_intro_mission_id,
@@ -715,6 +693,8 @@ def _build_state(
         "dismissed_real_cli_setup": bool(
             onboarding.get("dismissed_real_cli_setup", False)
         ),
+        # Demo environments block every real onboarding call (runtime_control).
+        "real_cli_blocked": settings.demo_only,
     }
 
 
@@ -726,9 +706,44 @@ def _get_state_conversation(
     return repository.get_conversation(conversation_id) if conversation_id else None
 
 
-def _get_state_mission(repository: Repository, state: dict) -> Optional[Mission]:
-    mission_id = state.get("mission_id")
-    return repository.get_mission(mission_id) if mission_id else None
+def _create_onboarding_conversation(repository: Repository) -> Conversation:
+    conversation = Conversation(
+        id="c_{suffix}".format(suffix=uuid4().hex[:12]),
+        title=ONBOARDING_TITLE,
+    )
+    repository.create_conversation(conversation)
+    return conversation
+
+
+def _real_cli_settings(
+    settings: Settings,
+    routes: dict[str, str],
+    *,
+    max_turns: int,
+) -> Settings:
+    """Saved settings with ``routes`` pinned to one real CLI and no fallback,
+    so an onboarding reply proves that exact CLI works (never the demo)."""
+    base = snapshot_settings(settings)
+    provider_overrides = dict(base.provider_overrides)
+    agent_overrides = dict(base.agent_overrides)
+    for agent_id, provider_id in routes.items():
+        provider_overrides[provider_id] = ProviderOverride(enabled=True)
+        current = agent_overrides.get(agent_id) or AgentOverride()
+        agent_overrides[agent_id] = current.model_copy(
+            update={
+                "default_provider_id": provider_id,
+                "fallback_provider_ids": [],
+            }
+        )
+    return base.model_copy(
+        update={
+            "use_fake_cli": False,
+            "max_turns": max_turns,
+            "max_a2a_invocations": 0,
+            "provider_overrides": provider_overrides,
+            "agent_overrides": agent_overrides,
+        }
+    )
 
 
 def _load_file(settings: Settings) -> dict:

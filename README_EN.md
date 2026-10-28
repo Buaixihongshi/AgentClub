@@ -68,7 +68,7 @@ This separation creates four practical benefits:
 
 ### 2. Value comes before configuration
 
-Unity separates product activation from real-model setup. Users first complete a successful Demo Mode conversation, then follow a Codex-first onboarding path, and only add Claude Code or Antigravity CLI when needed. A failed verification does not overwrite the current team configuration or make the room unusable.
+Unity separates product activation from real-model setup. Onboarding first detects the installed CLIs and verifies one of them with a real first conversation; when none is installed it shows install and login guidance. Other CLIs can be added later. A failed verification does not overwrite the current team configuration or make the room unusable.
 
 ### 3. MCP provides an auditable Agent communication path
 
@@ -100,7 +100,7 @@ The report flags category/task-level quality regressions and cases that spend 2Ã
 
 These screenshots were captured before the rename and show the former AgentClub branding.
 
-### Zero-account startup and Codex-first onboarding
+### First-run onboarding
 
 ![Unity onboarding](docs/images/agentclub-onboarding.jpg)
 
@@ -121,7 +121,7 @@ These screenshots were captured before the rename and show the former AgentClub 
 - Node.js `20.19+` or `22.12+`
 - npm
 
-No real AI CLI is required for the first run.
+The first run asks you to install and sign in to one supported CLI (Codex CLI, Claude Code or Antigravity CLI).
 
 ### Start Unity
 
@@ -161,7 +161,7 @@ Real CLI verification sends one model request through the corresponding account 
 
 | Provider | Command | Purpose | Default repository state |
 | --- | --- | --- | --- |
-| Demo Mode | Built in | Complete onboarding without an account | Enabled |
+| Demo Mode | Built in | Offline tests and explicit `--demo` environments | Enabled |
 | Codex CLI | `codex` | Recommended first real provider; can power the full team | Disabled until verified |
 | Claude Code | `claude` | Optional role provider | Disabled until verified |
 | Antigravity CLI | `agy` | Optional role provider | Disabled until verified |

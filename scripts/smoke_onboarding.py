@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Fresh-install onboarding acceptance smoke.
 
-Phase 1 intentionally supports the offline Fake path only. A later phase adds
-``--provider`` verification through the real MCP route.
+Onboarding always verifies a real CLI. ``--fake`` keeps this smoke offline:
+a scripted test double stands in for the installed CLI, so no model is called.
+Real-CLI acceptance goes through a managed development environment instead.
 """
 
 from __future__ import annotations
@@ -22,21 +23,45 @@ try:
 except ImportError:
     sys.exit("httpx / fastapi[testclient] not installed. Run: pip install httpx")
 
+from backend.app.adapters.base import CLIAdapter, TurnOutcome
+from backend.app.api import onboarding as onboarding_api
+from backend.app.domain.models import TurnStatus
 from backend.app.main import create_app
 from backend.app.settings import Settings
 
 
-def wait_for_success(client: TestClient, timeout_seconds: float = 5.0) -> dict:
+class ScriptedCLI(CLIAdapter):
+    """Offline stand-in for an installed CLI that replies through MCP."""
+
+    def run_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):
+        tools.publish_message(
+            mission_id,
+            agent_id,
+            turn_id,
+            "{agent} 已通过 {provider} 回复".format(agent=agent_id, provider=provider_id),
+            provider_id,
+        )
+        return TurnOutcome(status=TurnStatus.COMPLETED)
+
+
+def wait_for(client: TestClient, expected: str, timeout_seconds: float = 5.0) -> dict:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         state = client.get("/api/onboarding").json()
-        if state["state"] == "first_chat_succeeded":
+        if state["state"] == expected:
             return state
         time.sleep(0.05)
-    raise AssertionError("onboarding did not reach first_chat_succeeded")
+    raise AssertionError("onboarding did not reach {state}".format(state=expected))
 
 
-def run_fake_smoke() -> None:
+def run_offline_smoke() -> None:
+    installed = {"codex"}
+    onboarding_api._provider_readiness = lambda settings, provider_id: {
+        "available": provider_id in installed,
+        "version": "{id} smoke".format(id=provider_id) if provider_id in installed else None,
+        "path": None,
+        "error": None if provider_id in installed else "{id} 未安装".format(id=provider_id),
+    }
     with tempfile.TemporaryDirectory(prefix="yiren-onboarding-") as tmp:
         root = Path(tmp)
         settings = Settings(
@@ -47,43 +72,43 @@ def run_fake_smoke() -> None:
             max_turns=6,
             max_a2a_invocations=8,
         )
-        with TestClient(create_app(settings)) as client:
+        app = create_app(settings, onboarding_verification_adapter=ScriptedCLI())
+        with TestClient(app) as client:
             health = client.get("/api/health")
             assert health.status_code == 200, health.text
-            assert health.json()["fake_provider"] == "ready"
 
             initial = client.get("/api/onboarding").json()
             assert initial["state"] == "ready_for_first_chat", initial
+            assert initial["recommended_provider_id"] == "codex", initial
+            missing = [item["id"] for item in initial["providers"] if not item["available"]]
+            assert missing == ["claude", "antigravity"], initial
+            assert all(item["install_command"] for item in initial["providers"]), initial
 
-            first = client.post("/api/onboarding/first-chat")
-            second = client.post("/api/onboarding/first-chat")
+            payload = {"provider_id": "codex", "confirmed_real_call": True}
+            first = client.post("/api/onboarding/first-chat", json=payload)
+            second = client.post("/api/onboarding/first-chat", json=payload)
             assert first.status_code == 202, first.text
             assert second.status_code == 202, second.text
-            first_body = first.json()
-            second_body = second.json()
-            first_mission = first_body["conversation"]["latest_mission_detail"]["mission"]["id"]
-            second_mission = second_body["conversation"]["latest_mission_detail"]["mission"]["id"]
+            first_mission = first.json()["conversation"]["latest_mission_detail"]["mission"]["id"]
+            second_mission = second.json()["conversation"]["latest_mission_detail"]["mission"]["id"]
             assert first_mission == second_mission
 
-            state = wait_for_success(client)
+            state = wait_for(client, "first_chat_succeeded")
+            assert state["verified_provider_ids"] == ["codex"], state
+            client.post("/api/onboarding/providers/codex/activate").raise_for_status()
+            state = wait_for(client, "team_intro_completed")
             detail = client.get(
                 "/api/conversations/{id}".format(id=state["conversation_id"])
             ).json()
             replies = [message for message in detail["messages"] if message["role"] == "agent"]
-            assert len(replies) == 1, replies
-            assert replies[0]["agent_id"] == "chulan", replies[0]
-            assert replies[0]["provider_id"] == "fake", replies[0]
-            assert "Unity 这边已经跑通了" in replies[0]["content"], replies[0]
-            assert "聊天室模式" not in replies[0]["content"], replies[0]
+            assert [m["agent_id"] for m in replies] == ["chulan", "baobao", "wangye"], replies
+            assert {m["provider_id"] for m in replies} == {"codex"}, replies
 
-            completed = client.patch(
-                "/api/onboarding",
-                json={"completed": True, "dismissed_real_cli_setup": True},
-            )
+            completed = client.patch("/api/onboarding", json={"completed": True})
             assert completed.status_code == 200, completed.text
             assert completed.json()["state"] == "completed"
 
-            print("PASS: health → idempotent first chat → 张楚岚演示回复 → completed")
+            print("PASS: detect CLI → idempotent first chat via codex → team intro → completed")
             print("conversation_id={id}".format(id=state["conversation_id"]))
             print("mission_id={id}".format(id=state["mission_id"]))
 
@@ -91,11 +116,11 @@ def run_fake_smoke() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Unity onboarding smoke")
     parser.add_argument("--fresh", action="store_true", help="Use an isolated temporary data directory")
-    parser.add_argument("--fake", action="store_true", help="Run the offline Fake onboarding path")
+    parser.add_argument("--fake", action="store_true", help="Use an offline scripted CLI instead of a real one")
     args = parser.parse_args()
     if not args.fake:
-        parser.error("Phase 1 currently requires --fake")
-    run_fake_smoke()
+        parser.error("use --fake offline; verify real CLIs in a development environment")
+    run_offline_smoke()
 
 
 if __name__ == "__main__":

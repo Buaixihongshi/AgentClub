@@ -82,7 +82,10 @@ def test_demo_only_survives_saved_runtime_overrides_and_blocks_real_verification
     assert snap.demo_only and snap.use_fake_cli and not snap.maintenance_enabled
     client = TestClient(create_app(settings))
     assert client.post("/api/onboarding/providers/codex/verify").status_code == 409
+    assert client.post("/api/onboarding/first-chat", json={"provider_id": "codex", "confirmed_real_call": True}).status_code == 409
+    assert client.post("/api/onboarding/providers/codex/activate").status_code == 409
     assert client.post("/api/providers/codex/probe").status_code == 409
+    assert client.get("/api/onboarding").json()["real_cli_blocked"] is True
 
 
 def test_historical_blocked_task_is_idle_but_its_live_grant_still_blocks_drain(temp_settings, monkeypatch):

@@ -825,6 +825,20 @@ summary:focus-visible {
   font-size: 12px;
 }
 
+.onboarding-install-command {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--paper-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-provider-option p.onboarding-install-hint {
+  min-height: 0;
+}
+
 .onboarding-install-actions {
   display: flex;
   align-items: center;
