@@ -324,6 +324,47 @@ def test_frontend_proxy_and_reload_worker_identity_are_checked(monkeypatch):
     with pytest.raises(common.EnvironmentError): supervisor.verify(record)
 
 
+def test_development_reload_ignores_state_directory_writes(tmp_path):
+    import sys
+    import time
+    (tmp_path / "backend/app").mkdir(parents=True)
+    (tmp_path / "backend/app/main.py").write_text("async def app(scope, receive, send):\n    pass\n")
+    task_file = tmp_path / ".yiren/development-real/task-worktrees/features/abc/backend/app/new.py"
+    task_file.parent.mkdir(parents=True)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    log = tmp_path / "backend.log"
+    with log.open("w") as output:
+        proc = subprocess.Popen(supervisor.backend_command(sys.executable, port, True, [tmp_path / ".yiren"]),
+                                cwd=tmp_path, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+
+    def wait_for(text, count):
+        deadline = time.monotonic() + 20
+        while log.read_text().count(text) < count:
+            assert proc.poll() is None and time.monotonic() < deadline, log.read_text()
+            time.sleep(0.1)
+
+    try:
+        wait_for("Application startup complete", 1)
+        # The watcher starts lazily; a first source edit proves it is live before the task write.
+        for attempt in range(50):
+            (tmp_path / "backend/app/edited.py").write_text(f"value = {attempt}\n")
+            time.sleep(0.4)
+            if "Reloading" in log.read_text(): break
+        wait_for("Application startup complete", 2)
+        task_file.write_text("value = 1\n")
+        time.sleep(1.5)
+        (tmp_path / "backend/app/edited.py").write_text("value = 'last'\n")
+        wait_for("Application startup complete", 3)
+    finally:
+        os.killpg(proc.pid, 15)
+        proc.wait(timeout=10)
+    detected = [line for line in log.read_text().splitlines() if "detected changes" in line]
+    assert len(detected) == 2 and all("backend/app/edited.py" in line for line in detected), detected
+    assert not any("reload" in arg for arg in supervisor.backend_command("python", port, False, [tmp_path / ".yiren"]))
+
+
 def test_inventory_includes_managed_backend_only_ports(tmp_path, monkeypatch):
     from scripts import environment_status as status
     index = tmp_path / ".instances"
