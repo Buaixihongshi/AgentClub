@@ -51,4 +51,21 @@ def build_router(repository: Repository) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"turn not found: {turn_id}")
         return detail
 
+    @router.get("/turns/{turn_id}/records")
+    def get_turn_records(turn_id: str):
+        """The complete private execution records (prompt, raw stream, environment)."""
+        from backend.app.adapters.turn_record import read_records
+        from backend.app.orchestration.deliberation import Deliberation, is_v2
+
+        mission_id = repository.mission_id_for_turn(turn_id)
+        mission = repository.get_mission(mission_id) if mission_id else None
+        if mission is None:
+            raise HTTPException(status_code=404, detail=f"turn not found: {turn_id}")
+        # A V2 discussion releases results in batches; its raw streams contain
+        # unreleased submissions, so they open only once the discussion ends.
+        if is_v2(mission) and Deliberation(repository).state(mission)["phase"] != "ended":
+            raise HTTPException(status_code=409, detail="讨论结束后才能查看执行记录")
+        return {"turn_id": turn_id, "mission_id": mission.id,
+                "records": read_records(repository.database_path, mission.id, turn_id)}
+
     return router

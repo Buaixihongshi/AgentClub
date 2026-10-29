@@ -12,6 +12,13 @@ def _reset_agent_registry():
     reset_agent_registry()
 
 
+@pytest.fixture(autouse=True)
+def _no_cli_version_probe(monkeypatch):
+    # Turn records probe `<cli> --version`; offline tests must not run real CLIs.
+    from backend.app.adapters import turn_record
+    monkeypatch.setattr(turn_record, "VERSION_PROBE", False)
+
+
 @pytest.fixture()
 def temp_settings(tmp_path: Path) -> Settings:
     return Settings(
