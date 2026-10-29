@@ -141,4 +141,15 @@ describe('自主工作体验', () => {
     expect(screen.queryByRole('link', { name: '打开预览' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '正在准备预览…' })).toBeDisabled();
   });
+
+  it('执行中展示当前动作和对话里的最新进展，而不是停在旧的下一步', () => {
+    const running = structuredClone(board);
+    running.tasks[0].status = 'running';
+    running.tasks[0].active_mission_id = 'm_2';
+    const live = { running: [{ task_id: 'wt_root', mission_id: 'm_2', agent_id: 'chulan', attempt: 2, started_at: new Date(Date.now() - 5 * 60000).toISOString() }],
+      latest_message: { task_id: 'wt_root', mission_id: 'm_1', agent_id: 'chulan', created_at: '2026-10-29T03:56:41Z', content: '首轮基线完成，产品源码还没动。' } };
+    render(<AdaptiveWorkBody board={running} live={live} taskId="wt_root" conversationId="c_work" goal="" agents={agents} busy={false} error="" archived={false} command={vi.fn()} />);
+    expect(screen.getByText(/张楚岚 正在执行第 2 次 · 已进行 5 分钟/)).toBeInTheDocument();
+    expect(screen.getByText(/首轮基线完成/)).toBeInTheDocument();
+  });
 });

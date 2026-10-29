@@ -163,6 +163,11 @@ export async function updateConversation(
   return parseJson<ConversationDetail>(response, "更新会话详情失败");
 }
 
+export async function deleteConversation(conversationId: string): Promise<void> {
+  const response = await fetch(`${API_ROOT}/api/conversations/${conversationId}`, { method: "DELETE" });
+  if (!response.ok) await parseJson<never>(response, "删除会话失败");
+}
+
 export async function fetchConversation(conversationId: string): Promise<ConversationDetail> {
   const response = await fetch(`${API_ROOT}/api/conversations/${conversationId}`);
   return parseJson<ConversationDetail>(response, "加载会话详情失败");

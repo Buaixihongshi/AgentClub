@@ -1086,3 +1086,41 @@
 .work-preview-loading { animation:work-preview-spin 1s linear infinite; }
 @keyframes work-preview-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { .work-preview-loading { animation:none; } }
+.work-live {
+  margin-top:8px;
+  display:grid;
+  gap:6px
+}
+.work-current .work-live p {
+  margin:0;
+  font-size:13px;
+  color:var(--work-ink)
+}
+.work-live-running {
+  display:flex;
+  align-items:center;
+  gap:7px
+}
+.work-live-dot {
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:currentColor;
+  color:#4c806a;
+  animation:work-live-pulse 1.4s ease-in-out infinite
+}
+@keyframes work-live-pulse { 50% { opacity:.3 } }
+.work-current .work-live .work-live-latest {
+  display:-webkit-box;
+  -webkit-line-clamp:3;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  color:var(--work-muted);
+  white-space:pre-line
+}
+.work-live-latest span {
+  margin-right:6px;
+  color:var(--work-ink);
+  font-weight:500
+}
+@media (prefers-reduced-motion: reduce) { .work-live-dot { animation:none } }

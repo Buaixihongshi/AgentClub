@@ -177,4 +177,18 @@ describe("ChatBubble", () => {
     expect(screen.queryByText("via Gemini CLI")).not.toBeInTheDocument();
     expect(screen.getByText("第 2 轮")).toBeInTheDocument();
   });
+
+  it("shows an avatar for agents and the user", () => {
+    const { container, unmount } = render(<ChatBubble turn={makeTurn({})} />);
+    expect(container.querySelector(".chat-row-agent .chat-avatar")).toHaveTextContent("楚");
+    unmount();
+    const user = render(<ChatBubble turn={makeTurn({ role: "user", content: "你好" })} />);
+    expect(user.container.querySelector(".chat-row-user .chat-avatar")).toHaveTextContent("我");
+  });
+
+  it("keeps an incomplete mermaid block as source while the reply is streaming", () => {
+    const { container } = render(<ChatBubble turn={makeTurn({ content: "", eventType: "message.partial", partialText: "```mermaid\ngraph TD\nA-->B\n```" })} />);
+    expect(container.querySelector(".bubble-mermaid-source code")).toHaveTextContent("graph TD");
+    expect(screen.getByText("图表渲染中…")).toBeInTheDocument();
+  });
 });

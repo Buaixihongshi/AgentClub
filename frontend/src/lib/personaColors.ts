@@ -45,3 +45,8 @@ export function getPersonaColor(agentId?: string | null): PersonaColor {
   }
   return FALLBACK;
 }
+
+/** 从姓名取一个代表字作为头像（"张楚岚"→"楚"，"王也"→"也"，"冯宝宝"→"宝"）。 */
+export function avatarInitial(label: string): string {
+  return label.charAt(label.length > 1 ? 1 : 0);
+}

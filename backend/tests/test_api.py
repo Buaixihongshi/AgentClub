@@ -1121,3 +1121,36 @@ def test_runner_finishes_with_warning_after_persisted_timeout_response(temp_sett
     result = MissionRunner(repo, temp_settings, adapter=PublishedTimeoutAdapter()).run(mission.id)
     assert result.status == MissionStatus.COMPLETED_WITH_WARNINGS
     assert make_client(temp_settings).get(f"/api/missions/{mission.id}").json()["mission"]["status"] == "completed_with_warnings"
+
+
+def test_delete_conversation_removes_its_records(temp_settings):
+    from backend.app.domain.models import Message, MessageRole, Mission, MissionStatus
+
+    client = make_client(temp_settings)
+    conv_id = client.post("/api/conversations", json={"title": "要删除的会话"}).json()["id"]
+    keep_id = client.post("/api/conversations", json={"title": "保留的会话"}).json()["id"]
+    repo = Repository(temp_settings.database_path)
+    repo.create_mission(Mission(id="m_del", title="t", goal="g", conversation_id=conv_id, status=MissionStatus.COMPLETED))
+    repo.add_message(Message(id="msg_del", mission_id="m_del", role=MessageRole.AGENT, agent_id="chulan",
+                             content="旧回复", conversation_id=conv_id))
+
+    assert client.delete(f"/api/conversations/{conv_id}").status_code == 204
+    assert client.get(f"/api/conversations/{conv_id}").status_code == 404
+    assert [item["id"] for item in client.get("/api/conversations").json()] == [keep_id]
+    assert repo.get_mission("m_del") is None
+    assert repo.list_messages("m_del") == []
+    assert client.delete(f"/api/conversations/{conv_id}").status_code == 404
+
+
+def test_delete_conversation_refuses_while_a_mission_runs(temp_settings):
+    from backend.app.domain.models import Mission, MissionStatus
+
+    client = make_client(temp_settings)
+    conv_id = client.post("/api/conversations", json={"title": "进行中"}).json()["id"]
+    repo = Repository(temp_settings.database_path)
+    repo.create_mission(Mission(id="m_run", title="t", goal="g", conversation_id=conv_id, status=MissionStatus.RUNNING))
+
+    response = client.delete(f"/api/conversations/{conv_id}")
+    assert response.status_code == 409
+    assert "停止" in response.json()["detail"]
+    assert repo.get_mission("m_run") is not None

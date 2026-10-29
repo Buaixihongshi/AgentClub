@@ -367,6 +367,7 @@ summary:focus-visible {
 .conv-item-row {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
 }
 
@@ -390,7 +391,7 @@ summary:focus-visible {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  padding-right: 58px;
+  padding-right: 86px;
 }
 
 .conv-item-title-input {
@@ -460,6 +461,46 @@ summary:focus-visible {
 .conv-archive-btn:hover {
   background: var(--sage-soft);
   border-color: var(--ink);
+}
+
+.conv-delete-btn:hover {
+  background: #fdecea;
+  color: #b42318;
+}
+
+.conv-delete-confirm {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+  padding: 8px 10px;
+  border: 1px solid #b42318;
+  border-radius: 6px;
+  background: #fff7f6;
+  font-size: 0.78rem;
+}
+
+.conv-delete-confirm span {
+  flex: 1 1 100%;
+  color: #7a271a;
+}
+
+.conv-delete-confirm button {
+  padding: 3px 10px;
+  border: 1px solid var(--ink-soft);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.conv-delete-confirm .conv-delete-confirm-btn {
+  border-color: #b42318;
+  background: #b42318;
+  color: #fff;
 }
 
 .conv-item:hover {
@@ -1111,6 +1152,70 @@ summary:focus-visible {
 .chat-bubble-agent {
   align-self: flex-start;
   border-top-left-radius: 4px;
+}
+
+/* 头像 + 气泡：行负责左右对齐，气泡在行内自适应宽度。 */
+.chat-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  max-width: 82%;
+  align-self: flex-start;
+}
+
+.chat-row-user {
+  flex-direction: row-reverse;
+  align-self: flex-end;
+}
+
+.chat-row .chat-bubble {
+  align-self: auto;
+  max-width: none;
+  flex: 0 1 auto;
+}
+
+.chat-avatar {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-top: 2px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--hard-shadow-soft);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.chat-avatar-user {
+  background: var(--sage-strong);
+}
+
+.bubble-mermaid {
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.bubble-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.bubble-mermaid-source {
+  margin: 8px 0;
+}
+
+.bubble-mermaid-source figcaption {
+  margin-top: 4px;
+  color: var(--ink-faint);
+  font-size: 0.74rem;
 }
 
 .bubble-turn-seq {
@@ -3475,6 +3580,16 @@ summary:focus-visible {
 
   .chat-bubble {
     max-width: 94%;
+  }
+
+  .chat-row {
+    max-width: 100%;
+  }
+
+  .chat-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.8rem;
   }
 
   .mission-header h1 {

@@ -109,6 +109,43 @@ export function collectMentionTargetIds(raw: string): string[] {
   return ids;
 }
 
+export interface TypedMention {
+  agentId: string;
+  start: number;
+  /** 排他边界，覆盖 `@别名`。 */
+  end: number;
+}
+
+/**
+ * 手动输入（未经浮层确认）的 `@别名`：按最长别名匹配；`@` 前紧跟拉丁字母数字时（邮箱）跳过，
+ * 拉丁别名后不能紧跟字母数字（`@wangyes` 不算王也）。用户打全名后直接发送也应点名成功。
+ */
+export function findTypedMentions(raw: string): TypedMention[] {
+  const keys = [...aliasMap.keys()].sort((a, b) => b.length - a.length);
+  const found: TypedMention[] = [];
+  const lower = raw.toLowerCase();
+  for (let index = lower.indexOf("@"); index >= 0; index = lower.indexOf("@", index + 1)) {
+    if (index > 0 && /[a-z0-9_.]/i.test(raw[index - 1])) continue; // 邮箱等 a@b 不算点名
+    const key = keys.find((alias) => {
+      if (!lower.startsWith(alias, index + 1)) return false;
+      const next = raw[index + 1 + alias.length];
+      return !(next && /[a-z0-9]$/i.test(alias) && /[a-z0-9]/i.test(next));
+    });
+    if (!key) continue;
+    found.push({ agentId: aliasMap.get(key)!.id, start: index, end: index + 1 + key.length });
+  }
+  return found;
+}
+
+/** 去掉手动输入的 `@别名`（用于「纯 @提及 无正文」的空内容判定）。 */
+export function stripTypedMentions(raw: string): string {
+  let out = raw;
+  for (const mention of findTypedMentions(raw).reverse()) {
+    out = out.slice(0, mention.start) + out.slice(mention.end);
+  }
+  return out;
+}
+
 /**
  * Rank an option against a lowercased query. Lower is better; -1 means no match.
  * Order preference per the input-box spec: 完整姓名 > 姓名前缀 > 拼音全拼 > 首字母缩写 > 别名 > 拼音包含.

@@ -289,3 +289,30 @@ def test_legacy_log_api_dispatches_protocol_after_checking_task_ownership(tasks,
     assert '不属于' in denied.json()['detail']
     assert 'verified-b' not in denied.text
     assert client.get('/api/tasks/legacy:c_legacy_b/logs/wl_legacy_b').text == 'verified-b'
+
+
+def test_detail_exposes_running_attempt_and_latest_execution_note(tasks):
+    from backend.app.domain.models import Message, MessageRole
+    detail = command(tasks, tasks.create(request()), 'resume')
+    assert detail['live'] == {'running': [], 'latest_message': None}
+    mission = tasks.work.claim(detail['execution_conversation_id'])
+    running = tasks.detail(detail['task']['id'])['live']['running']
+    assert [(r['mission_id'], r['agent_id'], r['attempt']) for r in running] == [(mission.id, 'chulan', 1)]
+    assert running[0]['started_at']
+    # The owner's chat note shows on the task page before the board is updated.
+    tasks.repo.add_message(Message(id='msg_note', mission_id=mission.id, role=MessageRole.AGENT, agent_id='chulan',
+                                   content='首轮基线完成，产品源码还没动。', conversation_id=detail['execution_conversation_id']))
+    latest = tasks.detail(detail['task']['id'])['live']['latest_message']
+    assert latest['content'] == '首轮基线完成，产品源码还没动。'
+    assert (latest['task_id'], latest['agent_id']) == (detail['task']['id'], 'chulan')
+
+
+def test_deleting_a_source_conversation_waits_for_its_unfinished_task(tasks, temp_settings):
+    client = TestClient(create_app(temp_settings))
+    tasks.repo.create_conversation(Conversation(id='c_source', title='讨论'))
+    detail = tasks.create(request(source_conversation_id='c_source'))
+    refused = client.delete('/api/conversations/c_source')
+    assert refused.status_code == 409 and '尚未结束' in refused.json()['detail']
+    command(tasks, detail, 'cancel', {'task_id': detail['task']['id']})
+    assert client.delete('/api/conversations/c_source').status_code == 204
+    assert tasks.detail(detail['task']['id'])['task']['status'] == 'cancelled'
