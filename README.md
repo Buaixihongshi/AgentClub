@@ -97,6 +97,7 @@ Unity 就是围绕这件事慢慢做起来的。把 Codex CLI、Claude Code、An
 桌面版自带运行环境，不用另装 Python 或 Node。它会读取登录 shell 的 PATH，通过 nvm、Homebrew 等方式安装的 CLI 也能找到。
 
 - 数据在 `~/Library/Application Support/Unity/`，伙伴的工作目录是其中的 `workspace/`。日志在 `~/Library/Logs/Unity/backend.log`。菜单“Unity › 打开数据目录 / 显示后端日志”可以直接打开这两个位置。
+- 使用 Workflow（自主开发）前，先在菜单“Unity › 选择项目仓库…”中选一个 Git 仓库。每个任务会在仓库里新建 `codex/task-…` 分支，工作树放在数据目录的 `task-worktrees/` 下。没有选择仓库时，对话和讨论照常可用，Workflow 任务会提示先选择仓库。
 - 退出时如果还有任务在进行，会先请你确认。
 - 卸载时删除 `/Applications/Unity.app`；如果不再需要数据，再删除上面的数据目录。
 - 想自己打包，请看 [macOS 打包说明](packaging/macos/README.md)。

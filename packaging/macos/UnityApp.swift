@@ -3,16 +3,26 @@
 import Cocoa
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+    private static let projectKey = "ProjectDirectory"
     private var window: NSWindow!
     private var webView: WKWebView!
     private var backend: Process?
     private var port = 0
     private var quitting = false
+    private var projectItem: NSMenuItem!
 
     private var resources: URL { Bundle.main.resourceURL! }
     private var logURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Unity/backend.log")
+    }
+
+    /// The Git repository Workflow tasks branch from; nil keeps the backend in its private workspace.
+    private var projectDirectory: URL? {
+        guard let path = UserDefaults.standard.string(forKey: Self.projectKey) else { return nil }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+            ? URL(fileURLWithPath: path, isDirectory: true) : nil
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -74,12 +84,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         // Never write bytecode into the signed bundle (the launcher sets this again for children).
         env["PYTHONPYCACHEPREFIX"] = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Caches/Unity/pycache").path
+        // The launcher makes this the backend's cwd, i.e. the Workflow project repository.
+        if let project = projectDirectory { env["UNITY_WORKSPACE"] = project.path }
         process.environment = env
         process.standardOutput = log
         process.standardError = log
         process.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
-                guard let self, !self.quitting else { return }
+                // A backend replaced by a project switch is expected to exit.
+                guard let self, !self.quitting, proc === self.backend else { return }
                 self.showStatus("后端已退出（代码 \(proc.terminationStatus)）。日志：~/Library/Logs/Unity/backend.log")
             }
         }
@@ -149,17 +162,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         return .terminateLater
     }
 
+    /// Blocking: graceful SIGTERM first, SIGKILL after 10 seconds.
+    private static func stop(_ backend: Process?) {
+        guard let backend, backend.isRunning else { return }
+        backend.terminate()
+        let deadline = Date().addingTimeInterval(10)
+        while backend.isRunning && Date() < deadline { usleep(100_000) }
+        if backend.isRunning { kill(backend.processIdentifier, SIGKILL) }
+    }
+
     private func stopBackendThenQuit() {
         quitting = true
         DispatchQueue.global().async { [backend] in
-            if let backend, backend.isRunning {
-                backend.terminate()
-                let deadline = Date().addingTimeInterval(10)
-                while backend.isRunning && Date() < deadline { usleep(100_000) }
-                if backend.isRunning { kill(backend.processIdentifier, SIGKILL) }
-            }
+            Self.stop(backend)
             DispatchQueue.main.async { NSApp.reply(toApplicationShouldTerminate: true) }
         }
+    }
+
+    private func restartBackend() {
+        let old = backend
+        backend = nil
+        showStatus("正在切换项目仓库…")
+        DispatchQueue.global().async {
+            Self.stop(old)
+            DispatchQueue.main.async { self.startBackend() }
+        }
+    }
+
+    // MARK: Project repository
+
+    private static func gitTopLevel(_ url: URL) -> URL? {
+        let git = Process()
+        git.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        git.arguments = ["-C", url.path, "rev-parse", "--show-toplevel"]
+        let output = Pipe()
+        git.standardOutput = output
+        git.standardError = FileHandle.nullDevice
+        guard (try? git.run()) != nil else { return nil }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        git.waitUntilExit()
+        guard git.terminationStatus == 0,
+              let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    @objc private func chooseProject() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "选择"
+        panel.message = "选择 Workflow 任务使用的 Git 仓库；每个任务会在其中建立独立的分支和工作树。"
+        panel.directoryURL = projectDirectory
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else { return }
+            // Let the panel's sheet finish closing before showing another one.
+            DispatchQueue.main.async {
+                guard let repository = Self.gitTopLevel(url) else {
+                    let alert = NSAlert()
+                    alert.messageText = "所选文件夹不是 Git 仓库"
+                    alert.informativeText = "Workflow 需要在 Git 仓库中为任务创建分支和工作树。"
+                    alert.beginSheetModal(for: self.window)
+                    return
+                }
+                self.switchProject(to: repository)
+            }
+        }
+    }
+
+    @objc private func resetProject() { switchProject(to: nil) }
+
+    private func switchProject(to url: URL?) {
+        guard url?.path != projectDirectory?.path else { return }
+        let apply = {
+            if let url {
+                UserDefaults.standard.set(url.path, forKey: Self.projectKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.projectKey)
+            }
+            self.refreshProjectItem()
+            self.restartBackend()
+        }
+        fetchActiveWork { [weak self] active in
+            guard let self else { return }
+            guard let active, active > 0 else { return apply() }
+            let alert = NSAlert()
+            alert.messageText = "还有 \(active) 项任务未结束"
+            alert.informativeText = "切换仓库会重启后端，中断正在进行的模型调用。"
+            alert.addButton(withTitle: "取消")
+            alert.addButton(withTitle: "仍然切换")
+            alert.beginSheetModal(for: self.window) { if $0 == .alertSecondButtonReturn { apply() } }
+        }
+    }
+
+    private func refreshProjectItem() {
+        let project = projectDirectory
+        projectItem.title = "项目仓库：" + (project?.lastPathComponent ?? "未选择")
+        projectItem.toolTip = project?.path ?? "未选择时使用数据目录中的 workspace，Workflow 任务无法创建工作区。"
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action == #selector(resetProject) ? projectDirectory != nil : true
     }
 
     private func showStatus(_ text: String) {
@@ -271,8 +374,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             entry.keyEquivalentModifierMask = mods
             return entry
         }
+        projectItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        refreshProjectItem()
         submenu("Unity", [
             item("关于 Unity", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            projectItem,
+            item("选择项目仓库…", #selector(chooseProject), "o", [.command, .shift]),
+            item("使用默认工作目录", #selector(resetProject)),
             .separator(),
             item("打开数据目录", #selector(openData)),
             item("显示后端日志", #selector(openLogs)),

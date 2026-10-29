@@ -111,7 +111,10 @@ class TaskEnvironments:
         try:
             return Path(_git(self.root, ['rev-parse', '--show-toplevel']).strip()).resolve()
         except WorkError as exc:
-            raise WorkError('无法确定默认项目仓库，不能创建任务工作区：' + str(exc)) from exc
+            # The desktop app starts in a private folder until the user picks a repository.
+            hint = '；请在菜单“Unity › 选择项目仓库…”中选择 Git 仓库后重试' \
+                if os.environ.get('YIREN_ENVIRONMENT') == 'desktop' else ''
+            raise WorkError('无法确定默认项目仓库，不能创建任务工作区' + hint + '：' + str(exc)) from exc
 
     def _project_id(self, project):
         return Path(_git(project, ['rev-parse', '--path-format=absolute', '--git-common-dir']).strip()).resolve()

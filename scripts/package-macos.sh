@@ -45,7 +45,8 @@ PY_DEV="$ROOT/.venv/bin/python"; [ -x "$PY_DEV" ] || PY_DEV=python3
 
 echo "==> Relocatable Python $PYTHON_VERSION"
 export UV_PYTHON_INSTALL_DIR="$OUT/python-cache"
-uv python install "$PYTHON_VERSION" >/dev/null
+# --no-bin: never put the build cache's interpreter on the user's PATH (~/.local/bin).
+uv python install --no-bin "$PYTHON_VERSION" >/dev/null
 PY_SRC="$(uv python find --managed-python "$PYTHON_VERSION")"
 PREFIX="$("$PY_SRC" -c 'import sys; print(sys.prefix)')"
 ditto "$PREFIX" "$RES/python"
@@ -76,8 +77,11 @@ rm -rf "$SITE"/pip "$SITE"/pip-*.dist-info
 
 echo "==> Application source"
 rsync -a --exclude '__pycache__/' --exclude 'tests/' "$ROOT/backend/" "$RES/app/backend/"
-rsync -a --exclude 'environments.json' "$ROOT/config/" "$RES/app/config/"
+rsync -a "$ROOT/config/" "$RES/app/config/"
 rsync -a "$ROOT/frontend/dist/" "$RES/app/frontend/dist/"
+# Workflow task environments import these at run time (worktree locks, previews).
+mkdir -p "$RES/app/scripts"
+cp "$ROOT"/scripts/environment_*.py "$RES/app/scripts/"
 cp "$ROOT/LICENSE" "$RES/LICENSE"
 
 echo "==> Bytecode"
@@ -87,6 +91,14 @@ echo "==> Bytecode"
 find "$RES/python" "$RES/app" -name '__pycache__' -type d -prune -exec rm -rf {} +
 "$PY" -m compileall -q -j 0 --invalidation-mode unchecked-hash -s "$RES" -p "Unity.app/Contents/Resources" \
   "$RES/python/lib" "$RES/app" >/dev/null || echo "WARNING: some modules did not compile (see compileall)." >&2
+# The backend imports these lazily, so a missing one would only surface in a
+# user's Workflow; import each with the bundled interpreter from a neutral cwd.
+(cd "$BUILD_DIR" && PYTHONDONTWRITEBYTECODE=1 "$PY" -c '
+import importlib, pathlib, sys
+for module in sorted(pathlib.Path(sys.argv[1]).glob("environment_*.py")):
+    importlib.import_module("scripts." + module.stem)
+importlib.import_module("backend.app.work.adaptive")' "$RES/app/scripts") \
+  || { echo "ERROR: bundled Workflow modules do not import." >&2; exit 1; }
 
 echo "==> Native shell"
 swiftc -O -target "$ARCH-apple-macos12.0" -o "$APP/Contents/MacOS/Unity" "$ROOT/packaging/macos/UnityApp.swift"

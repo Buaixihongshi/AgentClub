@@ -92,6 +92,19 @@ def prepare_state(state: Path) -> Path:
     return state / "workspace"
 
 
+def project_dir(default: Path) -> Path:
+    """The repository chosen in the app menu (UNITY_WORKSPACE), else the private workspace.
+
+    A chosen folder that was moved or deleted must not stop the app from starting.
+    """
+    chosen = os.environ.get("UNITY_WORKSPACE")
+    if chosen and Path(chosen).expanduser().is_dir():
+        return Path(chosen).expanduser()
+    if chosen:
+        print(f"UNITY_WORKSPACE is not a directory, using the default workspace: {chosen}", file=sys.stderr)
+    return default
+
+
 def exit_with_parent(parent: int, interval: float = 1.0) -> threading.Thread:
     """The Swift shell owns this backend; never outlive it, even after a crash."""
     def watch() -> None:
@@ -114,7 +127,7 @@ def main(argv: list[str] | None = None) -> None:
     os.environ.clear()
     os.environ.update(env)
     # Shared work and MCP tools treat the process cwd as the project workspace.
-    os.chdir(os.environ.get("UNITY_WORKSPACE") or workspace)
+    os.chdir(project_dir(workspace))
     sys.pycache_prefix = os.environ["PYTHONPYCACHEPREFIX"]
 
     exit_with_parent(os.getppid())

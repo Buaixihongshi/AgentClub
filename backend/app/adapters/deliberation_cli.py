@@ -116,7 +116,10 @@ def sandbox_profile(directory, executable, *, auth_paths=(), protected_paths=(),
     shared temporary directories. All writes remain default-denied.
     """
     quote = lambda value: json.dumps(str(value))
-    readable = []
+    # The MCP proxy runs on this interpreter (-I -S: runtime only, no site
+    # packages); the packaged app may live under /Users, /Volumes or a
+    # translocated /private/var/folders path.
+    readable = [str(Path(sys.base_prefix).resolve())]
     executable_path = Path(shutil.which(executable) or executable).resolve()
     # User-installed executables need their own package runtime, never all HOME.
     node = shutil.which("node")
