@@ -23,6 +23,27 @@ def git(root, *args):
         raise WorkError('无法读取项目 Git 快照，请检查工作区') from exc
 
 
+MAX_STATE_CHANGES = 200
+
+
+def workspace_state(root):
+    """Host-read Git facts for the work prompt.
+
+    The sandboxed CLI cannot read user Git config, a worktree's common .git or
+    local services, so it receives these facts instead of checking itself.
+    """
+    root = Path(root).resolve()
+    try:
+        head = git(root, 'rev-parse', 'HEAD').decode().strip()
+        branch = git(root, 'rev-parse', '--abbrev-ref', 'HEAD').decode().strip()
+        changes = git(root, '--no-optional-locks', 'status', '--porcelain=v1',
+                      '--untracked-files=all').decode(errors='replace').splitlines()
+    except WorkError:
+        return {'source': 'host', 'error': '宿主无法读取该工作区的 Git 状态'}
+    return {'source': 'host', 'head': head, 'branch': branch, 'dirty': bool(changes),
+            'changes': changes[:MAX_STATE_CHANGES], 'changes_truncated': len(changes) > MAX_STATE_CHANGES}
+
+
 def safe_path(root, name):
     if not isinstance(name, str) or not name or Path(name).is_absolute():
         raise WorkError('产物必须使用工作区内的相对路径', 422)
