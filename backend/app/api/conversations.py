@@ -234,6 +234,23 @@ def build_router(settings: Settings, repository: Repository, adapter_override: O
             repo.update_conversation(updated)
         return _conversation_detail(repo, settings, updated)
 
+    @router.delete("/{conversation_id}", status_code=204)
+    def delete_conversation(conversation_id: str, repo: Repository = Depends(get_repo)):
+        with repo._transaction(immediate=True) as db:
+            conversation = repo.get_conversation(conversation_id)
+            if conversation is None or conversation.kind != 'chat':
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            from backend.app.orchestration.deliberation import occupies_conversation
+            if any(occupies_conversation(m) for m in repo.list_missions_for_conversation(conversation_id)):
+                raise DiscussionError('对话仍在进行，请先停止后再删除')
+            for row in db.execute('SELECT conversation_id, data FROM work_boards').fetchall():
+                board = json.loads(row['data'])
+                unfinished = [t for t in board.get('tasks', []) if t.get('status') not in {'done', 'cancelled'} and (
+                    row['conversation_id'] == conversation_id or t.get('source_conversation_id') == conversation_id)]
+                if unfinished:
+                    raise DiscussionError(f'对话关联的任务「{unfinished[0].get("title", "")}」尚未结束，请先完成或取消任务后再删除')
+            repo.delete_conversation(conversation_id)
+
     @router.post("/{conversation_id}/missions", status_code=201)
     def create_conversation_mission(
         conversation_id: str,

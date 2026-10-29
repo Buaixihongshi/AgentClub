@@ -53,6 +53,7 @@ export function MissionRoomPage(props: {
   conversationScope: "active" | "archived";
   onConversationScopeChange: (scope: "active" | "archived") => void;
   onConversationStatusChange: (id: string, status: "active" | "archived") => void;
+  onDeleteConversation?: (id: string) => void;
   displayMessages: ThreadEvent[];
   hubSettings?: HubSettingsView | null;
   onSaveSettings?: (patch: HubSettingsPatch) => void;
@@ -150,6 +151,7 @@ export function MissionRoomPage(props: {
           scope={props.conversationScope}
           onScopeChange={props.onConversationScopeChange}
           onStatusChange={props.onConversationStatusChange}
+          onDelete={props.onDeleteConversation}
         />
         <div className="conversation-layout">
           <section className="conversation-main" aria-label="任务对话">

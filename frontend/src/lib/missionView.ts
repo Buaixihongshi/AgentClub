@@ -210,7 +210,8 @@ export function buildTurnViews(
       content: "",
       capability: "unknown",
       providerLabel: turnRec.provider_id || "Provider pending",
-      personaLabel: undefined,
+      // 等待回复时也显示角色中文名，而不是 agent id（如 chulan）。
+      personaLabel: mentionOptionById(turnRec.agent_id)?.label,
       agentId: turnRec.agent_id,
       createdAt: turnRec.started_at ?? new Date().toISOString(),
       metadata: { turn_id: turnId, provider_id: turnRec.provider_id },

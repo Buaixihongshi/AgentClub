@@ -70,4 +70,16 @@ describe("ConversationList archive", () => {
       expect(button.textContent).not.toMatch(/[+⌑✎↩←]/);
     }
   });
+
+  it("deletes a conversation only after inline confirmation", async () => {
+    const onDelete = vi.fn();
+    renderList({ onDelete });
+    await userEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    expect(onDelete).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    await userEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(onDelete).toHaveBeenCalledWith("c_1");
+  });
 });

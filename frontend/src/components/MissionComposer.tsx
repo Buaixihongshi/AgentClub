@@ -12,7 +12,7 @@ import {
   replaceActiveMention,
   type MentionOption,
 } from "../lib/mentions";
-import { getPersonaColor } from "../lib/personaColors";
+import { avatarInitial, getPersonaColor } from "../lib/personaColors";
 import {
   findActiveSkillCommand,
   getSkillSuggestions,
@@ -46,11 +46,6 @@ function highlightMatch(text: string, query: string): ReactNode {
       {text.slice(index + query.length)}
     </>
   );
-}
-
-/** 从姓名取一个代表字作为头像（"张楚岚"→"楚"，"王也"→"也"，"冯宝宝"→"宝"）。 */
-function avatarInitial(label: string): string {
-  return label.charAt(label.length > 1 ? 1 : 0);
 }
 
 export function MissionComposer(props: {

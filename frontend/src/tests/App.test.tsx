@@ -502,7 +502,7 @@ describe("Unity app", () => {
     ).toBe(false);
   });
 
-  it("idle submit does not route plain @mentions without confirmation", async () => {
+  it("idle submit routes fully typed @mentions without menu confirmation", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal("fetch", stubFetch((url, init) => {
       calls.push({ url, init });
@@ -528,10 +528,11 @@ describe("Unity app", () => {
     const body = JSON.parse(String(missionCall?.init?.body));
     expect(body).toEqual({
       goal: "依据经验复盘@张楚岚 @冯宝宝 @王也",
+      target_agent_ids: ["chulan", "baobao", "wangye"],
     });
   });
 
-  it("running submit with plain @mention does not route target_agent_id", async () => {
+  it("running submit with a typed @mention routes target_agent_id", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal("fetch", stubFetch((url, init) => {
       calls.push({ url, init });
@@ -566,6 +567,7 @@ describe("Unity app", () => {
     const interruptCall = calls.find(c => c.url === "/api/missions/m1/interruptions");
     expect(JSON.parse(String(interruptCall?.init?.body))).toEqual({
       content: "@冯宝宝 补一刀",
+      target_agent_id: "baobao",
     });
   });
 

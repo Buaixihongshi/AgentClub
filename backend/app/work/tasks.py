@@ -109,7 +109,38 @@ class Tasks:
         return {'task': deepcopy(root), 'board': clipped, 'archived': False,
                 'source_conversation_id': self._source(board, root),
                 'execution_conversation_id': board['conversation_id'],
-                'orchestration': deepcopy(root.get('orchestration') or {'mode': 'adaptive', 'steps': []})}
+                'orchestration': deepcopy(root.get('orchestration') or {'mode': 'adaptive', 'steps': []}),
+                'live': self._live(clipped['tasks'])}
+
+    def _live(self, tasks):
+        """What the conversation already shows: running attempts and the latest execution note.
+
+        Board fields only change when an attempt reports back, so without this
+        the task page looks frozen while the owner is visibly working in chat.
+        """
+        attempts = {a['mission_id']: (t, a) for t in tasks for a in t.get('attempts', []) if a.get('mission_id')}
+        running = []
+        for task in tasks:
+            if not task.get('active_mission_id'):
+                continue
+            attempt = attempts.get(task['active_mission_id'], (task, {}))[1]
+            running.append({'task_id': task['id'], 'mission_id': task['active_mission_id'],
+                            'agent_id': attempt.get('agent_id') or task['owner_id'],
+                            'started_at': attempt.get('started_at'), 'attempt': len(task.get('attempts', []))})
+        latest = None
+        if attempts:
+            with self.repo._transaction() as db:
+                marks = ','.join('?' * len(attempts))
+                row = db.execute(
+                    f"SELECT data FROM messages WHERE mission_id IN ({marks}) AND json_extract(data, '$.role') = 'agent' "
+                    "ORDER BY json_extract(data, '$.created_at') DESC LIMIT 1", list(attempts)).fetchone()
+            if row:
+                message = json.loads(row['data'])
+                content = message.get('content') or ''
+                latest = {'task_id': attempts[message['mission_id']][0]['id'], 'mission_id': message['mission_id'],
+                          'agent_id': message.get('agent_id'), 'created_at': message.get('created_at'),
+                          'content': content[:600] + ('…' if len(content) > 600 else '')}
+        return {'running': running, 'latest_message': latest}
 
     def create(self, value):
         request = value if isinstance(value, CreateTask) else CreateTask.model_validate(value)
