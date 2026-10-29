@@ -867,9 +867,13 @@ class Deliberation:
             parts.append(f"用户决定：{state['user_decision']}")
         if not parts:
             return None
-        reviewed = bool(state["reviews"]) and state["final_id"] == state["draft_id"]
-        header = f"议题：{mission.goal}\n来源：团队讨论（{'、'.join(names.get(p, p) for p in mission.discussion.participant_ids)}）" + (
-            "，结论经原参与者复核" if reviewed else "，结论未经原参与者复核")
+        if not state["final_id"]:
+            origin = "，结论由用户决定"
+        elif state["reviews"] and state["final_id"] == state["draft_id"]:
+            origin = "，结论经原参与者复核"
+        else:
+            origin = "，结论未经原参与者复核"
+        header = f"议题：{mission.goal}\n来源：团队讨论（{'、'.join(names.get(p, p) for p in mission.discussion.participant_ids)}）" + origin
         body = header + "\n\n" + "\n\n".join(parts)
         return body if len(body) <= MEMORY_MAX_BODY else body[:MEMORY_MAX_BODY - 1] + "…"
 

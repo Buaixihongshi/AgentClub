@@ -58,7 +58,7 @@ def test_user_decision_is_saved_with_each_voice(repository, temp_settings):
     control(repository, temp_settings, mission, 'save_memory')
     entry_id = view(repository, mission)['memory_entry_ids']['baobao']
     body = MemoryStore(repository, temp_settings.memory_root).read_entry(entry_id)['body']
-    assert '用户决定：先不默认开启' in body
+    assert '用户决定：先不默认开启' in body and '结论由用户决定' in body and '复核' not in body
     assert 'chulan：默认开启' in body and 'baobao：暂缓开启' in body
 
 
