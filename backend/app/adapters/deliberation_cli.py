@@ -25,6 +25,9 @@ from backend.app.config.providers import get_cli_provider
 from backend.app.domain.models import TurnStatus
 from backend.app.mcp.server import _Context, _dispatch
 from backend.app.adapters.turn_deadline import HUB_WORK_TOOLS, PROGRESS_CHECK_SECONDS, ToolResultDeadline
+from backend.app.adapters.native_activity import NativeActivityRecorder
+from backend.app.adapters.stream_parsers import StreamLineParser
+from backend.app.adapters.turn_record import TurnRecord
 
 
 def isolation_supported():
@@ -336,9 +339,49 @@ class DeliberationCLIAdapter:
                         loopback_ports=loopback_ports))
                 command = ["/usr/bin/sandbox-exec", "-f", str(profile), provider.command,
                            *prompt_arguments(basename, args, prompt)]
-                proc = subprocess.Popen(command, cwd=Path(self.work_context['workspace_root']) if self.work_context else directory,
-                                        env=env, stdin=subprocess.DEVNULL,
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                cwd = Path(self.work_context['workspace_root']) if self.work_context else directory
+                mission = tools.repository.get_mission(mission_id)
+                record = TurnRecord(tools.repository.database_path, mission_id=mission_id, turn_id=turn_id,
+                                    agent_id=agent_id, provider_id=provider_id,
+                                    route='work' if self.work_context else 'discussion',
+                                    conversation_id=mission.conversation_id if mission else None)
+                cleanup.callback(record.finish, error='execution ended unexpectedly')
+                record.launch(command=provider.command, argv=command, prompt=prompt, cwd=cwd, launch_env=env,
+                              isolation='macos-sandbox+host-mcp-bridge', sandbox_profile=profile.read_text(),
+                              model=self.model)
+                try:
+                    proc = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                except OSError as exc:
+                    record.finish(error=str(exc))
+                    raise
+                # Discussion results stay private until their batch is released,
+                # so only work turns publish native activity to the trace; both
+                # keep the complete stream in the private turn record.
+                native = NativeActivityRecorder(
+                    (lambda kind, payload: tools.repository.add_event(mission_id, kind, payload))
+                    if self.work_context else (lambda kind, payload: None),
+                    turn_id=turn_id, agent_id=agent_id, provider_id=provider_id, on_session=record.session)
+                live_parser = StreamLineParser(provider_id)
+                captured = {'stdout': [], 'stderr': []}
+
+                def drain(stream, name):
+                    try:
+                        for raw in iter(stream.readline, b''):
+                            captured[name].append(raw)
+                            line = raw.decode(errors='replace').rstrip('\n')
+                            record.stream(name, line)
+                            if name == 'stdout':
+                                event = live_parser.parse(line)
+                                if event is not None:
+                                    native.handle(event)
+                    except (OSError, ValueError):
+                        pass
+
+                readers = [threading.Thread(target=drain, args=(proc.stdout, 'stdout'), daemon=True),
+                           threading.Thread(target=drain, args=(proc.stderr, 'stderr'), daemon=True)]
+                for reader in readers:
+                    reader.start()
                 if self.work_context:
                     from backend.app.adapters.subprocess_cli import kill_process_tree
                     cleanup.callback(kill_process_tree, proc)
@@ -356,7 +399,7 @@ class DeliberationCLIAdapter:
                 terminated = None
                 while True:
                     try:
-                        stdout, stderr = proc.communicate(timeout=min(.25, max(.01, progress.remaining())))
+                        proc.wait(timeout=min(.25, max(.01, progress.remaining())))
                         break
                     except subprocess.TimeoutExpired:
                         if self.work_context:
@@ -381,10 +424,12 @@ class DeliberationCLIAdapter:
                         if cancelled or progress.remaining() <= 0:
                             from backend.app.adapters.subprocess_cli import kill_process_tree
                             kill_process_tree(proc)
-                            stdout, stderr = proc.communicate(timeout=5)
+                            proc.wait(timeout=5)
                             terminated = 'Discussion stopped' if cancelled else 'Isolated CLI timed out'
                             break
-                from backend.app.adapters.stream_parsers import StreamLineParser
+                for reader in readers:
+                    reader.join(timeout=5)
+                stdout, stderr = b''.join(captured['stdout']), b''.join(captured['stderr'])
                 from backend.app.adapters.mcp_subprocess import _emit_turn_usage
                 parser = StreamLineParser(provider_id)
                 usage = None
@@ -420,6 +465,8 @@ class DeliberationCLIAdapter:
                     if log.is_file():
                         diagnostic += '\n' + log.read_text(errors='replace')[-8000:]
                 code = None if accepted else failure_code(terminated or diagnostic, exit_code=proc.returncode)
+                record.finish(exit_code=proc.returncode, terminated=terminated, accepted=accepted,
+                              failure_code=code, session_id=native.session_id)
                 tools.repository.add_event(mission_id, "adaptive.provider_execution" if self.work_context else "discussion.provider_execution", {
                     **progress.diagnostic(),
                     "turn_id": turn_id, "provider_id": provider_id, "exit_code": proc.returncode,
