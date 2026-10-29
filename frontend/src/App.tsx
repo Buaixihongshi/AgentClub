@@ -411,23 +411,28 @@ export default function App() {
 
   async function submit() {
     const rawInput = input.trim();
-    // 组合收紧：讨论技能不支持指定单个成员，明确拦截而不是退化成普通 goal。
+    // /discuss 必须写在开头；点名写在命令之后，例如 /discuss @张楚岚 @冯宝宝 议题。
     if (detectUnsupportedTargetedSkill(rawInput)) {
-      setError("/discuss 讨论技能不支持指定成员：请去掉 @成员，或将 /discuss 放在正文开头。");
+      setError("请把 /discuss 放在开头，再 @ 要参与讨论的成员。");
       return;
     }
-    const skillCommand = parseDiscussCommand(rawInput);
-    if (skillCommand && !skillCommand.goal) {
-      setError("请在 /discuss 后输入要讨论的问题。");
-      return;
-    }
-
     // 浮层确认过的 @提及优先，按确认顺序路由；手动打全的 `@别名`（未点选、未回车）
     // 同样点名，避免用户以为指定了人物却由别人回答。
     const missionTargetAgentIds = [...new Set([
       ...confirmedMentionIds(confirmations),
       ...findTypedMentions(input).map((mention) => mention.agentId),
     ])];
+    const skillCommand = parseDiscussCommand(rawInput)
+      ? parseDiscussCommand(stripTypedMentions(stripConfirmedMentions(input, confirmations)))
+      : null;
+    if (skillCommand && !skillCommand.goal) {
+      setError("请在 /discuss 后输入要讨论的问题。");
+      return;
+    }
+    if (skillCommand && (missionTargetAgentIds.length === 1 || missionTargetAgentIds.length > 3)) {
+      setError("讨论需要 2～3 位成员；不 @ 任何人时使用默认成员。");
+      return;
+    }
     // 用未 trim 的原文剥离确认实体，保证实体坐标与提交文本一致：
     // 尾随/前导空格都不会让坐标错位，纯 @提及 无正文也会被正确拦截。
     const bodyless = skillCommand
@@ -450,6 +455,7 @@ export default function App() {
             goal: skillCommand.goal,
             skill: skillCommand.skill,
             request_id: newRequestId("skill"),
+            ...(missionTargetAgentIds.length ? { discussion: { participant_ids: missionTargetAgentIds } } : {}),
           }
         : { goal: rawInput, target_agent_ids: missionTargetAgentIds };
 

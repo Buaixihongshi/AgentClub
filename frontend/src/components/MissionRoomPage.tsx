@@ -15,6 +15,7 @@ import {
 } from "../types";
 import { ConversationList } from "./ConversationList";
 import { DiscussionSkillStatus } from "./DiscussionSkillStatus";
+import { DivergenceCard } from "./DivergenceCard";
 import { DiscussionHighlights } from "./DiscussionHighlights";
 import { MissionComposer } from "./MissionComposer";
 import type { ConfirmedMention } from "../lib/inputConfirmations";
@@ -92,12 +93,17 @@ export function MissionRoomPage(props: {
       }}
     />
   ) : null;
+  const quickCard = discussion?.depth === "quick" ? <DivergenceCard discussion={discussion}
+    missionStatus={props.detail?.mission.status ?? "pending"} busy={props.discussionBusy} onControl={props.onDiscussionControl} /> : null;
+  const highlights = discussion && discussion.depth !== "quick"
+    ? <DiscussionHighlights discussion={discussion} goal={props.detail?.mission.goal ?? ""} /> : null;
   const timeline = <TurnTimeline turns={props.turns} conversationId={props.selectedConversationId}
     contentRevision={discussion?.revision}
-    emptyContent={discussion?.protocol === "deliberation_v2" ? <DiscussionHighlights discussion={discussion} goal={props.detail?.mission.goal ?? ""} /> : onboardingCard}
+    emptyContent={discussion?.protocol === "deliberation_v2" ? (quickCard ?? highlights) : onboardingCard}
     afterContent={<>
       {props.turns.length > 0 && onboardingCard}
-      {discussion && <DiscussionHighlights discussion={discussion} goal={props.detail?.mission.goal ?? ""} />}
+      {highlights}
+      {quickCard}
     </>} />;
   const discussionPanel = discussion ? <DiscussionSkillStatus key={props.detail?.mission.id} discussion={discussion}
     missionStatus={props.detail?.mission.status ?? 'pending'} busy={props.discussionBusy}

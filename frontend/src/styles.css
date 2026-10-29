@@ -3723,6 +3723,24 @@ summary:focus-visible {
 .discussion-highlights li + li { margin-top: 6px; }
 .discussion-evidence-label { display: inline-block; margin-left: 8px; color: var(--ink-muted); font-size: 12px; }
 .discussion-highlights-ended > summary { font-size: 13px; }
+.divergence-card { min-width: 0; padding: 14px 18px; border: 1px solid var(--ink-line); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.divergence-card h3 { margin: 0 0 8px; font-size: 14px; }
+.divergence-card.is-running { padding: 10px 18px; }
+.divergence-step { margin: 0; color: var(--ink-muted); font-size: 13px; }
+.divergence-progress { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--ink-muted); }
+.divergence-progress strong { color: var(--ink); font-weight: 600; }
+.divergence-list { margin: 0 0 6px; padding: 0; list-style: none; }
+.divergence-list li + li { margin-top: 4px; }
+.divergence-tag { display: inline-block; margin-right: 8px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--paper); color: var(--ink-muted); }
+.divergence-tag.is-conflict, .divergence-tag.is-issue { background: var(--warning-soft); color: var(--warning); }
+.divergence-tag.is-agreed { background: var(--sage-soft); color: var(--sage-strong); }
+.divergence-single summary { width: fit-content; cursor: pointer; color: var(--ink-muted); font-size: 12px; }
+.divergence-note { margin: 6px 0 10px; color: var(--ink-muted); font-size: 12px; }
+.divergence-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.divergence-synthesize { display: inline-flex; gap: 6px; }
+.divergence-decision { display: grid; gap: 6px; margin-top: 10px; }
+.divergence-decision label { display: grid; gap: 4px; font-size: 12px; color: var(--ink-muted); }
+.divergence-error { margin: 0; color: var(--danger); font-size: 12px; }
 .discussion-highlights-ended[open] > summary { margin-bottom: 12px; }
 @media (max-width: 640px) {
   .discussion-highlights { padding: 14px 12px; }

@@ -23,9 +23,10 @@ export function isTerminalMissionStatus(status: string): boolean {
 
 export type RoomMode = "task" | "roundtable";
 
-export type DiscussionPhase = "opening" | "exchange" | "closing" | "ended" | "independent" | "awaiting_synthesizer" | "synthesis" | "review" | "finalizing";
+export type DiscussionPhase = "opening" | "exchange" | "closing" | "ended" | "independent" | "awaiting_synthesizer" | "synthesis" | "review" | "finalizing" | "choosing";
 
-export type DiscussionControlAction = "finish" | "stop" | "select_synthesizer" | "retry" | "record_decision" | "restart_with_input" | "defer_input" | "save_knowledge_candidate";
+export type DiscussionControlAction = "finish" | "stop" | "select_synthesizer" | "retry" | "record_decision" | "restart_with_input" | "defer_input" | "save_knowledge_candidate"
+  | "verify_conflicts" | "synthesize" | "user_decide" | "escalate";
 
 export interface DiscussionControlFields {
   agent_id?: string;
@@ -34,6 +35,7 @@ export interface DiscussionControlFields {
   option_id?: string;
   input_ids?: string[];
   goal?: string;
+  text?: string;
   expected_revision?: number;
 }
 
@@ -75,7 +77,16 @@ export type DiscussionEndReason =
   | "summary_failed"
   | "service_restart"
   | "runner_failed"
-  | "no_successful_turn";
+  | "no_successful_turn"
+  | "synthesized_unreviewed"
+  | "user_decided"
+  | "opinions_only";
+
+/** One decision key compared across independent opinions (quick discussions). */
+export interface DivergenceItem {
+  decision_key: string;
+  positions: Array<{ agent_id: string; claim_id: string; recommendation: string; conditions: string[]; evidence_status: string }>;
+}
 
 export interface DiscussionConfigView {
   participant_ids: string[];
@@ -97,7 +108,12 @@ export interface DiscussionView {
   summary_message_ids?: Array<number | string>;
   unanswered_interrupt_ids?: Array<number | string>;
   revision?: number;
-  awaiting_reason?: "select_synthesizer" | "resolve_value_choice" | "revise_input" | null;
+  awaiting_reason?: "select_synthesizer" | "resolve_value_choice" | "revise_input" | "choose_next" | null;
+  depth?: "quick" | "full";
+  choices?: DiscussionControlAction[];
+  divergence?: { agreed: DivergenceItem[]; conflicts: DivergenceItem[]; single: DivergenceItem[]; reason?: string | null;
+    assumptions_equal?: boolean | null; actions_equal?: boolean | null } | null;
+  supplement_ids?: string[];
   current_speakers?: string[];
   progress?: Array<{ turn_id: string; agent_id: string; provider_id?: string | null; phase: DiscussionPhase; status: string; attempt: number; error?: string | null; failure_code?: string | null; exit_code?: number | null }>;
   attempts_used?: number;
@@ -149,7 +165,8 @@ export interface Mission {
 }
 
 export interface ThreadEventMetadata {
-  discussion_visibility?: "internal" | "final";
+  discussion_visibility?: "internal" | "final" | "opinion";
+  discussion_phase?: DiscussionPhase | null;
   discussion_pending_decision?: boolean;
   discussion_revision_reviewed?: boolean;
   discussion_audit?: {

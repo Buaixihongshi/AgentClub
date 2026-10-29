@@ -101,7 +101,9 @@ export function ChatBubble({ turn }: { turn: TurnView }) {
         className="chat-bubble chat-bubble-agent"
         style={{ borderLeftColor: color.border }}
       >
-        <div className="bubble-turn-seq">{turn.metadata.discussion_visibility === 'final' ? '团队讨论结果' : `第 ${turn.turnIndex} 轮`}</div>
+        <div className="bubble-turn-seq">{turn.metadata.discussion_visibility === 'final' ? '团队讨论结果'
+          : turn.metadata.discussion_visibility === 'opinion' ? (turn.metadata.discussion_phase === 'exchange' ? '查证补充' : '独立观点')
+          : `第 ${turn.turnIndex} 轮`}</div>
         <div className="bubble-header">
           <span className="bubble-persona" style={{ color: color.name }}>
             {identity}

@@ -17,11 +17,15 @@ class DiscussionRequest(BaseModel):
     max_turns: Optional[StrictInt] = Field(default=None, ge=3, le=12)
     # V2 enforces 2–3 in the validator; V1 keeps the legacy 1–3 range.
     max_exchange_rounds: StrictInt = Field(default=2, ge=1, le=3)
+    # V2 only; /discuss defaults to quick, explicit V2 requests keep full.
+    depth: Optional[Literal['quick', 'full']] = None
 
     @model_validator(mode='after')
     def validate_participants(self):
         if self.participant_ids is not None and len(set(self.participant_ids)) != len(self.participant_ids):
             raise ValueError('Discussion participants must be unique')
+        if self.depth is not None and self.protocol != 'deliberation_v2':
+            raise ValueError('Discussion depth requires deliberation_v2')
         if self.protocol == 'deliberation_v2' and self.max_turns is not None:
             raise ValueError('V2 does not accept max_turns; use max_exchange_rounds')
         if self.protocol == 'deliberation_v2' and self.max_exchange_rounds < 2:
@@ -99,7 +103,8 @@ class CreateMissionRequest(MissionRequest):
 
 
 class DiscussionControlRequest(BaseModel):
-    action: Literal['finish', 'stop', 'select_synthesizer', 'retry', 'record_decision', 'restart_with_input', 'defer_input', 'save_knowledge_candidate']
+    action: Literal['finish', 'stop', 'select_synthesizer', 'retry', 'record_decision', 'restart_with_input', 'defer_input', 'save_knowledge_candidate',
+                    'verify_conflicts', 'synthesize', 'user_decide', 'escalate']
     request_id: str = Field(min_length=1, max_length=128)
     summary_agent_id: Optional[str] = None
     expected_revision: Optional[StrictInt] = None
@@ -109,6 +114,7 @@ class DiscussionControlRequest(BaseModel):
     option_id: Optional[str] = None
     input_ids: Optional[list[str]] = None
     goal: Optional[str] = None
+    text: Optional[str] = Field(default=None, max_length=4000)
 
 
 def ensure_available(repo, conversation):
@@ -125,6 +131,11 @@ def _normalize_legacy_fingerprint(fingerprint):
     if fingerprint.get('work_mode') is None:
         fingerprint.pop('work_mode', None)
     discussion = fingerprint.get('discussion')
+    # Requests recorded before the optional depth field compare equal to
+    # replays that leave it unset.
+    if isinstance(discussion, dict) and discussion.get('depth') is None and 'depth' in discussion:
+        discussion = {k: v for k, v in discussion.items() if k != 'depth'}
+        fingerprint['discussion'] = discussion
     if (fingerprint.get('room_mode') != 'roundtable' or fingerprint.get('skill') is not None
             or not isinstance(discussion, dict) or discussion.get('protocol', 'roundtable_v1') != 'roundtable_v1'):
         return fingerprint
@@ -205,8 +216,9 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
                         routes[agent] = list(dict.fromkeys(candidates))
                     if any(pid != 'fake' and pid not in settings.api_connections for route in routes.values() for pid in route) and not isolation_supported():
                         raise DiscussionError('isolation_not_supported: V2 requires macOS sandbox-exec', 422)
+                depth = payload.discussion.depth or ('quick' if payload.skill == 'discuss' else 'full')
                 config = DiscussionConfig(participant_ids=participants, max_turns=limit, protocol='deliberation_v2',
-                    max_exchange_rounds=payload.discussion.max_exchange_rounds, provider_routes=routes,
+                    max_exchange_rounds=payload.discussion.max_exchange_rounds, provider_routes=routes, depth=depth,
                     profiles=[a.model_dump(mode='json') for a in profiles if a.id in participants])
                 if payload.skill == 'discuss':
                     from backend.app.domain.project_skills import load_discuss_skill

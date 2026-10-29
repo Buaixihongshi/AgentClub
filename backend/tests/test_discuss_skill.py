@@ -31,6 +31,8 @@ def skill_file(tmp_path, monkeypatch):
 
 
 def create(repo, settings, **fields):
+    # These tests cover the full six-phase review; quick discussions are in test_quick_discussion.
+    fields.setdefault('discussion', {'depth': 'full'})
     return create_requested_mission(repo, settings, CreateMissionRequest(goal='核验方案', skill='discuss', **fields))[0]
 
 

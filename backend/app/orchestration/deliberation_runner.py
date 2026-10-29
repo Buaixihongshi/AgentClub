@@ -41,6 +41,9 @@ def build_prompt(agent, lease, view, skill_instructions=None):
             'snapshot_id': view['snapshot']['id'], 'goal': view['snapshot']['goal'],
             'phase': view['phase'], 'round_index': view['round_index'],
             'instruction': '完整材料通过 read_context 和分段读取工具提供；索引或预览不是完整原文。',
+            **({'supplement_ids': view['supplement_ids'],
+                'supplement_instruction': '用户在讨论过程中补充了这些消息（在快照消息末尾），本轮必须阅读并考虑。'}
+               if view.get('supplement_ids') else {}),
         }, ensure_ascii=False)
     )
 

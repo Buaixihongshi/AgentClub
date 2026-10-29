@@ -140,6 +140,9 @@ class DiscussionConfig(BaseModel):
     max_turns: int
     protocol: str = "roundtable_v1"
     max_exchange_rounds: int = 2
+    # V2 only. "quick" stops after independent opinions and lets the user pick
+    # the next step; "full" runs the six-phase review. Older records are full.
+    depth: str = "full"
     provider_routes: dict[str, list[str]] = Field(default_factory=dict)
     profiles: list[dict[str, Any]] = Field(default_factory=list)
     skill_instructions: Optional[str] = None

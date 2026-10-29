@@ -58,7 +58,19 @@ class Deliberation:
             "turns_used": 0, "attempts_used": 0, "pending_control": None,
             "pending_inputs": [], "decisions": {}, "summary_message_ids": [],
             "exchange_agents": [], "agreement": None,
+            "depth": None, "supplements": [], "input_texts": {},
         }
+
+    @staticmethod
+    def depth(mission, state):
+        """quick: stop after opinions and let the user choose; full: six phases."""
+        return state.get("depth") or getattr(mission.discussion, "depth", None) or "full"
+
+    def _accept_inputs(self, state):
+        """Supplements sent during a quick discussion join the next step's material."""
+        texts = state.get("input_texts", {})
+        state.setdefault("supplements", []).extend(texts[i] for i in state["pending_inputs"] if i in texts)
+        state["pending_inputs"] = []
 
     @contextmanager
     def transaction(self, mission_id):
@@ -149,7 +161,10 @@ class Deliberation:
             ids.append(state["draft_id"])
         if phase in {"finalizing", "ended"}:
             ids += state["reviews"]
+        supplements = state.get("supplements", []) if phase != "independent" else []
+        snapshot["messages"] = snapshot["messages"] + [dict(item) for item in supplements]
         return {"snapshot": snapshot, "results": [self.get(mission.id, rid) for rid in ids],
+                "supplement_ids": [item["id"] for item in supplements],
                 "issues": state["issues"] if phase != "independent" else {},
                 "phase": phase, "round_index": state["round_index"], "draft_id": state["draft_id"] if phase in {"review", "finalizing", "ended"} else None}
 
@@ -251,7 +266,7 @@ class Deliberation:
             lease = self._lease(state, agent_id, turn_id, provider_id, token)
             view = self.visible(mission, state, lease)
             entries = {r['id']: r for r in view['results']} | view['issues']
-            entries.update({m['id']: m for m in self.get(mission_id, state['snapshot_id'])['messages']})
+            entries.update({m['id']: m for m in view['snapshot']['messages']})
             if source_id not in entries:
                 raise DiscussionError('Entry is outside the visible phase snapshot', 422)
             text = json.dumps(entries[source_id], ensure_ascii=False, sort_keys=True)
@@ -537,7 +552,11 @@ class Deliberation:
                 state["agreement"] = agreement
                 user_finish = state["pending_control"] == "finish"
                 state["phase"] = "exchange"
-                if user_finish or agreement["skip"]:
+                if self.depth(mission, state) == "quick":
+                    state["pending_control"] = None
+                    state["exchange_agents"] = agreement["relevant_agent_ids"]
+                    state["phase"] = "choosing"
+                elif user_finish or agreement["skip"]:
                     state["exchange_end_reason"] = "exchange_skipped"
                     state["pending_control"] = None
                     state["phase"] = "awaiting_synthesizer"
@@ -554,12 +573,13 @@ class Deliberation:
                 self._merge_issues(mission, state, results)
                 additions = any(r["data"]["issues"] for r in results)
                 open_issues = any(i["status"] in {"open", "unresolved"} for i in state["issues"].values())
-                if not additions or not open_issues or state["round_index"] >= mission.discussion.max_exchange_rounds or state["pending_control"] == "finish":
+                quick = self.depth(mission, state) == "quick"
+                if quick or not additions or not open_issues or state["round_index"] >= mission.discussion.max_exchange_rounds or state["pending_control"] == "finish":
                     state["exchange_end_reason"] = "no_new_information" if not additions else "exchange_budget_exhausted" if state["round_index"] >= mission.discussion.max_exchange_rounds else "issues_classified"
                     for issue in state["issues"].values():
                         if issue["status"] == "open":
                             issue["status"] = "unresolved"
-                    state["phase"] = "awaiting_synthesizer"
+                    state["phase"] = "choosing" if quick else "awaiting_synthesizer"
                     state["pending_control"] = None
                 else:
                     state["round_index"] += 1
@@ -567,6 +587,9 @@ class Deliberation:
                 self._apply_issue_decisions(state, results[0]["data"])
                 state["draft_id"] = results[0]["id"]
                 state["phase"] = "review"
+                if self.depth(mission, state) == "quick":
+                    # Quick synthesis is final; original-author review belongs to the full path.
+                    state["final_id"] = state["draft_id"]
             elif phase == "review":
                 state["reviews"] = [r["id"] for r in results]
                 state["phase"] = "finalizing"
@@ -575,10 +598,12 @@ class Deliberation:
             elif phase == "finalizing":
                 self._apply_issue_decisions(state, results[0]["data"])
                 state["final_id"] = results[0]["id"]
-            if state["pending_inputs"]:
+            if state["pending_inputs"] and self.depth(mission, state) != "quick":
                 self._await(mission, state, "revise_input")
             elif state["final_id"]:
                 self._finalize(mission, state)
+            elif state["phase"] == "choosing":
+                self._await(mission, state, "choose_next")
             elif state["phase"] == "awaiting_synthesizer":
                 self._await(mission, state, "select_synthesizer")
             else:
@@ -638,7 +663,10 @@ class Deliberation:
             return
         warnings = state["final_id"] != state["draft_id"] or any(i["status"] != "resolved" for i in state["issues"].values())
         warnings |= any(c["evidence_status"] != "verified" for rid in state["opinions"] for c in self.get(mission.id, rid)["data"]["claims"])
-        state.update(phase="ended", awaiting_reason=None, end_reason="completed_with_reservations" if warnings else "completed")
+        reason = "completed_with_reservations" if warnings else "completed"
+        if self.depth(mission, state) == "quick" and not state["reviews"]:
+            reason = "synthesized_unreviewed"
+        state.update(phase="ended", awaiting_reason=None, end_reason=reason)
         self.repo.add_event(mission.id, "discussion.finalized", {"final_id": state["final_id"], "reviewed_draft_id": state["draft_id"], "revision_independently_reviewed": False if state["final_id"] != state["draft_id"] else True})
         self.save(mission, state, status=MissionStatus.COMPLETED_WITH_WARNINGS if warnings else MissionStatus.COMPLETED, completed_at=utc_now())
 
@@ -671,6 +699,12 @@ class Deliberation:
                     self.save(mission, state, status=MissionStatus.RUNNING)
                 else:
                     self._stop(mission, state)
+            elif action == "finish" and state["awaiting_reason"] == "choose_next":
+                self._end_quick(mission, state, "opinions_only")
+            elif action in {"verify_conflicts", "synthesize", "user_decide", "escalate"}:
+                if mission.status != MissionStatus.AWAITING_INPUT or state["awaiting_reason"] != "choose_next":
+                    raise DiscussionError("Discussion is not waiting for the next step")
+                schedule = self._choose(mission, state, action, payload)
             elif action == "finish":
                 if state["phase"] not in {"independent", "exchange"} or mission.status not in {MissionStatus.PENDING, MissionStatus.RUNNING}:
                     raise DiscussionError("Finish is only available during independent/exchange")
@@ -765,6 +799,82 @@ class Deliberation:
                                 "request": fingerprint, "mission_id": new_mission_id})
             return new_mission_id, schedule
 
+    def _choose(self, mission, state, action, payload):
+        """Apply a quick-discussion choice; returns whether a model batch is scheduled."""
+        participants = mission.discussion.participant_ids
+        if action == "user_decide":
+            text = (payload.text or "").strip()
+            if not text:
+                raise DiscussionError("Write your decision first", 422)
+            self.repo.add_message(Message(id=f"msg_{uuid4().hex}", mission_id=mission.id,
+                conversation_id=mission.conversation_id, role=MessageRole.USER, content=f"我的决定：{text}"))
+            self.repo.add_event(mission.id, "discussion.user_decided", {"chars": len(text)})
+            self._end_quick(mission, state, "user_decided")
+            return False
+        if action == "escalate":
+            state["depth"] = "full"
+            self.repo.add_event(mission.id, "discussion.escalated", {"round_index": state["round_index"]})
+            open_issues = any(i["status"] in {"open", "unresolved"} for i in state["issues"].values())
+            if (state["round_index"] >= mission.discussion.max_exchange_rounds
+                    or (state["agreement"] or {}).get("skip") and not open_issues):
+                state["phase"] = "awaiting_synthesizer"
+                self._accept_inputs(state)
+                self._await(mission, state, "select_synthesizer")
+                return False
+            action = "verify_conflicts"
+        self._accept_inputs(state)
+        if action == "verify_conflicts":
+            if state["round_index"] >= mission.discussion.max_exchange_rounds:
+                raise DiscussionError("No exchange rounds left; synthesize or decide", 422)
+            state["round_index"] += 1
+            state["exchange_agents"] = state.get("exchange_agents") or list(participants)
+            state.update(phase="exchange", awaiting_reason=None)
+            self.repo.add_event(mission.id, "discussion.verify_requested", {
+                "round_index": state["round_index"], "agent_ids": state["exchange_agents"]})
+        else:
+            synthesizer = payload.agent_id or participants[0]
+            if synthesizer not in participants:
+                raise DiscussionError("Synthesizer must be a discussion participant", 422)
+            state.update(synthesizer_id=synthesizer, phase="synthesis", awaiting_reason=None)
+            self.repo.add_event(mission.id, "discussion.synthesizer_selected", {"agent_id": synthesizer})
+        self.save(mission, state, status=MissionStatus.PENDING)
+        return True
+
+    def _end_quick(self, mission, state, reason):
+        state.update(phase="ended", awaiting_reason=None, pending_control=None, end_reason=reason)
+        self.save(mission, state, status=MissionStatus.COMPLETED, completed_at=utc_now())
+
+    def choices(self, mission, state):
+        if state["awaiting_reason"] != "choose_next":
+            return []
+        result = []
+        conflicts = (state["agreement"] or {}).get("conflicts") or any(
+            i["status"] in {"open", "unresolved"} for i in state["issues"].values())
+        if conflicts and state["round_index"] < mission.discussion.max_exchange_rounds:
+            result.append("verify_conflicts")
+        return result + ["synthesize", "user_decide", "escalate", "finish"]
+
+    def divergence(self, mission, state):
+        """Opinion comparison by decision key, computed without a model call."""
+        if not state["opinions"]:
+            return None
+        opinions = [self.get(mission.id, rid) for rid in state["opinions"]]
+        by_key = {}
+        for result in opinions:
+            for claim in result["data"]["claims"]:
+                key = _decision_text(claim["decision_key"]) or claim["decision_key"]
+                by_key.setdefault(key, {"decision_key": claim["decision_key"], "positions": []})["positions"].append({
+                    "agent_id": result["agent_id"], "claim_id": claim["id"], "recommendation": claim["recommendation"],
+                    "conditions": claim.get("conditions", []), "evidence_status": claim["evidence_status"]})
+        conflict_keys = {c["decision_key"] for c in (state["agreement"] or {}).get("conflicts", [])}
+        agreed, conflicts, single = [], [], []
+        for key, item in by_key.items():
+            agents = {p["agent_id"] for p in item["positions"]}
+            (conflicts if key in conflict_keys else agreed if len(agents) > 1 else single).append(item)
+        agreement = state["agreement"] or {}
+        return {"agreed": agreed, "conflicts": conflicts, "single": single, "reason": agreement.get("reason"),
+                "assumptions_equal": agreement.get("assumptions_equal"), "actions_equal": agreement.get("actions_equal")}
+
     def _stop(self, mission, state):
         state.update(phase='ended', awaiting_reason=None, pending_control=None, end_reason='user_stop')
         for lease in state['leases'].values():
@@ -789,7 +899,13 @@ class Deliberation:
                 raise DiscussionError("Target must be a discussion participant", 422)
             msg = self.repo.add_interruption(mission_id, content, target, request_id=request_id, request=fingerprint)
             state["pending_inputs"].append(msg.id)
-            if mission.status == MissionStatus.AWAITING_INPUT:
+            if self.depth(mission, state) == "quick":
+                # No restart: the supplement joins the next step's frozen material.
+                state.setdefault("input_texts", {})[msg.id] = {
+                    "id": msg.id, "role": "user", "agent_id": None, "content": content,
+                    "created_at": msg.created_at.isoformat(), "supplement": True}
+                self.save(mission, state)
+            elif mission.status == MissionStatus.AWAITING_INPUT:
                 self._await(mission, state, "revise_input")
             else:
                 self.save(mission, state)
@@ -835,6 +951,9 @@ class Deliberation:
         decisions = self.get(mission.id, state["final_id"])["data"]["decisions"] if state["final_id"] else []
         failed = [l for l in progress if l["status"] in {"failed", "interrupted"}]
         return {"protocol": PROTOCOL, "participant_ids": mission.discussion.participant_ids,
+                "depth": self.depth(mission, state), "choices": self.choices(mission, state),
+                "divergence": self.divergence(mission, state),
+                "supplement_ids": [item["id"] for item in state.get("supplements", [])],
                 "phase": state["phase"], "revision": state["revision"], "awaiting_reason": state["awaiting_reason"],
                 "turns_used": state["turns_used"], "turns_limit": mission.discussion.max_turns,
                 "attempts_used": state["attempts_used"], "round_index": state["round_index"],

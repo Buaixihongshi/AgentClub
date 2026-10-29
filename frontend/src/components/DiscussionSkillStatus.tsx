@@ -14,6 +14,10 @@ const ACTIVE_STATUS: Record<string, string> = {
   synthesis: "正在整理各方观点与建议…",
   review: "团队正在复核综合建议…",
   finalizing: "正在按复核意见修订结果…",
+  choosing: "观点已就绪，等你选择下一步",
+};
+const QUICK_ENDINGS: Record<string, string> = {
+  synthesized_unreviewed: "已综合（未经复核）", user_decided: "已记录你的决定", opinions_only: "讨论已结束",
 };
 
 /** Run controls stay beside the composer; substantive discussion content lives in the timeline. */
@@ -41,9 +45,9 @@ export function DiscussionSkillStatus(props: {
   const status = d.pending_control === "stop"
     ? "正在停止团队讨论…"
     : ended
-      ? stopped ? "讨论已停止" : failedEnding ? "讨论未完成" : d.end_reason === "input_revised" ? "已按新条件重新开始讨论" : "团队讨论已完成"
+      ? stopped ? "讨论已停止" : QUICK_ENDINGS[d.end_reason ?? ""] ?? (failedEnding ? "讨论未完成" : d.end_reason === "input_revised" ? "已按新条件重新开始讨论" : "团队讨论已完成")
       : blocked ? "团队讨论需要处理运行问题"
-        : waiting ? "团队需要你的选择"
+        : waiting ? (d.awaiting_reason === "choose_next" ? ACTIVE_STATUS.choosing : "团队需要你的选择")
           : d.pending_control === "finish" ? "团队正在整理讨论结果…" : ACTIVE_STATUS[d.phase] ?? "团队正在讨论这个问题…";
   const control = (action: DiscussionControlAction, fields?: DiscussionControlFields) => props.onControl?.(action, fields);
   const stop = () => v2 ? control("stop") : props.onRequestStop();

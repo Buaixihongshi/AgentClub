@@ -75,7 +75,13 @@ def annotate_discussion_messages(messages, missions, events, repository=None, au
         summaries = state.get('summary_message_ids', [])
         is_final = bool(state.get('final_id') and summaries and message['id'] == summaries[-1])
         metadata = message.setdefault('metadata', {})
-        metadata['discussion_visibility'] = 'final' if is_final else 'internal'
+        # Quick discussions put each voice in the conversation; full reviews
+        # keep the process internal and show only the final result.
+        quick = getattr(discussions[mission_id].discussion, 'depth', 'full') == 'quick'
+        metadata['discussion_visibility'] = 'final' if is_final else 'opinion' if quick else 'internal'
+        if quick and not is_final:
+            lease = state.get('leases', {}).get(message.get('turn_id')) or {}
+            metadata['discussion_phase'] = lease.get('phase')
         if is_final:
             metadata['discussion_revision_reviewed'] = state.get('final_id') == state.get('draft_id')
             if repository is not None:

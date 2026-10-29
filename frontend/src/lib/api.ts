@@ -47,7 +47,7 @@ export interface MissionCreatePayload {
   title?: string;
   target_agent_ids?: string[];
   room_mode?: RoomMode;
-  discussion?: { participant_ids: string[]; max_turns?: number; protocol?: "roundtable_v1" | "deliberation_v2"; max_exchange_rounds?: number };
+  discussion?: { participant_ids: string[]; max_turns?: number; protocol?: "roundtable_v1" | "deliberation_v2"; max_exchange_rounds?: number; depth?: "quick" | "full" };
   request_id?: string;
   work_mode?: 'document' | 'development' | 'online';
 }

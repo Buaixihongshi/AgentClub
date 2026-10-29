@@ -98,6 +98,39 @@ describe("discussion as a project skill in chat", () => {
     expect(calls.some((call) => call.url === "/api/conversations" && call.init?.method === "POST")).toBe(false);
   });
 
+  it("lets /discuss name its 2–3 participants with @ and keeps them out of the goal", async () => {
+    const user = userEvent.setup(); const calls = stubSkillFetch(); render(<App />);
+    await screen.findByLabelText("消息输入");
+    await waitFor(() => expect(calls.some((call) => call.url === "/api/agents")).toBe(true));
+    await submitText(user, `/discuss @张楚岚 @宝宝 ${GOAL}`);
+    expect(lastBody(calls, isMissionCreate)).toEqual({ goal: GOAL, skill: "discuss",
+      request_id: expect.stringMatching(/^skill-/), discussion: { participant_ids: ["chulan", "baobao"] } });
+  });
+
+  it("rejects a one-person /discuss before sending anything", async () => {
+    const user = userEvent.setup(); const calls = stubSkillFetch(); render(<App />);
+    await waitFor(() => expect(calls.some((call) => call.url === "/api/agents")).toBe(true));
+    await submitText(user, `/discuss @张楚岚 ${GOAL}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent("2～3 位成员");
+    expect(calls.some((call) => isMissionCreate(call.url, call.init))).toBe(false);
+  });
+
+  it("sends the chosen next step of a quick discussion with the current revision", async () => {
+    const user = userEvent.setup();
+    const quick = skillMission({ depth: "quick", phase: "choosing", awaiting_reason: "choose_next", revision: 11,
+      choices: ["verify_conflicts", "synthesize", "user_decide", "escalate", "finish"],
+      divergence: { agreed: [], single: [], conflicts: [{ decision_key: "上线时间", positions: [
+        { agent_id: "chulan", claim_id: "a", recommendation: "本周", conditions: [], evidence_status: "unverified" },
+        { agent_id: "baobao", claim_id: "b", recommendation: "下周", conditions: [], evidence_status: "unverified" }] }] } }, "awaiting_input");
+    const calls = stubSkillFetch({ conversations: [conversationSummary()], conversation: () => conversationDetail(quick) });
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /复盘会/ }));
+    expect(await screen.findByRole("region", { name: "分歧卡" })).toHaveTextContent("上线时间：张楚岚 本周 / 冯宝宝 下周");
+    expect(screen.queryByRole("region", { name: "讨论重点" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "查证这个分歧" }));
+    await waitFor(() => expect(lastBody(calls, isControl)).toMatchObject({ action: "verify_conflicts", expected_revision: 11 }));
+  });
+
   it("treats /discussfoo as ordinary text rather than a skill command", async () => {
     const user = userEvent.setup(); const calls = stubSkillFetch(); render(<App />);
     await submitText(user, "/discussfoo 请保留原文");

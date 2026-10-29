@@ -54,8 +54,8 @@ export function findActiveSkillCommand(
 }
 
 /**
- * 检测「@成员 /discuss」组合：讨论技能不支持指定单个成员，
- * 发送前明确拦截并提示，而不是退化成普通 goal。
+ * 检测「@成员 /discuss」组合：/discuss 必须写在开头，点名写在命令之后
+ * （/discuss @成员 议题），发送前明确拦截并提示，而不是退化成普通 goal。
  */
 export function detectUnsupportedTargetedSkill(raw: string): boolean {
   return /^@[^\s@]+\s+\/discuss(?:\s|$)/.test(raw);
