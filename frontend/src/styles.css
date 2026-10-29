@@ -3734,6 +3734,9 @@ summary:focus-visible {
 .divergence-tag { display: inline-block; margin-right: 8px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; background: var(--paper); color: var(--ink-muted); }
 .divergence-tag.is-conflict, .divergence-tag.is-issue { background: var(--warning-soft); color: var(--warning); }
 .divergence-tag.is-agreed { background: var(--sage-soft); color: var(--sage-strong); }
+.divergence-positions { margin: 4px 0 0 4px; padding: 0 0 0 10px; list-style: none; border-left: 2px solid var(--ink-soft); }
+.divergence-positions li + li { margin-top: 2px; }
+.divergence-positions strong { margin-right: 8px; font-weight: 600; }
 .divergence-single summary { width: fit-content; cursor: pointer; color: var(--ink-muted); font-size: 12px; }
 .divergence-note { margin: 6px 0 10px; color: var(--ink-muted); font-size: 12px; }
 .divergence-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

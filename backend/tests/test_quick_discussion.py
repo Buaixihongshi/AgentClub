@@ -211,3 +211,10 @@ def test_choices_require_the_choose_step_and_current_revision(repository, temp_s
                                                             expected_revision=0))
     with pytest.raises(DiscussionError, match='participant'):
         control(repository, mission, 'synthesize', agent_id='wangye')
+
+
+def test_opinion_messages_show_evidence_status_in_chinese(repository, temp_settings):
+    from backend.app.orchestration.deliberation import render_result
+    text = render_result({'kind': 'opinion', 'data': {'position_summary': '结论', 'claims': [
+        {'statement': '甲', 'evidence_status': 'preference'}, {'statement': '乙', 'evidence_status': 'inference'}]}})
+    assert text == '结论\n\n- 甲（取舍偏好）\n- 乙（推断）'

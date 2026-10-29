@@ -1071,10 +1071,14 @@ def analyze_opinion_agreement(results):
     }
 
 
+EVIDENCE_LABELS = {"verified": "附有来源", "unverified": "待验证", "inference": "推断", "preference": "取舍偏好"}
+
+
 def render_result(result):
     data = result["data"]
     if result["kind"] == "opinion":
-        return data["position_summary"] + "\n\n" + "\n".join(f"- {c['statement']}（{c['evidence_status']}）" for c in data["claims"])
+        return data["position_summary"] + "\n\n" + "\n".join(
+            f"- {c['statement']}（{EVIDENCE_LABELS.get(c['evidence_status'], c['evidence_status'])}）" for c in data["claims"])
     if result["kind"] == "contribution":
         return "暂无补充。" if data["no_addition"] else "\n\n".join(f"{i['problem']}\n影响：{i['impact']}\n建议或验证：{i['proposal']}" for i in data["issues"])
     if result["kind"] == "review":

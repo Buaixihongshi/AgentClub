@@ -42,7 +42,7 @@ describe("DivergenceCard", () => {
   it("lays out agreement and the split, honest about the comparison and its cost", () => {
     setup({ pending_inputs: ["msg_1"] });
     const card = screen.getByRole("region", { name: "分歧卡" });
-    expect(card).toHaveTextContent("分歧是否默认开启：张楚岚 默认开启 / 冯宝宝 暂缓开启");
+    expect(card).toHaveTextContent("分歧是否默认开启：张楚岚默认开启冯宝宝暂缓开启");
     expect(card).toHaveTextContent("一致写入前确认：需要确认");
     expect(card).toHaveTextContent("措辞不同的分歧可能漏掉");
     expect(card).toHaveTextContent("已用 2 次调用");

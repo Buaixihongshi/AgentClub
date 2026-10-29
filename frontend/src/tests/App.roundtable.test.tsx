@@ -125,7 +125,7 @@ describe("discussion as a project skill in chat", () => {
     const calls = stubSkillFetch({ conversations: [conversationSummary()], conversation: () => conversationDetail(quick) });
     render(<App />);
     await user.click(await screen.findByRole("button", { name: /复盘会/ }));
-    expect(await screen.findByRole("region", { name: "分歧卡" })).toHaveTextContent("上线时间：张楚岚 本周 / 冯宝宝 下周");
+    expect(await screen.findByRole("region", { name: "分歧卡" })).toHaveTextContent("上线时间：张楚岚本周冯宝宝下周");
     expect(screen.queryByRole("region", { name: "讨论重点" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "查证这个分歧" }));
     await waitFor(() => expect(lastBody(calls, isControl)).toMatchObject({ action: "verify_conflicts", expected_revision: 11 }));

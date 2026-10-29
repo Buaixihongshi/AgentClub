@@ -14,9 +14,9 @@ const ISSUE_STATUS: Record<string, string> = {
 };
 
 function Positions({ item }: { item: DivergenceItem }) {
-  return <>{item.positions.map((p, index) => <span key={p.claim_id}>
-    {index > 0 && " / "}{participantLabel(p.agent_id)} {p.recommendation}
-  </span>)}</>;
+  return <ul className="divergence-positions">{item.positions.map((p) => <li key={p.claim_id}>
+    <strong>{participantLabel(p.agent_id)}</strong>{p.recommendation}
+  </li>)}</ul>;
 }
 
 /**
