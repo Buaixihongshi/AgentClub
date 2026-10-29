@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { Archive, ArchiveRestore, ArrowLeft, Pencil, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ConversationSummary } from "../types";
 
 export function ConversationList(props: {
@@ -11,8 +11,10 @@ export function ConversationList(props: {
   scope: "active" | "archived";
   onScopeChange: (scope: "active" | "archived") => void;
   onStatusChange: (id: string, status: "active" | "archived") => void;
+  onDelete?: (id: string) => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -134,6 +136,36 @@ export function ConversationList(props: {
                       <ArchiveRestore size={13} aria-hidden="true" />
                     )}
                   </button>
+                  {props.onDelete ? (
+                    <button
+                      type="button"
+                      className="conv-archive-btn conv-delete-btn"
+                      aria-label="删除会话"
+                      title="删除"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setDeletingId(conv.id);
+                      }}
+                    >
+                      <Trash2 size={13} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {deletingId === conv.id && props.onDelete ? (
+                <div className="conv-delete-confirm" role="alertdialog" aria-label={`删除会话「${conv.title}」`}>
+                  <span>删除后消息和记录无法恢复</span>
+                  <button
+                    type="button"
+                    className="conv-delete-confirm-btn"
+                    onClick={() => {
+                      setDeletingId(null);
+                      props.onDelete?.(conv.id);
+                    }}
+                  >
+                    删除
+                  </button>
+                  <button type="button" onClick={() => setDeletingId(null)}>取消</button>
                 </div>
               ) : null}
             </li>

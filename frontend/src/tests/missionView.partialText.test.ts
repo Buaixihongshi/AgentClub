@@ -26,6 +26,8 @@ describe("buildTurnViews with live_partial", () => {
     expect(inflight?.agentId).toBe("wangye");
     expect(inflight?.providerLabel).toBe("gemini");
     expect(inflight?.eventType).toBe("message.partial");
+    // 等待回复时显示中文名，不显示 agent id（wangye）。
+    expect(inflight?.personaLabel).toBe("王也");
   });
 
   it("does not append in-flight bubble when an agent message event already exists for that turn_id", () => {

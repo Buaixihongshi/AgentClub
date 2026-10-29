@@ -139,7 +139,7 @@ export function TasksWorkspace({ selectedTaskId, onSelectTask, onOpenConversatio
         {(error || loadError) && <div role="alert" className="task-detail-error">{error || loadError}<button onClick={() => void refreshDetail(root.id)}><RefreshCw size={14} />同步最新状态</button></div>}
         {root.paused && <div className="task-paused-note"><Pause size={14} /><span>{root.attempts.length ? '后续执行已暂停，当前动作可能仍在收尾。' : '任务已保存，点击「开始任务」后才会执行。'}</span></div>}
         <WorkflowGraph key={root.id} detail={detail} agents={agents} />
-        <div className="task-delivery-body"><AdaptiveWorkBody key={root.id} embedded allowRevision={detail.orchestration.mode !== 'workflow'} taskId={root.id} board={detail.board} conversationId={detail.execution_conversation_id} goal={detail.board.contracts.find(c => c.id === root.contract_id)?.goal || root.title} agents={agents} busy={busy} error={error} archived={archived} command={command} onDiscuss={detail.source_conversation_id ? () => onOpenConversation(detail.source_conversation_id!) : undefined} /></div>
+        <div className="task-delivery-body"><AdaptiveWorkBody key={root.id} embedded allowRevision={detail.orchestration.mode !== 'workflow'} taskId={root.id} live={detail.live} board={detail.board} conversationId={detail.execution_conversation_id} goal={detail.board.contracts.find(c => c.id === root.contract_id)?.goal || root.title} agents={agents} busy={busy} error={error} archived={archived} command={command} onDiscuss={detail.source_conversation_id ? () => onOpenConversation(detail.source_conversation_id!) : undefined} /></div>
       </>}
     </section>
     {creating && <NewTaskDialog agents={agents} onClose={() => setCreating(false)} onSave={saveTask} />}

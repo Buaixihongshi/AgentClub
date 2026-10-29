@@ -8,6 +8,7 @@ import {
   activateOnboardingProvider,
   createConversation,
   createConversationMission,
+  deleteConversation,
   fetchConversation,
   getHealth,
   getHubSettings,
@@ -27,7 +28,7 @@ import { formatDiscussionError } from "./lib/roundtableView";
 import { detectUnsupportedTargetedSkill, parseDiscussCommand } from "./lib/skillCommands";
 import { buildConversationTimeline } from "./lib/conversationTimeline";
 import { buildAgentParticipants, buildMissionRuntimeSummary, buildTurnViews } from "./lib/missionView";
-import { MENTION_OPTIONS, parseMentionTarget, setMentionOptions } from "./lib/mentions";
+import { MENTION_OPTIONS, findTypedMentions, parseMentionTarget, setMentionOptions, stripTypedMentions } from "./lib/mentions";
 import {
   confirmedMentionIds,
   stripConfirmedMentions,
@@ -319,6 +320,21 @@ export default function App() {
     }
   }
 
+  async function handleDeleteConversation(convId: string) {
+    try {
+      await deleteConversation(convId);
+      if (convId === selectedConvId) {
+        conversationRequest.current++;
+        setSelectedConvId(undefined);
+        setConvDetail(undefined);
+        setLatestMissionDetail(undefined);
+      }
+      setConversations(await listConversations(conversationScope));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除失败");
+    }
+  }
+
   async function handleConversationScopeChange(scope: "active" | "archived") {
     conversationRequest.current++;
     setConversationScope(scope);
@@ -406,14 +422,17 @@ export default function App() {
       return;
     }
 
-    // 发送链路消费确认元数据：只有浮层确认过的 @提及才参与路由，
-    // 直接输入/粘贴的 @别名 不路由。
-    const missionTargetAgentIds = confirmedMentionIds(confirmations);
+    // 浮层确认过的 @提及优先，按确认顺序路由；手动打全的 `@别名`（未点选、未回车）
+    // 同样点名，避免用户以为指定了人物却由别人回答。
+    const missionTargetAgentIds = [...new Set([
+      ...confirmedMentionIds(confirmations),
+      ...findTypedMentions(input).map((mention) => mention.agentId),
+    ])];
     // 用未 trim 的原文剥离确认实体，保证实体坐标与提交文本一致：
     // 尾随/前导空格都不会让坐标错位，纯 @提及 无正文也会被正确拦截。
     const bodyless = skillCommand
       ? skillCommand.goal
-      : stripConfirmedMentions(input, confirmations);
+      : stripTypedMentions(stripConfirmedMentions(input, confirmations));
     if (!bodyless.trim()) {
       setError("仅 @成员 不能作为任务内容，请补充具体任务。");
       return;
@@ -618,6 +637,7 @@ export default function App() {
       conversationScope={conversationScope}
       onConversationScopeChange={handleConversationScopeChange}
       onConversationStatusChange={handleConversationStatus}
+      onDeleteConversation={handleDeleteConversation}
       displayMessages={displayMessages}
       hubSettings={hubSettings}
       onSaveSettings={handleSaveSettings}

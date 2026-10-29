@@ -380,6 +380,32 @@ class Repository:
                 (conversation.model_dump_json(), conversation.id),
             )
 
+    def delete_conversation(self, conversation_id: str) -> None:
+        """Remove a conversation and every database row scoped to it.
+
+        Callers check that nothing is still running; files on disk (artifacts,
+        task worktrees, snapshots) are left untouched.
+        """
+        with self._transaction(immediate=True) as db:
+            mission_ids = [(row["id"],) for row in db.execute(
+                "SELECT id FROM missions WHERE json_extract(data, '$.conversation_id') = ?",
+                (conversation_id,),
+            ).fetchall()]
+            board = db.execute(
+                "SELECT data FROM work_boards WHERE conversation_id = ?", (conversation_id,)
+            ).fetchone()
+            task_ids = [(task["id"],) for task in json.loads(board["data"]).get("tasks", [])] if board else []
+            tables = {row["name"] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            for table in ("messages", "events", "discussion_results", "execution_operations", "execution_grants"):
+                if table in tables:
+                    db.executemany(f"DELETE FROM {table} WHERE mission_id = ?", mission_ids)
+            db.executemany("DELETE FROM missions WHERE id = ?", mission_ids)
+            db.executemany("DELETE FROM task_creation_operations WHERE task_id = ?", task_ids)
+            for table in ("work_boards", "work_check_logs", "work_snapshot_references",
+                          "work_operations", "context_checkpoints"):
+                db.execute(f"DELETE FROM {table} WHERE conversation_id = ?", (conversation_id,))
+            db.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+
     def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
         with self._transaction() as db:
             row = db.execute(

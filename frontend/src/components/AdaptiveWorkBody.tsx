@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { ArrowRight, CheckCircle2, ChevronRight, Clock3, FileText, MoreHorizontal, AlertCircle } from 'lucide-react';
-import type { SharedWorkBoardView, SharedWorkTask } from '../types';
+import type { SharedWorkBoardView, SharedWorkTask, TaskLive } from '../types';
 import { currentReview, decisionKinds, decisionMatches, eventNames, pendingDecisions, shortVersion, taskStatus, taskSummary, workActivities, workStates, type WorkActivity } from '../lib/workPresentation';
 import { WorkArtifacts } from './WorkArtifacts';
 import { WorkDialog } from './WorkDialog';
 import { WorkAgreementForm } from './WorkAgreementForm';
 import { WorkEnvironment } from './WorkEnvironment';
 
-export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, error, archived, command, requestedDecision, onDecisionClosed, onDiscuss, taskId, embedded = false, allowRevision = true }: {
-  board: SharedWorkBoardView; conversationId: string; goal: string; taskId?: string; embedded?: boolean; allowRevision?: boolean;
+export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, error, archived, command, requestedDecision, onDecisionClosed, onDiscuss, taskId, live, embedded = false, allowRevision = true }: {
+  board: SharedWorkBoardView; conversationId: string; goal: string; taskId?: string; live?: TaskLive; embedded?: boolean; allowRevision?: boolean;
   agents: { id: string; display_name: string }[]; busy: boolean; error: string; archived: boolean;
   command: (action: string, data?: Record<string, unknown>) => Promise<boolean>;
   onDiscuss?: () => void;
@@ -63,7 +63,7 @@ export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, er
       {pending.length ? <div className="work-attention-list">{pending.map(d => <div className="work-attention" key={d.id}>
         <Clock3 size={25} strokeWidth={1.6} /><div><h3>待你处理 · {decisionKinds[d.kind] || '任务决定'}</h3><p>{taskSummary(root, board, label)}</p></div>
         <button className="work-primary" onClick={() => setDecisionId(d.id)}>查看并决定 <ArrowRight size={16} /></button>
-      </div>)}</div> : <div className={`work-current${root.blocker ? ' needs-attention' : ''}`}>{root.status === 'done' ? <CheckCircle2 size={20} /> : root.blocker ? <AlertCircle size={20} /> : <Clock3 size={20} />}<div><strong>{taskStatus(root, board)}</strong><p>{taskSummary(root, board, label)}</p></div>
+      </div>)}</div> : <div className={`work-current${root.blocker ? ' needs-attention' : ''}`}>{root.status === 'done' ? <CheckCircle2 size={20} /> : root.blocker ? <AlertCircle size={20} /> : <Clock3 size={20} />}<div><strong>{taskStatus(root, board)}</strong><p>{taskSummary(root, board, label)}</p><LiveProgress live={live} related={related} label={label} /></div>
         {root.status === 'waiting' && ['execution_failed', 'external', 'recovery', 'release_unknown'].includes(root.waiting_reason ?? '') && <button disabled={busy || !!root.active_mission_id} onClick={() => void command('retry', { task_id: root.id })}>核对后重试</button>}
         {['budget', 'no_progress'].includes(root.waiting_reason ?? '') && <button disabled={busy} onClick={() => void command('adjust_budget', { task_id: root.id, max_attempts: Math.min(200, (root.max_attempts ?? 20) + 10) })}>增加 10 次预算</button>}
       </div>}
@@ -99,6 +99,20 @@ export function AdaptiveWorkBody({ board, conversationId, goal, agents, busy, er
     {activity && <WorkDialog title={`${label(activity.actor)} · ${activity.title}`} onClose={() => setActivity(null)}><p className="work-muted">{formatTime(activity.createdAt, true)}</p><p className="work-prose">{activity.detail || '此动作已记录。'}</p><dl><dt>来源记录</dt><dd>{activity.id}</dd>{activity.missionId && <><dt>来源任务轮次</dt><dd>{activity.missionId}</dd></>}{activity.contractId && <><dt>需求约定</dt><dd>{activity.contractId}</dd></>}{activity.candidateId && <><dt>对应快照</dt><dd>{activity.candidateId}</dd></>}</dl><p className="work-muted">此处保留当时的结论；当前进展以任务状态和当前版本依据为准。</p></WorkDialog>}
     {showAll && <WorkDialog wide title="完整任务记录" onClose={() => setShowAll(false)}><p className="work-muted">包含执行、重试和系统事件，原始记录均保留。</p><ol className="work-raw-events">{board.events.filter(e => !root || related.some(t => t.id === e.task_id) || !e.task_id).map(e => <li key={e.id}><div><strong>{label(e.actor)} · {eventNames[e.action] || e.action}</strong><time>{formatTime(e.created_at, true)}</time></div>{e.reason && <p className="work-prose">{e.reason}</p>}<small>{e.id}{e.mission_id && ` · ${e.mission_id}`}</small></li>)}</ol></WorkDialog>}
   </div>;
+}
+function LiveProgress({ live, related, label }: { live?: TaskLive; related: SharedWorkTask[]; label: (id: string) => string }) {
+  const running = live?.running.filter(r => related.some(t => t.id === r.task_id)) ?? [];
+  const latest = live?.latest_message && related.some(t => t.id === live.latest_message!.task_id) ? live.latest_message : null;
+  if (!running.length && !latest) return null;
+  return <div className="work-live" aria-live="polite">
+    {running.map(r => <p key={r.mission_id} className="work-live-running"><span className="work-live-dot" aria-hidden="true" />{label(r.agent_id)} 正在执行第 {r.attempt} 次{r.started_at ? ` · 已进行 ${elapsed(r.started_at)}` : ''}</p>)}
+    {latest && <p className="work-live-latest"><span>{label(latest.agent_id || '')} · {latest.created_at ? formatTime(latest.created_at) : '最新'}</span>{latest.content}</p>}
+  </div>;
+}
+function elapsed(since: string) {
+  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(since)) / 60000));
+  if (Number.isNaN(minutes)) return '一段时间';
+  return minutes < 1 ? '不到 1 分钟' : minutes < 60 ? `${minutes} 分钟` : `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`;
 }
 function formatTime(value: string, full = false) {
   if (!value || Number.isNaN(Date.parse(value))) return '时间未记录';

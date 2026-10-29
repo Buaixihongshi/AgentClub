@@ -1007,4 +1007,10 @@ export interface TaskDetail {
   protocol?: 'legacy' | 'adaptive_v1'; archived?: boolean;
   task: SharedWorkTask; board: SharedWorkBoardView; source_conversation_id: string | null;
   execution_conversation_id: string; orchestration: TaskOrchestration;
+  /** Running attempts and the newest execution note, so the page moves while chat does. */
+  live?: TaskLive;
+}
+export interface TaskLive {
+  running: { task_id: string; mission_id: string; agent_id: string; started_at?: string | null; attempt: number }[];
+  latest_message: { task_id: string; mission_id: string; agent_id?: string | null; created_at?: string | null; content: string } | null;
 }

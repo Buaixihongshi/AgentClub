@@ -3,12 +3,14 @@ import {
   MENTION_OPTIONS,
   collectMentionTargetIds,
   findActiveMention,
+  findTypedMentions,
   getMentionSuggestions,
   parseMentionTarget,
   parseMentionTargets,
   replaceActiveMention,
   resolveMentionAlias,
   setMentionOptions,
+  stripTypedMentions,
 } from "../lib/mentions";
 
 describe("parseMentionTarget", () => {
@@ -302,5 +304,23 @@ describe("replaceActiveMention", () => {
     );
     expect(newValue).toBe("no mention");
     expect(newCursor).toBe(10);
+  });
+});
+
+describe("findTypedMentions", () => {
+  it("routes fully typed names anywhere in the text, longest alias first", () => {
+    expect(findTypedMentions("请@冯宝宝 看看，再问问 @王也").map((m) => m.agentId)).toEqual(["baobao", "wangye"]);
+    expect(findTypedMentions("@宝宝帮我查下")).toEqual([{ agentId: "baobao", start: 0, end: 3 }]);
+  });
+
+  it("ignores emails, unknown names and latin prefixes of longer words", () => {
+    expect(findTypedMentions("发到 a@chulan.com")).toEqual([]);
+    expect(findTypedMentions("@路人甲 你好")).toEqual([]);
+    expect(findTypedMentions("@wangyes 不是王也")).toEqual([]);
+  });
+
+  it("strips typed mentions to detect a bodyless message", () => {
+    expect(stripTypedMentions("@冯宝宝 ").trim()).toBe("");
+    expect(stripTypedMentions("@冯宝宝 看下").trim()).toBe("看下");
   });
 });
