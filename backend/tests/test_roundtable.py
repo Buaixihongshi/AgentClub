@@ -65,33 +65,7 @@ def test_roundtable_defaults_and_summary(idle_client, repository, temp_settings,
     assert '共识' in adapter.calls[-1][2] and '分歧' in adapter.calls[-1][2]
 
 
-def test_social_roundtable_finishes_after_everyone_replies(idle_client, repository, temp_settings):
-    mid = create(idle_client, goal='大家在吗？')
-    adapter = ScriptedAdapter()
-    MissionRunner(repository, temp_settings, adapter).run(mid)
-    detail = idle_client.get(f'/api/missions/{mid}').json()
-    assert [call[0] for call in adapter.calls] == PARTICIPANTS
-    assert detail['mission']['status'] == 'completed'
-    assert detail['discussion']['end_reason'] == 'responses_complete'
-    assert detail['discussion']['summary_message_ids'] == []
-    assert all('总结占一回合' not in call[2] for call in adapter.calls)
-    assert all('主要职责是' not in call[2] for call in adapter.calls)
-
-
-def test_social_roundtable_rejects_extra_handoffs(idle_client, repository, temp_settings):
-    mid = create(idle_client, goal='大家好')
-
-    def callback(adapter, mid, agent, turn, provider, tools):
-        if len(adapter.calls) == 1:
-            with pytest.raises(ValueError, match='Casual responses'):
-                tools.invoke_agent(mid, agent, turn, 'baobao', '重复打招呼', provider)
-
-    adapter = ScriptedAdapter(callback)
-    MissionRunner(repository, temp_settings, adapter).run(mid)
-    assert [call[0] for call in adapter.calls] == PARTICIPANTS
-
-
-def test_work_interruption_promotes_social_roundtable_to_discussion(idle_client, repository, temp_settings):
+def test_interruption_reaches_its_target_with_role_guidance(idle_client, repository, temp_settings):
     mid = create(idle_client, goal='大家好')
 
     def callback(adapter, mid, agent, turn, provider, tools):
@@ -107,7 +81,7 @@ def test_work_interruption_promotes_social_roundtable_to_discussion(idle_client,
     assert detail['discussion']['end_reason'] == 'budget_exhausted'
     assert len(adapter.calls) > len(PARTICIPANTS)
     assert '请讨论权限检查方案' in adapter.calls[1][2]
-    assert '每条审查问题标明严重性' in adapter.calls[1][2]
+    assert 'P1（阻断）' in adapter.calls[1][2]
 
 
 def test_social_roundtable_still_honors_explicit_finish(idle_client, repository, temp_settings):

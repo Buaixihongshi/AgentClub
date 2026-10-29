@@ -360,7 +360,7 @@ def test_create_complex_mission_produces_artifact(temp_settings):
 
     mission_response = client.post(
         "/api/missions",
-        json={"title": "Build", "goal": "设计并实现一个多 Agent 聊天室系统，包含后端、前端、测试和 MCP"},
+        json={"title": "Build", "goal": "设计并实现一个多 Agent 聊天室系统，包含后端、前端、测试和 MCP", "target_agent_ids": ["baobao"]},
     )
     assert mission_response.status_code == 201
     detail = mission_response.json()
@@ -519,7 +519,7 @@ def test_completed_mission_artifacts_have_ownership_fields(temp_settings):
     client = make_client(temp_settings)
     detail = client.post(
         "/api/missions",
-        json={"title": "Build", "goal": "设计并实现一个多 Agent 聊天室系统，包含后端、前端、测试和 MCP"},
+        json={"title": "Build", "goal": "设计并实现一个多 Agent 聊天室系统，包含后端、前端、测试和 MCP", "target_agent_ids": ["baobao"]},
     ).json()
     mission = detail["mission"]
     wait_for_terminal_mission(client, mission["id"])
@@ -541,7 +541,7 @@ def test_artifact_endpoint_includes_ownership_for_event_backed(temp_settings):
     client = make_client(temp_settings)
     detail = client.post(
         "/api/missions",
-        json={"title": "Build", "goal": "设计并实现一个多 Agent 聊天室系统，包含后端、前端、测试和 MCP"},
+        json={"title": "Build", "goal": "设计并实现一个多 Agent 聊天室系统，包含后端、前端、测试和 MCP", "target_agent_ids": ["baobao"]},
     ).json()
     mission = detail["mission"]
     wait_for_terminal_mission(client, mission["id"])

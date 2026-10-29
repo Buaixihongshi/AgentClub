@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from backend.app.domain.models import MissionStatus, RoomMode, TurnStatus, utc_now
 from backend.app.orchestration.speaker import WorkflowStep
-from backend.app.orchestration.interaction import is_casual_turn
 
 
 ACTIVE = {MissionStatus.PENDING, MissionStatus.RUNNING}
@@ -29,7 +28,6 @@ def initial_state(mission):
         'pending_control': None, 'summary_agent_id': None, 'closing_reason': None,
         'pending_interrupts': [], 'deferred_interrupts': [], 'unanswered_interrupt_ids': [],
         'summary_message_ids': [], 'end_reason': None,
-        'casual': is_casual_turn(mission.goal),
     }
 
 
@@ -107,9 +105,6 @@ class Roundtable:
             if target is not None and target not in mission.discussion.participant_ids:
                 raise DiscussionError('Target must be a discussion participant', 422)
             message = self.repo.add_interruption(mission_id, content, target, request_id=request_id, request=fingerprint)
-            # An interruption may introduce work or a real discussion. Do not
-            # keep applying the original greeting's short-response policy.
-            state['casual'] = False
             event = self.repo.list_events_after(mission_id, 0)[-1]
             item = {'event_id': event.id, 'message_id': message.id, **fingerprint}
             state['pending_interrupts'].append(item)
@@ -198,15 +193,7 @@ class Roundtable:
                 self.repo.add_event(mission.id, 'discussion.started', mission.discussion.model_dump())
             participants = mission.discussion.participant_ids
             remaining = mission.discussion.max_turns - state['turns_used']
-            casual = state.get('casual', False)
-            if casual and not state['pending_control'] and not state['pending_interrupts']:
-                if not state['opening_remaining'] and not state['queue']:
-                    self.end(mission, state, 'responses_complete')
-                    return None
-                if remaining <= 0:
-                    self.end(mission, state, 'budget_exhausted')
-                    return None
-            closing = (remaining <= 1 and not casual) or state['pending_control'] == 'finish'
+            closing = remaining <= 1 or state['pending_control'] == 'finish'
             interrupts = state['pending_interrupts']
             state['pending_interrupts'] = []
             if closing:
@@ -239,8 +226,6 @@ class Roundtable:
                 else:
                     agent = state['opening_remaining'][0] if state['opening_remaining'] else participants[state['next_index']]
                     step = WorkflowStep(agent, '回应前面具体观点，补充依据或修正判断；无需强行制造分歧。')
-                if casual:
-                    step = WorkflowStep(step.agent_id, '回应用户这句话，结合前面的对话自然接话；无需介绍岗位或总结。')
                 phase = 'opening' if state['opening_remaining'] else 'exchange'
                 if step.agent_id in state['opening_remaining']:
                     state['opening_remaining'].remove(step.agent_id)
@@ -286,8 +271,6 @@ class Roundtable:
             participants = mission.discussion.participant_ids
             if target not in participants or target == sender:
                 raise DiscussionError('A2A target must be another discussion participant', 422)
-            if state.get('casual', False):
-                raise DiscussionError('Casual responses do not schedule extra handoffs; wait for the user', 422)
             if mode not in ('fire_and_forget', 'wait_reply') or not isinstance(purpose, str) or not purpose.strip():
                 raise DiscussionError('Invalid A2A mode or purpose', 422)
             if state['phase'] == 'closing' or state['pending_control']:
