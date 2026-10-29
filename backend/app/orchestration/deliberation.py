@@ -590,6 +590,7 @@ class Deliberation:
                 if self.depth(mission, state) == "quick":
                     # Quick synthesis is final; original-author review belongs to the full path.
                     state["final_id"] = state["draft_id"]
+                    state["phase"] = "finalizing"
             elif phase == "review":
                 state["reviews"] = [r["id"] for r in results]
                 state["phase"] = "finalizing"

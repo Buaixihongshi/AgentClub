@@ -44,6 +44,7 @@ export function DivergenceCard(props: {
   const div = d.divergence;
   const issues = d.issues ?? [];
   const supplements = d.pending_inputs?.length ?? 0;
+  const unmatched = Boolean(div && !div.conflicts.length && !div.agreed.length && div.single.length);
 
   if (!choosing) {
     if (!STEP[d.phase]) return null;
@@ -82,10 +83,12 @@ export function DivergenceCard(props: {
         <span className="divergence-tag is-agreed">一致</span>{item.decision_key}：{item.positions[0]?.recommendation}
       </li>)}
     </ul>}
-    {!!div?.single.length && <details className="divergence-single"><summary>只有一方提到 · {div.single.length} 项</summary>
+    {!!div?.single.length && <details className="divergence-single" open={unmatched}><summary>{unmatched ? "各方的判断项" : "只有一方提到"} · {div.single.length} 项</summary>
       <ul>{div.single.map((item) => <li key={item.decision_key}>{item.decision_key}：<Positions item={item} /></li>)}</ul>
     </details>}
-    {!div?.conflicts.length && !issues.length && <p className="divergence-note">按判断项比对没有发现明确分歧，这不代表结论已经验证。</p>}
+    {unmatched
+      ? <p className="divergence-note">各方的判断项没有对上，无法自动比对，请对照上面的原文，或让一人综合。</p>
+      : !div?.conflicts.length && !issues.length && <p className="divergence-note">按判断项比对没有发现明确分歧，这不代表结论已经验证。</p>}
     <p className="divergence-note">
       按判断项自动比对，措辞不同的分歧可能漏掉 · 已用 {d.turns_used} 次调用
       {supplements > 0 && <> · 已收到 {supplements} 条补充，会带入下一步</>}

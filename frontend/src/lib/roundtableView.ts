@@ -52,6 +52,7 @@ const PHASE_LABEL: Record<DiscussionPhase, string> = {
   opening: "初次交流",
   exchange: "继续讨论",
   closing: "正在收尾",
+  choosing: "等你选择下一步",
   ended: "已结束",
 };
 
@@ -70,6 +71,9 @@ const END_REASON_LABEL: Record<DiscussionEndReason, string> = {
   service_restart: "后端重启中断",
   runner_failed: "运行器异常",
   no_successful_turn: "没有成功的发言",
+  synthesized_unreviewed: "已综合（未经复核）",
+  user_decided: "你已做出决定",
+  opinions_only: "以各自观点结束",
 };
 
 export function formatDiscussionEndReason(reason?: string | null): string {

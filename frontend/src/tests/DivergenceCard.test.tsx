@@ -49,6 +49,16 @@ describe("DivergenceCard", () => {
     expect(card).toHaveTextContent("已收到 1 条补充，会带入下一步");
   });
 
+  it("says plainly when the voices' decision keys do not line up", () => {
+    setup({ choices: ["synthesize", "user_decide", "escalate", "finish"], divergence: { agreed: [], conflicts: [], single: [
+      { decision_key: "context_memory_default", positions: [CONFLICT.positions[0]] },
+      { decision_key: "memory_default_enabled", positions: [CONFLICT.positions[1]] }] } });
+    const card = screen.getByRole("region", { name: "分歧卡" });
+    expect(card).toHaveTextContent("无法自动比对");
+    expect(card).not.toHaveTextContent("没有发现明确分歧");
+    expect(screen.getByText("context_memory_default：", { exact: false })).toBeVisible();
+  });
+
   it("offers only the server's choices and sends each with its fields", async () => {
     const user = userEvent.setup();
     const onControl = setup({ choices: ["synthesize", "user_decide", "escalate", "finish"] });

@@ -123,6 +123,7 @@ def test_synthesize_defaults_the_synthesizer_and_ends_unreviewed(repository, tem
     assert len(adapter.prompts) == 3 and adapter.prompts[-1][0] == 'chulan'
     assert state['phase'] == 'ended' and state['end_reason'] == 'synthesized_unreviewed'
     assert state['final_id'] == state['draft_id'] and state['reviews'] == []
+    assert not any(lease['phase'] == 'review' for lease in state['leases'].values())
     client = TestClient(create_app(temp_settings))
     messages = client.get(f'/api/conversations/{mission.conversation_id}').json()['messages']
     assert [m['metadata'].get('discussion_visibility') for m in messages if m['role'] == 'agent'] == [
