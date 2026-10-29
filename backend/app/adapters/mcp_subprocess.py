@@ -605,7 +605,7 @@ class MCPSubprocessAdapter(CLIAdapter):
             "--skip-trust",
             *resume_args,
             *self.args,
-            _compact_prompt_for_gemini_mcp(mcp_prompt),
+            mcp_prompt,
         ]
         return cmd, settings_path
 
@@ -820,88 +820,16 @@ class MCPSubprocessAdapter(CLIAdapter):
 
 
 _MCP_PROMPT_GUIDANCE = (
-    "\n【硬性输出协议】本会话已通过 MCP 注册 yiren_hub.publish_message 工具："
-    "参数为 content (中文文本)。你本回合必须调用该 MCP 工具一次来发声；"
-    "只要没有成功调用 yiren_hub.publish_message，本回合会被系统判定为未完成。"
-    "不要只在 stdout/普通文本中说你已经发声。"
-    "交付已有本地文件时，用 write_artifact(relative_path=交付文件名, source_path=本地文件路径)，"
-    "不要为了登记产物重新输出整份文件，也无需反复读取文件或检查 JSON。"
-    "需要其他角色接力时，先调用 invoke_agent 登记接力，再调用 publish_message 说明交接；"
-    "调用失败必须如实说明，不能宣称对方会接手。publish_message 应作为本轮最后的业务工具调用。"
-    "发声前用 log_thought 记录简短的工作计划或判断摘要，供用户查看；无需记录私密的逐步推理。"
-)
-
-_MCP_CASUAL_GUIDANCE = (
-    "【发声协议】调用 yiren_hub.publish_message(content=中文回复) 发布本次回应；"
-    "普通 stdout 不算发声。成功发布后结束本轮，无需工作计划或流程汇报。"
+    "\n【发声】用 yiren_hub.publish_message(content=中文回复) 发出本轮回复；只写在普通输出里不算，"
+    "没有成功调用它本轮就算未完成。它应是本轮最后一个业务工具调用。"
+    "交付已有本地文件时用 write_artifact(relative_path=交付文件名, source_path=本地文件路径)，不要重新输出整份文件。"
+    "需要伙伴接手时先 invoke_agent 再 publish_message；调用失败要如实说，不能说对方会接手。"
+    "想给用户留下判断思路时，可以用 log_thought 记一句摘要。"
 )
 
 
 def _augment_prompt_for_mcp(prompt: str) -> str:
-    from backend.app.orchestration.interaction import is_casual_prompt
-    if is_casual_prompt(prompt):
-        return prompt if prompt.endswith(_MCP_CASUAL_GUIDANCE) else prompt + "\n" + _MCP_CASUAL_GUIDANCE
     return prompt + "\n" + _MCP_PROMPT_GUIDANCE
-
-
-def _compact_prompt_for_gemini_mcp(prompt: str) -> str:
-    """Keep Gemini MCP prompts small while preserving routing-critical context."""
-    body = prompt.replace(_MCP_PROMPT_GUIDANCE, "").strip()
-    from backend.app.orchestration.interaction import is_casual_prompt
-    if is_casual_prompt(body):
-        # The work-prompt compactor only recognizes Mission/Goal labels. Applying
-        # it to a social turn would drop both the user's words and its rules.
-        return _augment_prompt_for_mcp(body)
-    lines = [line.strip() for line in body.splitlines() if line.strip()]
-    compact: list[str] = []
-    recent_lines: list[str] = []
-    in_recent = False
-    saw_a2a_instruction = any("invoke_agent" in line for line in lines)
-
-    for line in lines:
-        if line.startswith("最近对话："):
-            in_recent = True
-            continue
-        if line.startswith("Mission:"):
-            in_recent = False
-
-        if in_recent:
-            recent_lines.append(_truncate_text(line, 120))
-            continue
-
-        if line.startswith(
-            (
-                "聊天室模式",
-                "你的角色是",
-                "只回复当前角色",
-                "不要读取文件",
-                "Mission:",
-                "Goal:",
-                "Turn purpose:",
-                "【接续上一轮】",
-                "对方的回复",
-                "请直接基于上面的对话历史回答",
-            )
-        ) or line.startswith("> "):
-            compact.append(_truncate_text(line, 320))
-
-    if recent_lines:
-        insert_at = min(4, len(compact))
-        compact[insert_at:insert_at] = ["最近对话（压缩）：", *recent_lines[-4:]]
-
-    if saw_a2a_instruction:
-        compact.append(
-            '如需接力，可调用 invoke_agent(target, purpose, mode="wait_reply")；否则本轮只调用 publish_message。'
-        )
-
-    compact.append(_MCP_PROMPT_GUIDANCE.strip())
-    return "\n".join(compact)
-
-
-def _truncate_text(text: str, limit: int) -> str:
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1].rstrip() + "…"
 
 
 def _write_debug_files(

@@ -146,7 +146,7 @@ def test_custom_role_prompts_routes_and_mentions_without_restart(temp_settings):
         Mission(id="m_p", title="t", goal="请大家评审这个方案并补充测试"),
         "回应", agents["linglong"], agents_by_id=agents, max_a2a_invocations=4,
     )
-    assert "你是陆玲珑，主要职责是测试工程师和质量把关者" in prompt
+    assert "你是陆玲珑" in prompt and "职责：测试工程师和质量把关者" in prompt
     assert "先写出复现步骤" in prompt
     assert "张楚岚=chulan" in prompt and "=linglong" not in prompt
     other = _build_prompt(Mission(id="m_q", title="t", goal="评审"), "回应", agents["chulan"],

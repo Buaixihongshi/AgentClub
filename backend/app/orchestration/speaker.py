@@ -2,8 +2,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional
 
-from backend.app.domain.models import AgentProfile, TaskComplexity
-from backend.app.orchestration.interaction import is_casual_turn
+from backend.app.domain.models import AgentProfile
 
 
 @dataclass(frozen=True)
@@ -26,67 +25,30 @@ def resume_purpose(target: str, purpose: str) -> str:
     return "承接 {target} 对『{purpose}』的回复".format(target=target, purpose=flat)
 
 
-DISCUSSION_ALTERNATION_STEPS = 5
-
-
 def select_workflow(
-    complexity: TaskComplexity,
-    goal: str,
     agents: List[AgentProfile],
-    target_agent_id: Optional[str] = None,
     target_agent_ids: Optional[List[str]] = None,
+    *,
+    last_speaker_id: Optional[str] = None,
 ) -> List[WorkflowStep]:
+    """Who answers the user's message.
+
+    Named agents answer once each, in mention order; later speakers see the
+    earlier replies. Without a name, whoever spoke last in the conversation
+    keeps talking, like a person continuing a chat. A new conversation starts
+    with the first configured agent. Anything beyond that is an explicit A2A
+    hand-off decided by the agents, not a host-scripted round.
+    """
     available = {agent.id: agent for agent in agents}
-    targets = list(target_agent_ids or ([target_agent_id] if target_agent_id else []))
     if not available:
         raise ValueError("No agents available")
-    if is_casual_turn(goal, agents):
-        return _require_available([
-            WorkflowStep(agent_id, "回应用户这句话，结合前面的对话自然接话；无需介绍岗位或总结。")
-            for agent_id in dict.fromkeys(targets or [next(iter(available))])
-        ], available)
-    if len(targets) >= 2:
-        return _require_available(_build_discussion_workflow(targets), available)
-    if targets:
+    if target_agent_ids:
         return _require_available(
-            [WorkflowStep(targets[0], "回应用户点名请求")],
+            [WorkflowStep(agent_id, "回应用户点名的这句话") for agent_id in dict.fromkeys(target_agent_ids)],
             available,
         )
-
-    # Configuration order is a deterministic turn order, not a job assignment.
-    # Explicit mentions above still take precedence. Any configured participant
-    # can open, respond or close when placed at that position.
-    participants = list(available)
-    if not participants:
-        raise ValueError("No agents available")
-    if complexity == TaskComplexity.SIMPLE:
-        return [WorkflowStep(participants[0], "回应用户当前请求")]
-    if complexity == TaskComplexity.MEDIUM:
-        return [
-            WorkflowStep(participants[0], "回应用户当前请求"),
-            WorkflowStep(participants[1 % len(participants)], "回应已有观点，补充有帮助的信息；按用户需求推进"),
-        ]
-    steps = [
-        WorkflowStep(agent_id, "结合已有对话提出判断，回应具体观点；按用户需求推进")
-        for agent_id in participants
-    ]
-    steps.append(WorkflowStep(participants[0], "收束讨论：保留共识、分歧和待验证问题，说明下一步", is_closing=True))
-    return steps
-
-
-def _build_discussion_workflow(targets: List[str]) -> List[WorkflowStep]:
-    """For `@A @B [@C ...]` style multi-target prompts: alternate the named
-    agents for DISCUSSION_ALTERNATION_STEPS turns, then give the last-named
-    agent an explicit closing turn. Last-mentioned closes by design (user
-    chose option B in M03 dogfood discussion).
-    """
-    steps: List[WorkflowStep] = []
-    for i in range(DISCUSSION_ALTERNATION_STEPS):
-        steps.append(
-            WorkflowStep(targets[i % len(targets)], "讨论：第 {n} 轮，回应具体观点，补充有帮助的信息".format(n=i + 1))
-        )
-    steps.append(WorkflowStep(targets[-1], "收束讨论：保留共识、分歧和待验证问题，说明下一步", is_closing=True))
-    return steps
+    agent_id = last_speaker_id if last_speaker_id in available else next(iter(available))
+    return [WorkflowStep(agent_id, "接着和用户聊，回应用户这句话")]
 
 
 def _require_available(

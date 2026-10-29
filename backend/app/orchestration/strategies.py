@@ -1,7 +1,6 @@
 """Explicit orchestration plans for evaluation arms A/B/C/D.
 
-The shipped product uses ``AUTO`` (complexity-classified workflow + optional
-A2A).  Evaluation needs stable, comparable arms, so each arm is expressed as a
+The shipped product uses ``AUTO`` (addressed or last speaker + optional A2A).  Evaluation needs stable, comparable arms, so each arm is expressed as a
 deterministic plan here rather than being inferred from the goal text:
 
 A. SINGLE     one agent, one turn.
@@ -15,7 +14,7 @@ identical across arms is the caller's responsibility (the evaluation runner
 pins both).
 """
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from backend.app.domain.models import (
     AgentProfile,
@@ -23,7 +22,6 @@ from backend.app.domain.models import (
     OrchestrationMode,
 )
 from backend.app.orchestration.speaker import WorkflowStep, select_workflow
-from backend.app.orchestration.interaction import is_casual_turn
 
 
 @dataclass(frozen=True)
@@ -45,6 +43,7 @@ def plan_orchestration(
     *,
     default_max_a2a: int,
     default_max_turns: int,
+    last_speaker_id: Optional[str] = None,
 ) -> OrchestrationPlan:
     """Return the workflow, allowed participants and A2A budget for a mission."""
     available = {agent.id: agent for agent in agents}
@@ -57,17 +56,15 @@ def plan_orchestration(
 
     if mode == OrchestrationMode.AUTO:
         workflow = select_workflow(
-            mission.complexity,
-            mission.goal,
             agents,
-            target_agent_id=mission.target_agent_id,
-            target_agent_ids=list(mission.target_agent_ids) or None,
+            list(mission.target_agent_ids) or ([mission.target_agent_id] if mission.target_agent_id else None),
+            last_speaker_id=last_speaker_id,
         )
         return OrchestrationPlan(
             mode=mode,
             steps=workflow,
             agent_ids=list(available),
-            max_a2a_invocations=0 if is_casual_turn(mission.goal, agents) else max(0, default_max_a2a),
+            max_a2a_invocations=max(0, default_max_a2a),
             max_turns=max(0, default_max_turns),
         )
 

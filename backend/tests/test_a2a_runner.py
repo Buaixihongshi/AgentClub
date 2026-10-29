@@ -1,8 +1,10 @@
 from backend.app.domain.agent_registry import AgentRegistry
 from backend.app.adapters.base import TurnOutcome
-from backend.app.domain.models import Mission, MissionStatus, TurnStatus
+from backend.app.domain.models import Mission, MissionStatus, OrchestrationMode, TurnStatus
 from backend.app.mcp.tools import MCPToolError
 from backend.app.orchestration.runner import MissionRunner, _extract_reply_text
+from backend.app.orchestration.speaker import WorkflowStep
+from backend.app.orchestration.strategies import OrchestrationPlan
 
 
 class WaitReplyTestAdapter:
@@ -142,7 +144,7 @@ def test_interrupt_clears_pending_a2a_queue(repository, temp_settings):
                 )
             return outcome
 
-    mission = Mission(id="m_a2a_run3", title="Plan", goal="设计方案")
+    mission = Mission(id="m_a2a_run3", title="Plan", goal="设计方案", target_agent_ids=["chulan", "wangye"])
     repository.create_mission(mission)
     temp_settings.max_turns = 1
     temp_settings.max_a2a_invocations = 2
@@ -351,12 +353,12 @@ def test_fire_and_forget_a2a_runs_right_after_inviting_turn(repository, temp_set
     """A fire-and-forget invoke_agent must be honored right after the inviting
     turn, not drift to the end of a multi-step workflow.
 
-    Configured order gives MEDIUM workflow [chulan, wangye]. chulan invokes baobao on
+    Mentions give the workflow [chulan, wangye]. chulan invokes baobao on
     its first turn. The baobao a2a turn should land between chulan and wangye,
     so the speaking order is chulan → baobao → wangye — not chulan → wangye →
     baobao (which strands the A2A reply after the discussion already closed).
     """
-    mission = Mission(id="m_a2a_near", title="Plan", goal="设计方案")
+    mission = Mission(id="m_a2a_near", title="Plan", goal="设计方案", target_agent_ids=["chulan", "wangye"])
     repository.create_mission(mission)
     temp_settings.max_turns = 2
     temp_settings.max_a2a_invocations = 2
@@ -375,12 +377,12 @@ def test_fire_and_forget_a2a_skipped_when_target_still_in_workflow(repository, t
     """A redundant fire-and-forget invoke is absorbed when the target still has a
     scheduled turn in the remaining workflow.
 
-    Configured order gives MEDIUM workflow [chulan, wangye]. chulan invokes wangye, but
+    Mentions give the workflow [chulan, wangye]. chulan invokes wangye, but
     wangye is already going to speak (workflow step 2). The invoke should be
     skipped — recorded as a2a.skipped, no a2a.invoke, no extra wangye turn — so
     the speaking order stays chulan → wangye.
     """
-    mission = Mission(id="m_a2a_dedup", title="Plan", goal="设计方案")
+    mission = Mission(id="m_a2a_dedup", title="Plan", goal="设计方案", target_agent_ids=["chulan", "wangye"])
     repository.create_mission(mission)
     temp_settings.max_turns = 2
     temp_settings.max_a2a_invocations = 2
@@ -404,7 +406,7 @@ def test_a2a_queue_frozen_after_workflow_closing_turn(repository, temp_settings)
     turn after the conclusion — it would re-litigate a closed discussion. The a2a
     queue is frozen on close.
 
-    COMPLEX workflow [chulan, baobao, wangye, chulan(closing)]. chulan invokes
+    Workflow [chulan, baobao, wangye, chulan(closing)], as the evaluation arms use. chulan invokes
     baobao on its closing turn (baobao is no longer in the remaining workflow, so
     #2 dedup does not catch it). With the freeze the order stays the 4 workflow
     turns; without it baobao speaks a 5th time after the conclusion.
@@ -431,7 +433,13 @@ def test_a2a_queue_frozen_after_workflow_closing_turn(repository, temp_settings)
     temp_settings.max_a2a_invocations = 3
     adapter = ClosingInvokeAdapter()
 
-    completed = MissionRunner(repository, temp_settings, adapter=adapter).run(mission.id)
+    class ClosingPlanRunner(MissionRunner):
+        def _plan_orchestration(self, mission):
+            steps = [WorkflowStep(a, "讨论") for a in ("chulan", "baobao", "wangye")]
+            steps.append(WorkflowStep("chulan", "收束", is_closing=True))
+            return OrchestrationPlan(OrchestrationMode.FIXED, steps, ["chulan", "baobao", "wangye"], 3, 4)
+
+    completed = ClosingPlanRunner(repository, temp_settings, adapter=adapter).run(mission.id)
 
     assert completed.status == MissionStatus.COMPLETED
     assert [c["agent_id"] for c in adapter.calls] == ["chulan", "baobao", "wangye", "chulan"]
@@ -468,7 +476,7 @@ def test_subprocess_a2a_request_skipped_when_target_still_in_workflow(repository
             tools.publish_message(mission_id, agent_id, turn_id, "[{a}] ok".format(a=agent_id), provider_id)
             return TurnOutcome(status=TurnStatus.COMPLETED)
 
-    mission = Mission(id="m_a2a_dedup_sub", title="Plan", goal="设计方案")
+    mission = Mission(id="m_a2a_dedup_sub", title="Plan", goal="设计方案", target_agent_ids=["chulan", "wangye"])
     repository.create_mission(mission)
     temp_settings.max_turns = 2
     temp_settings.max_a2a_invocations = 2

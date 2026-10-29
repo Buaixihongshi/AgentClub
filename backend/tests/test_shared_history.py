@@ -56,9 +56,10 @@ def test_each_turn_sees_prior_speech_and_handled_interruption(repository, temp_s
                     repository.add_interruption(mission_id, "补充条件：全程离线")
             return TurnOutcome(status=TurnStatus.COMPLETED)
 
+    repository.update_mission(mission.model_copy(update={"target_agent_ids": ["chulan", "baobao", "wangye"]}))
     MissionRunner(repository, temp_settings, adapter=Adapter()).run(mission.id)
-    assert len(prompts) == 4
-    for index in (1, 2, 3):
+    assert len(prompts) == 3
+    for index in (1, 2):
         assert "事实1：可以离线讨论" in prompts[index]
         assert "补充条件：全程离线" in prompts[index]
         assert any(m["content"] == "补充条件：全程离线" for m in contexts[index])

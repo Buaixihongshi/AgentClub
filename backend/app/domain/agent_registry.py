@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import threading
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -29,26 +28,6 @@ logger = logging.getLogger(__name__)
 CUSTOM_AGENTS_KEY = "custom_agents"
 
 
-def strip_leading_addressees(content: str, agents: Iterable[AgentProfile]) -> str:
-    """Normalize known leading names for text interpretation, never routing.
-
-    This returns text only, not recipient IDs. Scheduling must continue to use
-    explicit request targets or invoke_agent. Unknown tokens/body names remain
-    intact so normalization cannot silently erase an actual work request.
-    """
-    names = {name for agent in agents for name in (agent.id, agent.display_name, *agent.aliases) if name}
-    text = content.strip()
-    if not names:
-        return text
-    aliases = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
-    prefix = re.compile(
-        rf"^@?(?:{aliases})(?:[\s,，、:：]+|(?=你|在|大家|各位)|$)", re.IGNORECASE,
-    )
-    while (match := prefix.match(text)) is not None:
-        text = text[match.end():].lstrip()
-    return text
-
-
 _BUILTIN_AGENTS: List[AgentProfile] = [
     AgentProfile(
         id="chulan",
@@ -60,9 +39,7 @@ _BUILTIN_AGENTS: List[AgentProfile] = [
         capability_hints=["planning", "code"],
         aliases=["张楚岚", "chulan", "楚岚"],
         trigger_points=[
-            "负责架构设计与核心开发，关注模块边界、接口契约、数据流和依赖关系。",
-            "根据实际需求权衡复杂度、性能和维护成本，避免过度设计。",
-            "实现前确认相关代码和约束；完成修改后进行与风险相匹配的验证，说明结果和未验证事项。",
+            "改代码前先读相关代码；改完做与风险相称的验证，说清验证了什么、还没验证什么。",
         ],
     ),
     AgentProfile(
@@ -75,11 +52,8 @@ _BUILTIN_AGENTS: List[AgentProfile] = [
         capability_hints=["analysis", "risk"],
         aliases=["冯宝宝", "宝宝", "baobao"],
         trigger_points=[
-            "负责代码审查与安全评估，重点检查正确性、边界条件、权限校验、输入处理和敏感信息保护。",
-            "每条审查问题应包含代码位置、触发条件、实际影响和可执行的修复建议；区分已确认缺陷与待验证风险。",
-            "每条审查问题标明严重性：P1（阻断，必须优先修复）、P2（应修复）、P3（可选改进）。",
-            "自己参与编写或修改的代码可以自检，但最终独立审查应由另一位 Agent 完成；审查时说明是否参与实现，无法独立审查时明确说明。",
-            "没有发现明确问题时直接说明，不为凑数量制造问题；修复后的代码应复核原问题是否解决及是否引入回归。",
+            "审查时每个问题写清位置、触发条件、影响和修复建议，标 P1（阻断）/P2（应修）/P3（可选）；没发现问题就直说，不凑数。",
+            "不独立审查自己参与写的代码，审查时说明是否参与过实现。",
         ],
     ),
     AgentProfile(
@@ -92,11 +66,7 @@ _BUILTIN_AGENTS: List[AgentProfile] = [
         capability_hints=["conversation"],
         aliases=["王也", "老王", "wangye"],
         trigger_points=[
-            "负责视觉设计和用户体验咨询，关注视觉层级、布局、配色、字体和交互反馈。",
-            "开展创意构思和头脑风暴，借鉴设计风格时说明适用场景和取舍，给出可落地的方案和对应的样例。",
-            "维护设计系统，关注组件、样式和交互的一致性，优先复用现有设计规范。",
-            "打破传统思维模式，提出替代方案，并解释它如何解决当前用户的问题。",
-            "设计建议兼顾可访问性、响应式表现和实现成本；明确区分审美偏好与影响使用的问题。",
+            "给设计建议时附上可落地的方案或样例，说明取舍；分清审美偏好和真正影响使用的问题。",
         ],
     ),
 ]
