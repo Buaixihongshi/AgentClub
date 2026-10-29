@@ -104,7 +104,7 @@ class CreateMissionRequest(MissionRequest):
 
 class DiscussionControlRequest(BaseModel):
     action: Literal['finish', 'stop', 'select_synthesizer', 'retry', 'record_decision', 'restart_with_input', 'defer_input', 'save_knowledge_candidate',
-                    'verify_conflicts', 'synthesize', 'user_decide', 'escalate']
+                    'verify_conflicts', 'synthesize', 'user_decide', 'escalate', 'save_memory']
     request_id: str = Field(min_length=1, max_length=128)
     summary_agent_id: Optional[str] = None
     expected_revision: Optional[StrictInt] = None

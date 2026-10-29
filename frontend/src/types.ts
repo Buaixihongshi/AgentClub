@@ -26,7 +26,7 @@ export type RoomMode = "task" | "roundtable";
 export type DiscussionPhase = "opening" | "exchange" | "closing" | "ended" | "independent" | "awaiting_synthesizer" | "synthesis" | "review" | "finalizing" | "choosing";
 
 export type DiscussionControlAction = "finish" | "stop" | "select_synthesizer" | "retry" | "record_decision" | "restart_with_input" | "defer_input" | "save_knowledge_candidate"
-  | "verify_conflicts" | "synthesize" | "user_decide" | "escalate";
+  | "verify_conflicts" | "synthesize" | "user_decide" | "escalate" | "save_memory";
 
 export interface DiscussionControlFields {
   agent_id?: string;
@@ -137,6 +137,9 @@ export interface DiscussionView {
   rules_version?: string;
   rules_hash?: string;
   knowledge_candidate_id?: string | null;
+  /** Participant id → long-term memory entry written from this discussion. */
+  memory_entry_ids?: Record<string, string>;
+  memory_savable?: boolean;
   build_id?: string;
 }
 

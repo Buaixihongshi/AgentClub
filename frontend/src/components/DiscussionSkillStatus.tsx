@@ -39,6 +39,7 @@ export function DiscussionSkillStatus(props: {
   const waiting = !ended && props.missionStatus === "awaiting_input";
   const pending = Boolean(d.pending_control);
   const disabled = Boolean(props.busy) || pending || (v2 && !props.onControl);
+  const savedToMemory = Object.keys(d.memory_entry_ids ?? {}).length > 0;
   const failures = d.progress?.filter((turn) => ["failed", "interrupted"].includes(turn.status)) ?? [];
   const stopped = d.end_reason === "user_stop";
   const failedEnding = ["provider_failed", "summary_failed", "runner_failed", "no_successful_turn", "service_restart"].includes(d.end_reason ?? "");
@@ -59,8 +60,10 @@ export function DiscussionSkillStatus(props: {
       {!ended && <button type="button" className="discussion-skill-quiet" disabled={disabled} onClick={stop}>停止讨论</button>}
       {!v2 && !ended && <button type="button" className="discussion-skill-quiet" disabled={disabled} onClick={props.onRequestFinish}>整理结果</button>}
       {!v2 && ended && <button type="button" className="discussion-skill-quiet" disabled={Boolean(props.busy)} onClick={props.onContinue}>继续讨论</button>}
-      {v2 && ended && d.final_id && <button type="button" className="discussion-skill-quiet" disabled={disabled || Boolean(d.knowledge_candidate_id)} onClick={() => control("save_knowledge_candidate")}>
-        {d.knowledge_candidate_id ? "已保存知识候选" : "保存为知识候选"}
+      {v2 && ended && (d.memory_savable || savedToMemory) && <button type="button" className="discussion-skill-quiet"
+        disabled={disabled || savedToMemory} onClick={() => control("save_memory")}
+        title="参与讨论的伙伴会在之后的对话里记得这个结论；可在设置的记忆管理中查看、修改或删除">
+        {savedToMemory ? "已存入长期记忆" : "存入长期记忆"}
       </button>}
     </div>
 
