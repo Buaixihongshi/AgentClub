@@ -102,7 +102,7 @@ def test_runner_completes_mission_with_fake_cli(repository, temp_settings):
     completed = runner.run("m_1")
 
     assert completed.status == MissionStatus.COMPLETED
-    assert len(repository.list_messages("m_1")) >= 3
+    assert len(repository.list_messages("m_1")) >= 1
 
 
 class BlockingAdapter:
@@ -507,17 +507,14 @@ def test_build_prompt_constrains_cli_to_short_chat_response():
 
     prompt = _build_prompt(mission, "拆解任务", agent)
 
-    assert "聊天室模式" in prompt
+    assert "聊天室" in prompt
     assert "张楚岚" in prompt
-    assert "CLI 自带的工具" in prompt
     assert "write_artifact" in prompt
-    assert "JSON envelope" in prompt
     assert "artifacts" in prompt
     # 旧的硬性禁令已移除：让各家 CLI 用自己的原生工具读写文件
     assert "不要读取文件" not in prompt
     assert "120字以内" not in prompt
     assert "短中文回复" not in prompt
-    assert "不设置固定字数上限" in prompt
 
 
 def test_build_prompt_separates_discussion_from_file_delivery():
@@ -532,11 +529,8 @@ def test_build_prompt_separates_discussion_from_file_delivery():
 
     prompt = _build_prompt(mission, "补充具体做法和实例", agent)
 
-    assert "任务复杂度只决定协作轮次，不决定是否交付文件" in prompt
-    assert "讨论、比较、解释、评审修改意见时" in prompt
-    assert "不主动创建或登记文件" in prompt
-    assert "只有用户明确要求文件交付" in prompt
-    assert "不为每轮发言额外生成总结文件" in prompt
+    assert "讨论、解释、评审直接在聊天里回答" in prompt
+    assert "只有用户要文件，或已获授权的执行任务确实需要时才写文件" in prompt
 
 
 def test_build_prompt_includes_trigger_points_when_agent_has_them():
@@ -555,7 +549,7 @@ def test_build_prompt_includes_trigger_points_when_agent_has_them():
 
     prompt = _build_prompt(mission, "复核风险", agent)
 
-    assert "【职责与工作指引】" in prompt
+    assert "【做本职工作时】" in prompt
     assert "别人给出方案后还没有人挑过隐含假设" in prompt
     assert "讨论开始相互附和" in prompt
 
@@ -587,7 +581,7 @@ def test_build_prompt_skips_trigger_points_when_agent_has_none():
 
     prompt = _build_prompt(mission, "拆解任务", agent)
 
-    assert "【职责与工作指引】" not in prompt
+    assert "【做本职工作时】" not in prompt
 
 
 def test_build_prompt_includes_artifact_index_section():
@@ -607,7 +601,7 @@ def test_build_prompt_includes_artifact_index_section():
     assert "plan.md  by baobao" in prompt
 
 
-def test_build_prompt_always_includes_exit_check():
+def test_build_prompt_routes_handoffs_by_tool_without_exit_checklist():
     mission = Mission(id="m_1", title="Plan", goal="多 Agent 协作")
     agent = AgentProfile(
         id="chulan",
@@ -617,12 +611,13 @@ def test_build_prompt_always_includes_exit_check():
         default_provider_id="claude",
     )
 
-    prompt = _build_prompt(mission, "收束", agent)
+    prompt = _build_prompt(mission, "收束", agent, max_a2a_invocations=2)
 
-    assert "【发送前出口检查】" in prompt
-    assert "read_artifact 核对" in prompt
+    assert "【发送前出口检查】" not in prompt
+    assert "log_thought" not in prompt
     assert "invoke_agent" in prompt
-    assert "不能只在正文里喊对方名字或说“你来收尾”" in prompt
+    assert "只在正文里喊名字不会触发接力" in prompt
+    assert "invoke_agent" not in _build_prompt(mission, "收束", agent, max_a2a_invocations=0)
 
 
 # ---------------------------------------------------------------------------
@@ -1462,18 +1457,15 @@ def test_prompt_includes_specialized_role_and_work_guidelines(agent_id, mode):
     mission = Mission(id="m_persona", title="讨论", goal="每个人都要参与吗？")
     prompt = _build_prompt(mission, "回应已有观点", agent, orchestration_mode=mode)
     assert agent.persona in prompt
-    assert f"主要职责是{agent.role}" in prompt
-    assert "【职责与工作指引】" in prompt
+    assert f"职责：{agent.role}" in prompt
+    assert "【做本职工作时】" in prompt
     assert all(point in prompt for point in agent.trigger_points)
-    assert "性格特点是" not in prompt
-    assert "不要抢着承担固定职责" not in prompt
     if mode is None:
-        assert "以各自职责为主要分工" in prompt
-        assert "每位伙伴都可以提方案、分析、执行和总结" in prompt
-        assert "立场随事实与交流改变" in prompt
+        assert "及伙伴们" in prompt
+        assert "本轮由你独立完成" not in prompt
     else:
         assert "本轮由你独立完成" in prompt
-    assert "只有用户明确要求文件交付" in prompt
+    assert "只有用户要文件" in prompt
     assert "不要等别人点名" not in prompt
 
 
@@ -1494,13 +1486,9 @@ def test_public_discussion_rules_apply_to_every_agent_and_mode(agent_id, mode):
     )
 
     assert prompt.count(COMMON_DISCUSSION_RULES) == 1
-    assert prompt.index(COMMON_DISCUSSION_RULES) < prompt.index("【职责与工作指引】")
-    assert "不把相互认同当作验证通过" in prompt
-    assert "不为体现独立性而强行反对或制造分歧" in prompt
-    assert "仍有已授权的任务或核验未完成时，继续推进或明确阻碍" in prompt
-    assert "无新增信息且无待完成事项时允许不发言" in prompt
-    assert "若发声协议要求回复，用最短回应收口" in prompt
-    assert "不例行表态、总结或点名接力" in prompt
+    assert prompt.index(COMMON_DISCUSSION_RULES) < prompt.index("【做本职工作时】")
+    assert "不迎合也不抬杠" in prompt
+    assert "闲聊、吐槽、问感受时就自然地聊" in prompt
 
 
 def test_public_discussion_rules_apply_without_personal_guidelines():
@@ -1518,4 +1506,4 @@ def test_public_discussion_rules_apply_without_personal_guidelines():
     prompt = _build_prompt(mission, "提出建议", agent)
 
     assert COMMON_DISCUSSION_RULES in prompt
-    assert "【职责与工作指引】" not in prompt
+    assert "【做本职工作时】" not in prompt

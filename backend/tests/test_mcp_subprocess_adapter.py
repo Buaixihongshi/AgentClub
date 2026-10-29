@@ -634,7 +634,7 @@ def test_gemini_outcome_captures_session_id_from_init_event(
     assert outcome.session_id == "abc-123-uuid"
 
 
-def test_gemini_cli_receives_compact_mcp_prompt(repository, temp_settings, seeded_mission):
+def test_gemini_cli_receives_the_same_persona_prompt_as_other_providers(repository, temp_settings, seeded_mission):
     import unittest.mock as _mock
 
     tools = MCPTools(repository, temp_settings.artifact_root)
@@ -668,12 +668,9 @@ def test_gemini_cli_receives_compact_mcp_prompt(repository, temp_settings, seede
     with _mock.patch("backend.app.adapters.mcp_subprocess.subprocess.Popen", side_effect=spy_popen):
         adapter.run_turn(seeded_mission.id, "wangye", "t_gemini_compact", "gemini", prompt, tools)
 
-    compact_prompt = captured_cmd[-1]
-    assert len(compact_prompt) < len(_augment_prompt_for_mcp(prompt))
-    assert "你的角色是王也" in compact_prompt
-    assert "Goal: 请三位 Agent" in compact_prompt
-    assert "Turn purpose: 分析风险" in compact_prompt
-    assert "yiren_hub.publish_message" in compact_prompt
+    # The prompt is already bounded upstream; trimming it again per provider
+    # used to drop the persona and rules for Gemini only.
+    assert captured_cmd[-1] == _augment_prompt_for_mcp(prompt)
 
 
 def test_mcp_prompt_guidance_is_added_even_when_user_mentions_publish_message():
@@ -682,7 +679,7 @@ def test_mcp_prompt_guidance_is_added_even_when_user_mentions_publish_message():
     augmented = _augment_prompt_for_mcp(prompt)
 
     assert augmented != prompt
-    assert "硬性输出协议" in augmented
+    assert "【发声】" in augmented
     assert "yiren_hub.publish_message" in augmented
 
 

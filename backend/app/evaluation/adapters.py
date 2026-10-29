@@ -46,8 +46,8 @@ class ScriptedAdapter(CLIAdapter):
 
     The evaluation arms share one 4-turn skeleton (draft -> check one ->
     check two -> revise), so the adapter selects content from the prompt's
-    ``Turn purpose``. Dynamic A2A callees are recognised by the host's
-    "请你接力" section and replay the ``dynamic`` list in order.
+    ``本轮`` line. Dynamic A2A callees are recognised by the host's
+    "请你接手" section and replay the ``dynamic`` list in order.
     """
 
     def __init__(self, fixture_path: Path):
@@ -143,7 +143,7 @@ class ScriptedAdapter(CLIAdapter):
 
 
 def _stage_from_prompt(prompt: str) -> str:
-    if "请你接力：" in prompt:
+    if "请你接手，" in prompt:
         return "dynamic"
     purpose = _turn_purpose(prompt)
     if "检查二" in purpose:
@@ -168,7 +168,7 @@ def _normalize_stage(value: str) -> str:
 
 def _turn_purpose(prompt: str) -> str:
     """Read only the current turn's purpose line, not prior messages in context."""
-    marker = "Turn purpose:"
+    marker = "\n本轮："
     index = prompt.rfind(marker)
     if index == -1:
         return prompt

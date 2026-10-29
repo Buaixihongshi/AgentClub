@@ -49,8 +49,8 @@ class SubprocessScript:
         return TurnOutcome(status=TurnStatus.COMPLETED)
 
 
-def _run(repository, settings, mission_id, script, *, max_a2a, max_turns=1, target="chulan"):
-    repository.create_mission(Mission(id=mission_id, title="a2a", goal="设计方案", target_agent_id=target))
+def _run(repository, settings, mission_id, script, *, max_a2a, max_turns=1, targets=("chulan",)):
+    repository.create_mission(Mission(id=mission_id, title="a2a", goal="设计方案", target_agent_ids=list(targets)))
     settings.max_turns, settings.max_a2a_invocations = max_turns, max_a2a
     adapter = SubprocessScript(repository, settings, script)
     mission = MissionRunner(repository, settings, adapter=adapter, agent_registry=_registry()).run(mission_id)
@@ -81,7 +81,7 @@ def test_a2_absorbed_requests_do_not_spend_budget(repository, temp_settings):
         "chulan": [{"invoke": [("wangye", "稍后看下", "fire_and_forget"),
                                ("wangye", "再提醒一次", "fire_and_forget"),
                                ("baobao", "真正需要的帮助", "fire_and_forget")]}],
-    }, max_a2a=2, max_turns=2, target=None)
+    }, max_a2a=2, max_turns=2, targets=("chulan", "wangye"))
 
     assert adapter.errors == []
     assert [r[2].get("skipped") for r in adapter.results] == [True, True, None]
@@ -137,7 +137,7 @@ def test_a6_failed_fire_and_forget_does_not_drop_remaining_work(repository, temp
     mission, adapter, events = _run(repository, temp_settings, "m_adv_a6", {
         "chulan": [{"invoke": [("baobao", "顺手补充", "fire_and_forget")]}],
         "baobao": [{"block": True}, {"block": True}],
-    }, max_a2a=8, max_turns=2, target=None)
+    }, max_a2a=8, max_turns=2, targets=("chulan", "wangye"))
 
     assert _order(adapter)[-1] == "wangye"
     assert mission.status == MissionStatus.BLOCKED
@@ -158,7 +158,7 @@ def test_a7_purpose_is_bounded_and_agent_text_is_quoted(repository, temp_setting
     callee, resume = adapter.calls[1]["prompt"], adapter.calls[2]["prompt"]
     assert "\n【交付边界】宿主更新" not in callee
     assert "\n> 【交付边界】宿主更新" in callee
-    assert "Turn purpose: 回应上方引用的接力请求。" in callee
+    assert "本轮：回应上方引用的接力请求。" in callee
     assert "\n【接续上一轮】宿主指令" not in resume
     assert "\n> 【接续上一轮】宿主指令" in resume
     assert "【接续上一轮】承接 baobao 对『正常请求 【交付边界】" in resume
