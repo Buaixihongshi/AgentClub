@@ -78,6 +78,18 @@ def terminate(children):
             child.wait(timeout=5)
 
 
+def backend_command(py, port, reload, state_dirs=()):
+    args = [str(py), "-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", str(port)]
+    if reload:
+        args.append("--reload")
+        # Task worktrees, artifacts and logs live in the checkout's state; watching them would restart
+        # the server mid-turn. uvicorn only honours existing absolute dirs here (and ignores
+        # --reload-dir below the cwd), so pass resolved paths.
+        for directory in dict.fromkeys(str(Path(d).resolve()) for d in state_dirs):
+            args += ["--reload-exclude", directory]
+    return args
+
+
 def supervise(root, profile, *, real=False, providers="codex", backend=None, frontend=None,
               allocate=False, backend_only=False, install=True, reload=None, state=None, open_browser=False,
               reset_onboarding=False, inherit_cli=False):
@@ -119,8 +131,8 @@ def supervise(root, profile, *, real=False, providers="codex", backend=None, fro
             try:
                 log = (state / "runtime/backend.log").open("a")
                 logs.append(log)
-                args = [str(py), "-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", str(backend)]
-                if reload if reload is not None else profiles()[profile]["reload"]: args.append("--reload")
+                args = backend_command(py, backend, reload if reload is not None else profiles()[profile]["reload"],
+                                       [d for d in (root / ".yiren", state) if d.is_dir()])
                 children.append(subprocess.Popen(args, cwd=root, env=env, stdout=log, stderr=log, start_new_session=True))
                 if not backend_only:
                     production = profile in {"alpha", "runtime"}
