@@ -21,7 +21,7 @@
 
 ## MCP 工具
 
-- `memory(action, data)`：仅操作调用角色自己的记忆。`read` 列表或按 `entry_id` 读全文；`write(title, body, tags?, source_refs?)` 新增；`revise(entry_id, title?, body?, tags?)` 修订（revision 递增）；`forget(entry_id)` 标记忘记并移出一切后续上下文。写入/修订/忘记分别记录 `memory.written/revised/forgotten` 事件。
+- `memory(action, entry_id?, title?, body?, tags?, source_refs?)`：参数与 `action` 平级传入，没有 `data` 包装；仅操作调用角色自己的记忆。`read` 列表或按 `entry_id` 读全文；`write(title, body, tags?, source_refs?)` 新增；`revise(entry_id, title?, body?, tags?)` 修订（revision 递增）；`forget(entry_id)` 标记忘记并移出一切后续上下文。写入/修订/忘记分别记录 `memory.written/revised/forgotten` 事件。
 - `save_checkpoint(text, source_message_ids?)`：保存本会话滚动检查点（≤4,000 字符），记录 `checkpoint.saved` 事件；需要普通会话上下文。
 - `read_context` 新增 `message_ids`（原文补读，≤50 条）：按消息 ID 精确取未截断全文，结果带 `memory`（条目摘要 + 待交接）、`checkpoint` 与 `missing_message_ids`。V2 圆桌讨论维持只读白名单，新工具在 V2 中不可用。
 

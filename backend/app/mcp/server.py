@@ -135,11 +135,12 @@ _TOOL_DESCRIPTORS = [
         "name": "memory",
         "description": (
             "你的跨会话长期记忆，只属于你本人；Markdown 权威存储，所有会话共享。"
-            "action=read 列出全部有效条目，传 entry_id 读单条全文。"
-            "action=data:{action:'write',title,body,tags?:[],source_refs?:[消息ID]} 新增；"
+            "所有参数与 action 平级传入，没有 data 包装。"
+            "{action:'read'} 列出全部有效条目，加 entry_id 读单条全文。"
+            "{action:'write',title,body,tags?,source_refs?} 新增；"
             "值得记的是用户偏好、长期约定、项目事实和纠正，不要存一次性闲聊。"
-            "action=data:{action:'revise',entry_id,title?,body?,tags?} 修订（revision 递增）；"
-            "事实变化时修订而不是另存一条。action=data:{action:'forget',entry_id} 忘记："
+            "{action:'revise',entry_id,title?,body?,tags?} 修订（revision 递增）；"
+            "事实变化时修订而不是另存一条。{action:'forget',entry_id} 忘记："
             "不再进入任何后续上下文。source_refs 填相关消息 ID，便于之后原文补读。"
         ),
         "inputSchema": {
