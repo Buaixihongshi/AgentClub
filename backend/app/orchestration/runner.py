@@ -40,6 +40,7 @@ from backend.app.memory import handover as handover_store
 from backend.app.orchestration.context import build_artifact_index, build_conversation_context
 from backend.app.orchestration.speaker import WorkflowStep, resume_purpose
 from backend.app.orchestration.strategies import OrchestrationPlan, plan_orchestration
+from backend.app.orchestration.turn_progress import record_turn_progress_note, timeout_reason
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
 
@@ -788,6 +789,13 @@ class MissionRunner:
                 outcome.summary or "blocked",
             )
             attempt_events = self.repository.list_events_after(mission.id, 0)[event_offset:]
+            reason = timeout_reason(outcome.failure_code, outcome.summary)
+            if reason:
+                record_turn_progress_note(
+                    self.repository, mission.id, turn_id=turn_id, agent_id=agent_id,
+                    provider_id=provider_id, attempt=attempt, reason=reason,
+                    error=outcome.summary or "", events=attempt_events,
+                )
             from backend.app.orchestration.live_progress import get_live_progress_registry
             if (not may_retry(outcome, attempt_events)
                     or get_live_progress_registry().get_partial_text(mission.id, turn_id)):

@@ -459,6 +459,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                         status=TurnStatus.BLOCKED,
                         summary=summary,
                         session_id=captured_session_id[0],
+                        failure_code=wait_reason.value,
                     )
 
                 t_out.join(timeout=2)
@@ -506,6 +507,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                             "[antigravity] provider internal timeout before MCP publish_message"
                         ),
                         session_id=captured_session_id[0],
+                        failure_code="provider_timeout",
                     )
 
                 # ADR Decision 5: MCP-enabled providers must call publish_message via MCP.

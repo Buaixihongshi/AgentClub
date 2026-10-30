@@ -169,6 +169,20 @@ export interface ThreadEventMetadata {
   handoff_to?: string;
   trace_blocks?: Array<{ type: string; title: string; content: string }>;
   artifact_id?: string;
+  host_progress?: HostProgress;
+}
+
+/** Host-recorded snapshot of a timed-out turn; never an agent message. */
+export interface HostProgress {
+  source: "host";
+  reason: string;
+  error?: string;
+  tool_calls: number;
+  tools: Array<{ name: string; count: number }>;
+  artifacts: string[];
+  published: boolean;
+  last_activity?: { kind: string; label: string; at?: string | null; seconds_before_stop?: number } | null;
+  stopped_at?: string;
 }
 
 export interface ThreadEvent {
