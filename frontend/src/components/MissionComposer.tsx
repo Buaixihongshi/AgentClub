@@ -1,3 +1,4 @@
+import { PersonaPortrait } from "./PersonaPortrait";
 import {
   useEffect,
   useRef,
@@ -257,7 +258,7 @@ export function MissionComposer(props: {
                           className="mention-avatar"
                           style={{ background: (opt as MentionOption).color ?? getPersonaColor((opt as MentionOption).id).accent }}
                         >
-                          {avatarInitial((opt as MentionOption).label)}
+                          <PersonaPortrait agentId={(opt as MentionOption).id}>{avatarInitial((opt as MentionOption).label)}</PersonaPortrait>
                         </span>
                         <span className="mention-name-box">
                           <strong className="mention-name">

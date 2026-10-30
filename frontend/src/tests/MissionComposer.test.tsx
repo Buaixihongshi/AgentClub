@@ -252,7 +252,7 @@ describe("MissionComposer mention autocomplete", () => {
     const first = within(listbox).getAllByRole("option")[0];
     expect(first).toHaveTextContent("zhangchulan · zcl");
     expect(first).toHaveTextContent("通透机敏");
-    expect(within(first).getByText("楚")).toBeInTheDocument();
+    expect(first.querySelector(".mention-avatar img")).toHaveAttribute("src", expect.stringContaining("chulan.png"));
   });
 
   it("renders the demo-styled skill option with confirm key", async () => {
