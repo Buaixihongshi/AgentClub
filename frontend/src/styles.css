@@ -1179,8 +1179,8 @@ summary:focus-visible {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 51px;
+  height: 51px;
   margin-top: 2px;
   border: 2px solid var(--ink);
   border-radius: 10px;
@@ -1190,11 +1190,6 @@ summary:focus-visible {
   font-size: 0.9rem;
   font-weight: 900;
   line-height: 1;
-}
-
-.chat-row-agent .chat-avatar {
-  width: 51px;
-  height: 51px;
 }
 
 .chat-avatar-user {
@@ -3599,14 +3594,9 @@ summary:focus-visible {
   }
 
   .chat-avatar {
-    width: 28px;
-    height: 28px;
-    font-size: 0.8rem;
-  }
-
-  .chat-row-agent .chat-avatar {
     width: 42px;
     height: 42px;
+    font-size: 0.8rem;
   }
 
   .mission-header h1 {
