@@ -1192,6 +1192,11 @@ summary:focus-visible {
   line-height: 1;
 }
 
+.chat-row-agent .chat-avatar {
+  width: 51px;
+  height: 51px;
+}
+
 .chat-avatar-user {
   background: var(--sage-strong);
 }
@@ -3597,6 +3602,11 @@ summary:focus-visible {
     width: 28px;
     height: 28px;
     font-size: 0.8rem;
+  }
+
+  .chat-row-agent .chat-avatar {
+    width: 42px;
+    height: 42px;
   }
 
   .mission-header h1 {
