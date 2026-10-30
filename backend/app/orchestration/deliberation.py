@@ -682,7 +682,7 @@ class Deliberation:
                     return event.payload.get("mission_id", mission_id), False
             if payload.expected_revision is None or payload.expected_revision != state["revision"]:
                 raise DiscussionError("Discussion revision changed; refresh and retry")
-            if state["phase"] == "ended" and payload.action != 'save_knowledge_candidate':
+            if state["phase"] == "ended" and payload.action not in {'save_knowledge_candidate', 'save_memory'}:
                 raise DiscussionError("Discussion has ended; continue in a new mission")
             action = payload.action
             new_mission_id = mission_id
@@ -755,6 +755,8 @@ class Deliberation:
                     conversation_id=mission.conversation_id, role=MessageRole.USER,
                     content=f"关于「{decision['question']}」，{choice}。"))
                 self._finalize(mission, state)
+            elif action == 'save_memory':
+                self._save_memory(mission, state, settings)
             elif action == 'save_knowledge_candidate':
                 if state['phase'] != 'ended' or not state['final_id']:
                     raise DiscussionError('Knowledge candidates require a final result')
@@ -810,6 +812,7 @@ class Deliberation:
             self.repo.add_message(Message(id=f"msg_{uuid4().hex}", mission_id=mission.id,
                 conversation_id=mission.conversation_id, role=MessageRole.USER, content=f"我的决定：{text}"))
             self.repo.add_event(mission.id, "discussion.user_decided", {"chars": len(text)})
+            state["user_decision"] = text
             self._end_quick(mission, state, "user_decided")
             return False
         if action == "escalate":
@@ -840,6 +843,65 @@ class Deliberation:
             self.repo.add_event(mission.id, "discussion.synthesizer_selected", {"agent_id": synthesizer})
         self.save(mission, state, status=MissionStatus.PENDING)
         return True
+
+    def memory_body(self, mission, state):
+        """The conclusion worth keeping: final sections or the user's own decision, with sources."""
+        names = {a['id']: a.get('display_name', a['id']) for a in mission.discussion.profiles}
+        parts = []
+        if state["final_id"]:
+            final = self.get(mission.id, state["final_id"])["data"]
+            labels = {"recommendation": "结论", "consensus": "共识", "disagreements": "保留的分歧", "pending": "待决事项"}
+            for section in final["sections"]:
+                if section["id"] in labels and section["content"].strip():
+                    parts.append(f"{labels[section['id']]}：{section['content'].strip()}")
+            for decision in final.get("decisions", []):
+                chosen = state["decisions"].get(decision["id"])
+                if chosen:
+                    label = '暂不决定' if chosen == 'defer' else next(
+                        (o['label'] for o in decision['options'] if o['id'] == chosen), chosen)
+                    parts.append(f"用户决定（{decision['question']}）：{label}")
+        elif state.get("user_decision"):
+            for rid in state["opinions"]:
+                opinion = self.get(mission.id, rid)
+                parts.append(f"{names.get(opinion['agent_id'], opinion['agent_id'])}的观点：{opinion['data']['position_summary']}")
+            parts.append(f"用户决定：{state['user_decision']}")
+        if not parts:
+            return None
+        if not state["final_id"]:
+            origin = "，结论由用户决定"
+        elif state["reviews"] and state["final_id"] == state["draft_id"]:
+            origin = "，结论经原参与者复核"
+        else:
+            origin = "，结论未经原参与者复核"
+        header = f"议题：{mission.goal}\n来源：团队讨论（{'、'.join(names.get(p, p) for p in mission.discussion.participant_ids)}）" + origin
+        body = header + "\n\n" + "\n\n".join(parts)
+        return body if len(body) <= MEMORY_MAX_BODY else body[:MEMORY_MAX_BODY - 1] + "…"
+
+    def _save_memory(self, mission, state, settings):
+        """Each participant keeps the conclusion in its long-term memory; idempotent per discussion."""
+        from backend.app.memory.store import MemoryStore
+        if state["phase"] != "ended":
+            raise DiscussionError("Only a finished discussion can be saved to memory")
+        if state.get("memory_entry_ids"):
+            return
+        body = self.memory_body(mission, state)
+        if body is None:
+            raise DiscussionError("This discussion has no conclusion or decision to save", 422)
+        if settings is None or getattr(settings, "memory_root", None) is None:
+            raise DiscussionError("Memory storage is unavailable", 503)
+        store = MemoryStore(self.repo, settings.memory_root)
+        title = " ".join(mission.goal.split())
+        title = title if len(title) <= 60 else title[:59] + "…"
+        refs = [f"discussion:{mission.id}"] + [f"result:{rid}" for rid in (state["final_id"],) if rid]
+        entries = {}
+        for agent_id in mission.discussion.participant_ids:
+            entry = store.write(agent_id, title=f"讨论结论：{title}", body=body,
+                                tags=["讨论结论"], source_refs=refs)
+            entries[agent_id] = entry["id"]
+            self.repo.add_event(mission.id, "memory.written", {
+                "agent_id": agent_id, "entry_id": entry["id"], "title": entry["title"], "source": "discussion"})
+        state["memory_entry_ids"] = entries
+        self.save(mission, state)
 
     def _end_quick(self, mission, state, reason):
         state.update(phase="ended", awaiting_reason=None, pending_control=None, end_reason=reason)
@@ -969,6 +1031,9 @@ class Deliberation:
                 "issues": list(state["issues"].values()), "synthesizer_id": state["synthesizer_id"],
                 "results": results, "draft_id": state["draft_id"], "final_id": state["final_id"],
                 'knowledge_candidate_id': state.get('knowledge_candidate_id'),
+                'memory_entry_ids': state.get('memory_entry_ids') or {},
+                'memory_savable': state['phase'] == 'ended' and not state.get('memory_entry_ids')
+                    and bool(state['final_id'] or state.get('user_decision')),
                 'outcome': {'final_id': state['final_id'], 'reviewed_draft_id': state['draft_id'],
                     'reviewer_ids': [r['agent_id'] for r in results if r['kind'] == 'review'],
                     'unresolved_issue_ids': [key for key, value in state['issues'].items() if value['status'] != 'resolved'],
@@ -1071,6 +1136,7 @@ def analyze_opinion_agreement(results):
     }
 
 
+MEMORY_MAX_BODY = 8000
 EVIDENCE_LABELS = {"verified": "附有来源", "unverified": "待验证", "inference": "推断", "preference": "取舍偏好"}
 
 

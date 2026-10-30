@@ -162,8 +162,9 @@ export function DeliberationStatus(props: {
         <button type="button" disabled={disabled} onClick={() => control("stop")}>停止讨论</button>
       </>}
       {ended && <button type="button" disabled={Boolean(props.busy)} onClick={props.onContinue}>继续讨论</button>}
-      {ended && d.final_id && <button type="button" disabled={disabled || Boolean(d.knowledge_candidate_id)} onClick={() => control("save_knowledge_candidate")}>
-        {d.knowledge_candidate_id ? "已保存知识候选" : "保存为知识候选"}
+      {ended && (d.memory_savable || Object.keys(d.memory_entry_ids ?? {}).length > 0) && <button type="button"
+        disabled={disabled || Object.keys(d.memory_entry_ids ?? {}).length > 0} onClick={() => control("save_memory")}>
+        {Object.keys(d.memory_entry_ids ?? {}).length > 0 ? "已存入长期记忆" : "存入长期记忆"}
       </button>}
     </div>
     <details className="deliberation-runtime"><summary>运行详情</summary>

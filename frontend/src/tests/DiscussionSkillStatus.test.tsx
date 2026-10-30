@@ -90,13 +90,20 @@ describe("DiscussionSkillStatus", () => {
     expect(screen.getByRole("status")).not.toHaveTextContent("已完成");
   });
 
-  it("shows completion and optional knowledge saving without repeating the final chat response", async () => {
-    const { props } = setup({ phase: "ended", final_id: "draft", results: [{ id: "draft", kind: "draft", agent_id: "wangye", phase: "synthesis", data: { sections: [{ id: "recommendation", content: "由聊天展示的最终结论", source_ids: [] }] } }] }, "completed");
+  it("shows completion and optional memory saving without repeating the final chat response", async () => {
+    const { props } = setup({ phase: "ended", final_id: "draft", memory_savable: true, results: [{ id: "draft", kind: "draft", agent_id: "wangye", phase: "synthesis", data: { sections: [{ id: "recommendation", content: "由聊天展示的最终结论", source_ids: [] }] } }] }, "completed");
     expect(screen.getByRole("status")).toHaveTextContent("团队讨论已完成");
     expect(screen.queryByText("由聊天展示的最终结论")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "停止讨论" })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "保存为知识候选" }));
-    expect(props.onControl).toHaveBeenCalledWith("save_knowledge_candidate", undefined);
+    const save = screen.getByRole("button", { name: "存入长期记忆" });
+    expect(save).toHaveAttribute("title", expect.stringContaining("记忆管理"));
+    await userEvent.click(save);
+    expect(props.onControl).toHaveBeenCalledWith("save_memory", undefined);
+  });
+
+  it("shows a saved discussion as already in memory", () => {
+    setup({ phase: "ended", final_id: "draft", memory_savable: false, memory_entry_ids: { chulan: "mem_1", baobao: "mem_2" } }, "completed");
+    expect(screen.getByRole("button", { name: "已存入长期记忆" })).toBeDisabled();
   });
 
   it("disables all pending controls and does not treat a user stop as completion", () => {
@@ -106,7 +113,7 @@ describe("DiscussionSkillStatus", () => {
     unmount();
     setup({ phase: "ended", end_reason: "user_stop" }, "completed");
     expect(screen.getByRole("status")).toHaveTextContent("讨论已停止");
-    expect(screen.queryByRole("button", { name: "保存为知识候选" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /长期记忆/ })).not.toBeInTheDocument();
   });
 
   it("keeps lightweight legacy run controls usable", async () => {
