@@ -326,6 +326,25 @@ def test_tools_list_includes_all_tools(temp_settings, seeded_mission):
     }
 
 
+def test_tools_list_hides_shared_work_when_tasks_extension_off(temp_settings, seeded_mission):
+    harness = _spawn(temp_settings, seeded_mission, extra_env={"YIREN_MCP_TASKS_ENABLED": "0"})
+    try:
+        harness.request(
+            "initialize",
+            {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}},
+            request_id=1,
+        )
+        harness.notify("notifications/initialized")
+        listing = harness.request("tools/list", {}, request_id=2)
+        call = harness.request("tools/call", {"name": "shared_work", "arguments": {"action": "read"}}, request_id=3)
+    finally:
+        harness.close()
+
+    assert "shared_work" not in {t["name"] for t in listing["result"]["tools"]}
+    assert call["result"]["isError"] is True
+    assert "任务扩展未开启" in call["result"]["content"][0]["text"]
+
+
 def test_memory_description_examples_match_flat_schema(temp_settings, seeded_mission):
     # The description used to show data:{action:'write',...}, which the flat schema rejects.
     harness = _spawn(temp_settings, seeded_mission)

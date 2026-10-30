@@ -90,6 +90,7 @@ def _load_context() -> _Context:
     scheduled_agent_ids = {a.strip() for a in scheduled_raw.split(",") if a.strip()}
 
     memory_root = os.environ.get("YIREN_MCP_MEMORY_ROOT")
+    tasks_enabled = os.environ.get("YIREN_MCP_TASKS_ENABLED", "1") != "0"
     # Shared-work owner checks run here, outside the backend process; read the
     # same user roles the backend saved next to the database.
     from backend.app.domain.agent_registry import configure_custom_agents
@@ -105,6 +106,7 @@ def _load_context() -> _Context:
         receipt_id=receipt_id,
         lease_token=os.environ.get('YIREN_MCP_LEASE_TOKEN'),
         workspace_root=Path(os.environ.get('YIREN_MCP_WORKSPACE_ROOT', os.getcwd())),
+        tasks_enabled=tasks_enabled,
     )
     return _Context(
         mission_id=mission_id,
@@ -650,6 +652,8 @@ def _handle_tools_list(ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any]
                             'required': ['result'], 'additionalProperties': False},
         })
         return {'tools': descriptors}
+    if not getattr(ctx.tools, "tasks_enabled", True):
+        descriptors = [d for d in descriptors if d["name"] != "shared_work"]
     valid_agent_ids = getattr(ctx.tools, "valid_agent_ids", None)
     if valid_agent_ids:
         # The host passes this mission's team, including user-created roles.

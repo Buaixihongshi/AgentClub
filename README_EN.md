@@ -29,6 +29,8 @@ Roles, workflows, and conversation context remain stable while models are treate
 
 ## What can Unity do?
 
+By default Unity does one core thing: the partners share one conversation, memory and set of artifacts, and hand work to each other when needed. Multi-person discussion, tasks and repository maintenance are optional extensions, off by default; turn them on in Settings → Extensions.
+
 ### Get users to a first successful conversation
 
 On first run Unity detects the installed CLIs and lets the user pick one. Zhang Chulan replies through it, which also verifies the connection, and then the whole team switches to it. When no CLI is installed, onboarding shows install and login steps.

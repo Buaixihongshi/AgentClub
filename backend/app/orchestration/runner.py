@@ -263,6 +263,7 @@ class MissionRunner:
                 agents_by_id=agents,
                 max_a2a_invocations=max_a2a,
                 orchestration_mode=orchestration_mode,
+                tasks_enabled=self.settings.tasks_enabled,
             )
 
             def peek_resume_chain(sender_agent_id: str) -> list:
@@ -285,6 +286,7 @@ class MissionRunner:
                 peek_resume_chain=peek_resume_chain,
                 is_target_scheduled=lambda t: t in remaining_workflow_agents_for_turn,
                 current_step_origin=step.origin,
+                tasks_enabled=self.settings.tasks_enabled,
             )
 
             provider_candidates = providers[effective_agent_id]
@@ -1067,6 +1069,7 @@ def _build_prompt(
     agents_by_id: Optional[Dict[str, AgentProfile]] = None,
     max_a2a_invocations: Optional[int] = None,
     orchestration_mode: Optional[OrchestrationMode] = None,
+    tasks_enabled: bool = True,
 ) -> str:
     solo = orchestration_mode in (OrchestrationMode.SINGLE, OrchestrationMode.REFLECTION)
     parts = [
@@ -1087,7 +1090,7 @@ def _build_prompt(
         "没有 write_artifact 工具时，可返回 JSON："
         '{"message":"本轮回复","artifacts":[{"path":"summary.md","content":"# Summary"}]}。'
     )
-    if mission.conversation_id and mission.room_mode == 'task':
+    if tasks_enabled and mission.conversation_id and mission.room_mode == 'task':
         parts.append(
             "【持续交付】需要跨轮开发或写文档时，先在聊天里澄清目标、范围和验收条件，再用 propose_work 提议，"
             "等用户在提议卡确认；提议不能自行启动，也不要说成已经开始。"

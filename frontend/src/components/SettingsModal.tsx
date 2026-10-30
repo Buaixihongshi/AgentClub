@@ -6,6 +6,7 @@ import {
   ChevronDown,
   KeyRound,
   Pencil,
+  Puzzle,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -36,6 +37,8 @@ import type {
   HubSettingsAgentView,
   HubSettingsPatch,
   HubSettingsProviderView,
+  HubSettingsExtensionsView,
+  ExtensionName,
   HubSettingsView,
   OnboardingProviderStatus,
   OnboardingView,
@@ -51,6 +54,12 @@ const RUNTIME_LABELS: Record<string, string> = {
   cli_timeout: "执行窗口（秒，有工具返回可续时）",
   a2a_idle_timeout: "A2A 无进展超时（秒，0=关闭）",
 };
+
+const EXTENSION_OPTIONS: { name: ExtensionName; label: string; desc: string }[] = [
+  { name: "discussion", label: "多人讨论", desc: "/discuss 与圆桌：几位伙伴先独立作答，再交流分歧、汇总结论。" },
+  { name: "tasks", label: "任务", desc: "把对话整理成任务提议，确认后在独立工作区持续推进，并提供任务页。" },
+  { name: "maintenance", label: "仓库维护", desc: "让伙伴在登记的仓库里执行维护并留下验证记录。" },
+];
 
 const MANUAL_MODEL = "__manual__";
 
@@ -77,11 +86,12 @@ interface AgentDraft {
   clear?: boolean;
 }
 
-type SettingsSectionId = "team" | "runtime" | "observability" | "memory";
+type SettingsSectionId = "team" | "runtime" | "extensions" | "observability" | "memory";
 
 interface Props {
   view: {
     runtime: import("../types").HubSettingsRuntimeView;
+    extensions?: HubSettingsExtensionsView;
     providers: HubSettingsProviderView[];
     agents: HubSettingsAgentView[];
     connections?: HubConnectionView[];
@@ -110,6 +120,7 @@ export function SettingsModal({
 }: Props) {
   const [providerDraft, setProviderDraft] = useState<Record<string, boolean>>({});
   const [runtimeDraft, setRuntimeDraft] = useState<Record<string, string>>({});
+  const [extensionDraft, setExtensionDraft] = useState<Partial<Record<ExtensionName, boolean>>>({});
   const [agentDraft, setAgentDraft] = useState<Record<string, AgentDraft>>({});
   const [connectionDrafts, setConnectionDrafts] = useState<Record<string, HubConnectionPatch>>({});
   const [catalogs, setCatalogs] = useState<Record<string, ConnectionCatalogView>>({});
@@ -382,8 +393,18 @@ export function SettingsModal({
       if (agentHasDiff(agent)) return true;
     }
     if (hasConnectionDiff) return true;
+    if (Object.keys(extensionPatch()).length > 0) return true;
     return false;
-  }, [view, providerDraft, runtimeDraft, agentDraft, agentRows, hasConnectionDiff]);
+  }, [view, providerDraft, runtimeDraft, extensionDraft, agentDraft, agentRows, hasConnectionDiff]);
+
+  function extensionPatch(): Partial<Record<ExtensionName, boolean>> {
+    const patch: Partial<Record<ExtensionName, boolean>> = {};
+    for (const { name } of EXTENSION_OPTIONS) {
+      const draft = extensionDraft[name];
+      if (draft !== undefined && draft !== (view.extensions?.[name]?.value ?? false)) patch[name] = draft;
+    }
+    return patch;
+  }
 
   function buildPatch(): HubSettingsPatch {
     const patch: HubSettingsPatch = {};
@@ -412,6 +433,9 @@ export function SettingsModal({
       }
     }
     if (Object.keys(rt).length > 0) patch.runtime = rt;
+
+    const extensions = extensionPatch();
+    if (Object.keys(extensions).length > 0) patch.extensions = extensions;
 
     // Agents
     const agentPatches: Record<string, AgentOverridePatch> = {};
@@ -838,7 +862,7 @@ export function SettingsModal({
         <div className="settings-modal-header">
           <div>
             <h2>设置</h2>
-            <p>管理 CLI 与自定义 API、角色调度、运行参数、全局观测与记忆</p>
+            <p>管理 CLI 与自定义 API、角色调度、运行参数、扩展、全局观测与记忆</p>
           </div>
           <button
             type="button"
@@ -870,6 +894,15 @@ export function SettingsModal({
             >
               <SlidersHorizontal size={17} aria-hidden="true" />
               <span>运行参数</span>
+            </button>
+            <button
+              type="button"
+              className={activeSection === "extensions" ? "is-active" : ""}
+              aria-pressed={activeSection === "extensions"}
+              onClick={() => setActiveSection("extensions")}
+            >
+              <Puzzle size={17} aria-hidden="true" />
+              <span>扩展</span>
             </button>
             <button
               type="button"
@@ -1778,6 +1811,42 @@ export function SettingsModal({
                         )}
                         <span className="settings-source-badge">
                           {sourceLabel(currentSource)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </section>
+              ) : null}
+
+              {activeSection === "extensions" ? (
+                <section className="settings-section" aria-labelledby="settings-extensions-title">
+                  <h3 id="settings-extensions-title">扩展</h3>
+                  <p className="settings-section-hint">
+                    Unity 的核心是让几位伙伴共享上下文、彼此接力。下面这些能力默认关闭，按需开启；关闭只停止新的创建和调度，已有记录保留，重新开启后可继续。
+                  </p>
+                  {EXTENSION_OPTIONS.map(({ name, label, desc }) => {
+                    const field = view.extensions?.[name];
+                    const on = extensionDraft[name] ?? field?.value ?? false;
+                    const changed = extensionDraft[name] !== undefined && on !== (field?.value ?? false);
+                    return (
+                      <div className="settings-runtime-row" key={name}>
+                        <label htmlFor={"ext-" + name}>
+                          {label}
+                          <span className="settings-extension-desc">{desc}</span>
+                        </label>
+                        <button
+                          id={"ext-" + name}
+                          type="button"
+                          role="switch"
+                          aria-checked={on}
+                          className={"settings-toggle" + (on ? " on" : "")}
+                          data-testid={"extension-" + name}
+                          onClick={() => setExtensionDraft((prev) => ({ ...prev, [name]: !on }))}
+                        >
+                          {on ? "ON" : "OFF"}
+                        </button>
+                        <span className="settings-source-badge">
+                          {sourceLabel(changed ? "user" : field?.source ?? "default")}
                         </span>
                       </div>
                     );

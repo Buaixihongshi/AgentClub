@@ -29,6 +29,11 @@ def temp_settings(tmp_path: Path) -> Settings:
         use_fake_cli=True,
         max_turns=6,
         max_a2a_invocations=8,
+        # Most suites exercise the optional extensions; core-only behavior
+        # is covered by test_extensions.py with its own settings.
+        discussion_enabled=True,
+        tasks_enabled=True,
+        maintenance_enabled=True,
     )
 
 

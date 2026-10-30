@@ -25,6 +25,7 @@
 
 ### Changed
 
+- 回到初心：Unity 默认只保留共享上下文核心（共享对话、`invoke_agent` 接力、记忆、产物、观测与评测）。多人讨论（圆桌与 `/discuss`）、任务和仓库维护改为可选扩展，默认关闭，可在「设置 → 扩展」或 `YIREN_DISCUSSION_ENABLED` / `YIREN_TASKS_ENABLED` / `YIREN_MAINTENANCE_ENABLED` 开启，切换即时生效。关闭时普通对话的 MCP 工具列表不含 `shared_work`，prompt 不再提示提议任务，界面隐藏任务页与 `/discuss`，创建接口返回 409；已有记录保留，重新开启后可继续。升级后若仍有进行中的任务，请先开启任务扩展。见 [计划](docs/plans/2026-10-30-core-and-extensions.md)。
 - 移除 L4 铁律：`Settings.use_fake_cli` 与 local/runtime 启动默认改为真实 CLI；只有显式 `--demo`、test 环境与测试 fixture 使用离线适配器。仓库内真实 Provider 仍默认关闭，由引导或设置开启。
 - 首次启动引导不再使用演示模式：先检测本机 CLI，确认后由张楚岚通过所选真实 CLI 完成第一次对话（同时作为接入验证），再让三位角色使用该 CLI 并通过真实 CLI 互相介绍；没有可用 CLI 时显示安装与登录说明。离线演示环境（`--demo`/test）拦截这些真实调用。
 - 观测入口移入设置页签：移除右侧栏按钮、`ObservabilityDialog` 与 `useObservability`，会话主区域不再预留侧栏宽度；原来的单会话细节改为在设置 → 观测里点击回合查看。
