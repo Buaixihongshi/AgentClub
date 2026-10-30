@@ -1,3 +1,4 @@
+import { PersonaPortrait } from "./PersonaPortrait";
 import { getPersonaColor } from "../lib/personaColors";
 import { compactPersonaProviderLabel } from "../lib/providerLabels";
 import type { AgentParticipant } from "../types";
@@ -24,7 +25,7 @@ export function AgentStrip({ participants }: { participants: AgentParticipant[] 
               aria-hidden="true"
               style={{ borderColor: participant.participated ? color.border : undefined }}
             >
-              {color.avatar}
+              <PersonaPortrait agentId={participant.agentId}>{color.avatar}</PersonaPortrait>
             </span>
             <div className="agent-strip-copy">
               <strong style={{ color: participant.participated ? color.name : undefined }}>

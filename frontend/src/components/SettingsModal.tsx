@@ -1,3 +1,4 @@
+import { PersonaPortrait } from "./PersonaPortrait";
 import { Fragment, useState, useMemo, useEffect } from "react";
 import {
   Activity,
@@ -1003,7 +1004,7 @@ export function SettingsModal({
                                       className={`role-avatar ${agent.custom ? `avatar-custom avatar-tone-${roleToneIndex(agent.id)}` : `avatar-${agent.id}`}`}
                                       aria-hidden="true"
                                     >
-                                      {agent.display_name.slice(0, 1)}
+                                      <PersonaPortrait agentId={agent.id}>{agent.display_name.slice(0, 1)}</PersonaPortrait>
                                     </span>
                                     <span className="role-name">{agent.display_name}</span>
                                     {agent.custom && (
