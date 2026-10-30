@@ -144,6 +144,21 @@ describe("SettingsModal", () => {
     expect(patch.providers!["fake"]).toBeUndefined();
   });
 
+  it("extensions tab lists optional features off by default and saves only toggled ones", () => {
+    const onSave = vi.fn();
+    render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "扩展" }));
+    for (const name of ["discussion", "tasks", "maintenance"]) {
+      expect(screen.getByTestId("extension-" + name)).toHaveAttribute("aria-checked", "false");
+    }
+    fireEvent.click(screen.getByTestId("extension-tasks"));
+    expect(screen.getByTestId("extension-tasks")).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByTestId("settings-save"));
+    const patch: HubSettingsPatch = onSave.mock.calls[0][0];
+    expect(patch.extensions).toEqual({ tasks: true });
+    expect(patch.runtime).toBeUndefined();
+  });
+
   it("runtime fields edit produces patch with only changed keys", () => {
     const onSave = vi.fn();
     render(<SettingsModal view={baseView} onSave={onSave} onClose={vi.fn()} />);

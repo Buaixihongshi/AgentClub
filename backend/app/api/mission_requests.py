@@ -150,6 +150,11 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
                     raise DiscussionError('request_id was already used with different input')
                 mission = repo.get_mission(row['mission_id'])
                 return mission, repo.get_conversation(mission.conversation_id), False
+        from backend.app.settings import EXTENSION_DISABLED
+        if payload.discussion and not settings.discussion_enabled:
+            raise DiscussionError(EXTENSION_DISABLED['discussion'], 409)
+        if payload.work_mode and not settings.tasks_enabled:
+            raise DiscussionError(EXTENSION_DISABLED['tasks'], 409)
         registry = get_agent_registry(settings.config_dir)
         valid_ids = set(registry.ids())
         targets = payload.target_agent_ids or ([payload.target_agent_id] if payload.target_agent_id else [])
@@ -234,7 +239,7 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
         from backend.app.work.service import SharedWork, WorkError
         from backend.app.work.decisions import match_answer
         work = SharedWork(repo)
-        existing_work = work.read(conversation.id) if payload.room_mode == 'task' else None
+        existing_work = work.read(conversation.id) if payload.room_mode == 'task' and settings.tasks_enabled else None
         answer = match_answer(existing_work, payload.goal) if existing_work and existing_work.get('protocol') == 'adaptive_v1' else None
         if answer:
             try:

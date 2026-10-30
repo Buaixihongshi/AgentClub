@@ -57,6 +57,7 @@ def dispatch(repo, root, worker_id, frame):
                              valid_agent_ids=set(metadata.get('valid_agent_ids') or []),
                              max_a2a_invocations=metadata.get('max_a2a_invocations', 0),
                              scheduled_agent_ids=set(metadata.get('scheduled_agent_ids') or []),
+                             tasks_enabled=metadata.get('tasks_enabled', True),
                              workspace_root=Path(os.environ.get('YIREN_MCP_WORKSPACE_ROOT', os.getcwd())))
             ctx = server._Context(grant['mission_id'], grant['agent_id'], grant['turn_id'], grant['provider_id'], tools)
             handler_args = {**args, 'operation_id': operation_id} if name == 'shared_work' else args

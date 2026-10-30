@@ -69,7 +69,9 @@ def main():
                 agent['fallback_provider_ids'] = []
             (config_dir / 'agents.json').write_text(json.dumps(agents, ensure_ascii=False))
         settings = Settings(database_path=temp / 'hub.sqlite3', artifact_root=temp / 'artifacts',
-                            config_dir=config_dir, use_fake_cli=not args.real)
+                            config_dir=config_dir, use_fake_cli=not args.real,
+                            # Roundtables belong to the optional discussion extension.
+                            discussion_enabled=True)
         with TestClient(create_app(settings, mission_adapter=adapter)) as client:
             response = client.post('/api/missions', json={
                 'goal': 'Club 下一步该做什么？请讨论优先级，每次发言简洁并回应具体观点。',

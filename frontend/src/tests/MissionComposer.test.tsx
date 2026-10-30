@@ -11,6 +11,7 @@ function Harness(props: {
   hasActiveMission?: boolean;
   disabled?: boolean;
   mentionsEnabled?: boolean;
+  skillsEnabled?: boolean;
   onSubmit?: () => void;
   onChange?: (value: string) => void;
   onConfirmationsChange?: (mentions: ConfirmedMention[]) => void;
@@ -24,6 +25,7 @@ function Harness(props: {
       hasActiveMission={props.hasActiveMission ?? false}
       disabled={props.disabled}
       mentionsEnabled={props.mentionsEnabled}
+      skillsEnabled={props.skillsEnabled}
       onChange={(v) => {
         setValue(v);
         props.onChange?.(v);
@@ -202,6 +204,13 @@ describe("MissionComposer mention autocomplete", () => {
     const listbox = screen.getByRole("listbox", { name: "技能命令" });
     expect(within(listbox).getAllByRole("option")).toHaveLength(1);
     expect(within(listbox).getByRole("option")).toHaveTextContent("/discuss");
+  });
+
+  it("does not offer /discuss when the discussion extension is off", async () => {
+    const user = userEvent.setup();
+    render(<Harness skillsEnabled={false} />);
+    await user.type(screen.getByLabelText("消息输入"), "/");
+    expect(screen.queryByRole("listbox", { name: "技能命令" })).toBeNull();
   });
 
   it("does not open the skill menu after a member mention", async () => {

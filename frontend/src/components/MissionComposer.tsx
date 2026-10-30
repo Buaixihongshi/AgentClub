@@ -64,6 +64,8 @@ export function MissionComposer(props: {
   placeholder?: string;
   /** Roundtable mode routes replies through target_agent_id, so @ / skill autocomplete is off. */
   mentionsEnabled?: boolean;
+  /** `/discuss` belongs to the optional discussion extension. */
+  skillsEnabled?: boolean;
   interruptTargets?: ComposerInterruptTarget[];
   interruptTargetId?: string | null;
   onInterruptTargetChange?: (agentId: string | null) => void;
@@ -102,7 +104,7 @@ export function MissionComposer(props: {
       return;
     }
 
-    const skill = findActiveSkillCommand(newValue, cursor);
+    const skill = props.skillsEnabled === false ? null : findActiveSkillCommand(newValue, cursor);
     if (skill) {
       const results = getSkillSuggestions(skill.query);
       setMenu(results.length > 0 ? { kind: "skill", query: skill.query, options: results } : null);

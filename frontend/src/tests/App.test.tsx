@@ -28,6 +28,18 @@ function makeConvDetail(overrides?: Partial<ConversationDetail>): ConversationDe
   };
 }
 
+function hubSettingsWith(enabled: Partial<Record<"discussion" | "tasks" | "maintenance", boolean>>) {
+  const field = (value: boolean) => ({ value, source: value ? "user" : "default" });
+  return new Response(JSON.stringify({
+    runtime: {}, providers: [], agents: [],
+    extensions: {
+      discussion: field(enabled.discussion ?? false),
+      tasks: field(enabled.tasks ?? false),
+      maintenance: field(enabled.maintenance ?? false),
+    },
+  }), { status: 200 });
+}
+
 function stubFetch(extraHandlers?: (url: string, init?: RequestInit) => Response | null) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -103,12 +115,13 @@ describe("Unity app", () => {
   afterEach(() => { window.history.replaceState(null, "", "/"); });
 
   it("任务有独立入口；未选择会话也能打开，切回仍保留聊天草稿", async () => {
-    const request = stubFetch(url => url === "/api/tasks" ? new Response(JSON.stringify({ tasks: [] }), { status: 200 }) : null);
+    const request = stubFetch(url => url === "/api/tasks" ? new Response(JSON.stringify({ tasks: [] }), { status: 200 })
+      : url === "/api/hub/settings" ? hubSettingsWith({ tasks: true }) : null);
     vi.stubGlobal("fetch", request);
     render(<App />);
     const input = screen.getByLabelText("消息输入");
     await userEvent.type(input, "切换后继续讨论的草稿");
-    const navigation = screen.getByRole("navigation", { name: "工作区导航" });
+    const navigation = await screen.findByRole("navigation", { name: "工作区导航" });
     await userEvent.click(within(navigation).getByRole("button", { name: "任务" }));
     expect(await screen.findByRole("heading", { name: "把一件事交给团队" })).toBeVisible();
     expect(within(navigation).getByRole("button", { name: "任务" })).toHaveAttribute("aria-current", "page");
@@ -122,9 +135,22 @@ describe("Unity app", () => {
     expect(window.location.hash).toBe("#conversations");
   });
 
+  it("默认只保留核心对话：不显示任务入口，也不请求任务", async () => {
+    window.history.replaceState(null, "", "/#tasks");
+    const request = stubFetch(url => url === "/api/hub/settings" ? hubSettingsWith({}) : null);
+    vi.stubGlobal("fetch", request);
+    render(<App />);
+    expect(await screen.findByLabelText("消息输入")).toBeVisible();
+    await waitFor(() => expect(request.mock.calls.some(([url]) => String(url) === "/api/hub/settings")).toBe(true));
+    expect(screen.queryByRole("navigation", { name: "工作区导航" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "把一件事交给团队" })).toBeNull();
+    expect(request.mock.calls.some(([url]) => String(url).startsWith("/api/tasks"))).toBe(false);
+  });
+
   it("任务入口可直接从URL打开，不需要先选择一个会话", async () => {
     window.history.replaceState(null, "", "/#tasks");
-    vi.stubGlobal("fetch", stubFetch(url => url === "/api/tasks" ? new Response(JSON.stringify({ tasks: [] }), { status: 200 }) : null));
+    vi.stubGlobal("fetch", stubFetch(url => url === "/api/tasks" ? new Response(JSON.stringify({ tasks: [] }), { status: 200 })
+      : url === "/api/hub/settings" ? hubSettingsWith({ tasks: true }) : null));
     render(<App />);
     expect(await screen.findByRole("heading", { name: "把一件事交给团队" })).toBeVisible();
     const navigation = screen.getByRole("navigation", { name: "工作区导航" });

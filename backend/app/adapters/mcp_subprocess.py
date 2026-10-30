@@ -213,6 +213,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                 valid_agent_ids=tools.valid_agent_ids,
                 max_a2a_invocations=tools.max_a2a_invocations,
                 scheduled_agent_ids=tools.scheduled_targets(),
+                tasks_enabled=getattr(tools, "tasks_enabled", True),
             )
             receipt_id = "mcp_{suffix}".format(suffix=uuid4().hex)
             mcp_env["YIREN_MCP_RECEIPT_ID"] = receipt_id
@@ -670,6 +671,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         valid_agent_ids: "Optional[set]" = None,
         max_a2a_invocations: int = 0,
         scheduled_agent_ids: "Optional[list]" = None,
+        tasks_enabled: bool = True,
     ) -> dict:
         env: dict = {
             "YIREN_MCP_DB_PATH": str(self.db_path),
@@ -680,6 +682,7 @@ class MCPSubprocessAdapter(CLIAdapter):
             "YIREN_MCP_AGENT_ID": agent_id,
             "YIREN_MCP_TURN_ID": turn_id,
             "YIREN_MCP_PROVIDER_ID": provider_id,
+            "YIREN_MCP_TASKS_ENABLED": "1" if tasks_enabled else "0",
         }
         if valid_agent_ids:
             env["YIREN_MCP_VALID_AGENTS"] = ",".join(sorted(valid_agent_ids))

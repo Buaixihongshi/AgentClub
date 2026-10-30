@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
-from backend.app.settings import snapshot_settings
+from backend.app.settings import EXTENSION_DISABLED, snapshot_settings
 from backend.app.work.models import WorkCommand
 from backend.app.work.service import WorkError
 from backend.app.work.tasks import CreateTask, Tasks
@@ -17,7 +17,9 @@ def build_router(settings, repository, adapter=None):
     def service():
         return Tasks(repository, check_timeout=settings.cli_timeout)
 
-    def execute(action):
+    def execute(action, *, mutating=False):
+        if mutating and not snapshot_settings(settings).tasks_enabled:
+            return JSONResponse(status_code=409, content={'detail': EXTENSION_DISABLED['tasks']})
         try:
             return action()
         except WorkError as exc:
@@ -40,7 +42,7 @@ def build_router(settings, repository, adapter=None):
 
     @router.post('', status_code=201)
     def create(request: CreateTask):
-        return schedule(execute(lambda: service().create(request)))
+        return schedule(execute(lambda: service().create(request), mutating=True))
 
     @router.get('/{task_id}')
     def detail(task_id: str):
@@ -48,7 +50,7 @@ def build_router(settings, repository, adapter=None):
 
     @router.post('/{task_id}/commands')
     def command(task_id: str, request: WorkCommand):
-        return schedule(execute(lambda: service().command(task_id, request)))
+        return schedule(execute(lambda: service().command(task_id, request), mutating=True))
 
     @router.get('/{task_id}/logs/{log_id}')
     def log(task_id: str, log_id: str):

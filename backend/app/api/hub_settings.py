@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.config.providers import load_cli_providers
 from backend.app.domain.agent_registry import CUSTOM_AGENTS_KEY, AgentRegistry, get_agent_registry
-from backend.app.settings import AgentOverride, ProviderOverride, Settings
+from backend.app.settings import EXTENSION_FIELDS, AgentOverride, ProviderOverride, Settings
 from backend.app.storage import hub_settings
 from backend.app.storage import api_connections
 
@@ -28,6 +28,14 @@ class RuntimePatch(BaseModel):
     max_a2a_invocations: Optional[int] = None
     cli_timeout: Optional[int] = None
     a2a_idle_timeout: Optional[int] = Field(default=None, ge=0)
+
+
+class ExtensionsPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    discussion: Optional[bool] = None
+    tasks: Optional[bool] = None
+    maintenance: Optional[bool] = None
 
 
 class AgentOverridePatch(BaseModel):
@@ -122,6 +130,7 @@ class HubSettingsPatch(BaseModel):
     connections: Optional[Dict[str, Dict[str, Any]]] = None
     providers: Optional[Dict[str, ProviderOverride]] = None
     runtime: Optional[RuntimePatch] = None
+    extensions: Optional[ExtensionsPatch] = None
     agents: Optional[Dict[str, AgentOverridePatch]] = None
 
 
@@ -161,6 +170,15 @@ def build_router(settings: Settings) -> APIRouter:
                 source = "default"
                 value = default
             runtime_view[key] = {"value": value, "source": source}
+
+        # Extensions default off; a saved choice wins over the process environment.
+        extensions_view = {}
+        for name, field_name in EXTENSION_FIELDS.items():
+            if field_name in file_runtime:
+                extensions_view[name] = {"value": bool(file_runtime[field_name]), "source": "user"}
+            else:
+                current = getattr(settings, field_name)
+                extensions_view[name] = {"value": current, "source": "env" if current else "default"}
 
         provider_list: List[Dict[str, Any]] = []
         for p in committed:
@@ -220,6 +238,7 @@ def build_router(settings: Settings) -> APIRouter:
         return {
             "connections": api_connections.connection_views(settings, file_data),
             "runtime": runtime_view,
+            "extensions": extensions_view,
             "providers": provider_list,
             "agents": agent_list,
         }
@@ -426,6 +445,13 @@ def build_router(settings: Settings) -> APIRouter:
                 "a2a_idle_timeout",
             ):
                 val = getattr(patch.runtime, field_name)
+                if val is not None:
+                    runtime_section[field_name] = val
+
+        if patch.extensions:
+            runtime_section = existing.setdefault("runtime", {})
+            for name, field_name in EXTENSION_FIELDS.items():
+                val = getattr(patch.extensions, name)
                 if val is not None:
                     runtime_section[field_name] = val
 

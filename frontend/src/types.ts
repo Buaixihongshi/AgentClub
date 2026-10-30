@@ -572,8 +572,14 @@ export interface HubSettingsAgentView {
   fallback_context_approved?: SettingField<boolean>;
 }
 
+export type ExtensionName = "discussion" | "tasks" | "maintenance";
+
+/** Optional features on top of the shared-context core; all default off. */
+export type HubSettingsExtensionsView = Record<ExtensionName, SettingField<boolean>>;
+
 export interface HubSettingsView {
   runtime: HubSettingsRuntimeView;
+  extensions?: HubSettingsExtensionsView;
   providers: HubSettingsProviderView[];
   agents: HubSettingsAgentView[];
   connections?: HubConnectionView[];
@@ -614,6 +620,7 @@ export interface AgentOverridePatch {
 export interface HubSettingsPatch {
   providers?: Record<string, ProviderOverridePatch>;
   runtime?: RuntimePatch;
+  extensions?: Partial<Record<ExtensionName, boolean>>;
   agents?: Record<string, AgentOverridePatch>;
   connections?: Record<string, HubConnectionPatch>;
 }

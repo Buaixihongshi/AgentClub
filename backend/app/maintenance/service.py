@@ -41,8 +41,10 @@ class MaintenanceService:
         goal: str,
         issue_url: str | None = None,
     ) -> MaintenanceRun:
-        if not self.settings.maintenance_enabled:
-            raise RuntimeError("Repository maintenance is disabled")
+        from backend.app.settings import EXTENSION_DISABLED, snapshot_settings
+        # Re-read so the settings toggle applies without a restart.
+        if not snapshot_settings(self.settings).maintenance_enabled:
+            raise RuntimeError(EXTENSION_DISABLED["maintenance"])
         registered = self.repository.get_registered_repository(repository_id)
         if registered is None:
             raise LookupError("Registered repository not found")

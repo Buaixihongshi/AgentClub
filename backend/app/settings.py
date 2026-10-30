@@ -33,7 +33,10 @@ class Settings(BaseModel):
     cli_timeout: int = 300
     a2a_idle_timeout: int = Field(default=90, ge=0)
     antigravity_persistent: bool = False
-    maintenance_enabled: bool = True
+    # Optional extensions on top of the shared-context core; off by default.
+    discussion_enabled: bool = False
+    tasks_enabled: bool = False
+    maintenance_enabled: bool = False
     maintenance_worktree_root: Path = Path("data/maintenance-worktrees")
     maintenance_command_timeout: int = Field(default=900, ge=1)
     provider_overrides: Dict[str, ProviderOverride] = {}
@@ -47,8 +50,22 @@ _RUNTIME_FIELDS = {
     "max_a2a_invocations",
     "cli_timeout",
     "a2a_idle_timeout",
+    "discussion_enabled",
+    "tasks_enabled",
     "maintenance_enabled",
     "maintenance_command_timeout",
+}
+
+EXTENSION_FIELDS = {
+    "discussion": "discussion_enabled",
+    "tasks": "tasks_enabled",
+    "maintenance": "maintenance_enabled",
+}
+
+EXTENSION_DISABLED = {
+    "discussion": "讨论扩展未开启，可在设置 → 扩展中开启",
+    "tasks": "任务扩展未开启，可在设置 → 扩展中开启",
+    "maintenance": "维护扩展未开启，可在设置 → 扩展中开启",
 }
 
 
@@ -70,7 +87,9 @@ def get_settings() -> Settings:
         cli_timeout=_env_int("YIREN_CLI_TIMEOUT", default=300),
         a2a_idle_timeout=_env_int("YIREN_A2A_IDLE_TIMEOUT", default=90),
         antigravity_persistent=_env_bool("YIREN_ANTIGRAVITY_PERSISTENT", default=False),
-        maintenance_enabled=_env_bool("YIREN_MAINTENANCE_ENABLED", default=True),
+        discussion_enabled=_env_bool("YIREN_DISCUSSION_ENABLED", default=False),
+        tasks_enabled=_env_bool("YIREN_TASKS_ENABLED", default=False),
+        maintenance_enabled=_env_bool("YIREN_MAINTENANCE_ENABLED", default=False),
         maintenance_worktree_root=_env_path(
             "YIREN_MAINTENANCE_WORKTREE_ROOT",
             default=Path("data/maintenance-worktrees"),
@@ -147,6 +166,8 @@ def snapshot_settings(app_settings: "Settings") -> "Settings":
         "cli_timeout": app_settings.cli_timeout,
         "a2a_idle_timeout": app_settings.a2a_idle_timeout,
         "antigravity_persistent": app_settings.antigravity_persistent,
+        "discussion_enabled": app_settings.discussion_enabled,
+        "tasks_enabled": app_settings.tasks_enabled,
         "maintenance_enabled": app_settings.maintenance_enabled,
         "maintenance_worktree_root": app_settings.maintenance_worktree_root,
         "maintenance_command_timeout": app_settings.maintenance_command_timeout,
