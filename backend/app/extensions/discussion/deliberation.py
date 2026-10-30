@@ -12,11 +12,12 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 from backend.app.adapters.deliberation_errors import MESSAGES, failure_code
+from backend.app.build_info import BUILD_ID, digest
 
-from backend.app.domain.deliberation import RESULT_TYPES
+from backend.app.extensions.discussion.models import RESULT_TYPES
 from backend.app.domain.models import Message, MessageRole, MissionStatus, utc_now
 from backend.app.orchestration.discussion_rules import COMMON_DISCUSSION_RULES
-from backend.app.orchestration.roundtable import DiscussionError
+from backend.app.extensions.discussion.roundtable import DiscussionError
 
 
 PROTOCOL = "deliberation_v2"
@@ -32,14 +33,6 @@ def occupies_conversation(mission):
         is_v2(mission) and mission.status == MissionStatus.BLOCKED and mission.completed_at is None
     )
 
-
-def digest(value):
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
-BUILD_ID = digest({p.relative_to(Path(__file__).parents[1]).as_posix(): p.read_text()
-                   for p in sorted(Path(__file__).parents[1].rglob('*.py'))})[:16]
 
 
 class Deliberation:

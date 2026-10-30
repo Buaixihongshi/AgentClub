@@ -1,5 +1,6 @@
 from typing import Optional
 
+from backend.app import extension_points
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
 from backend.app.domain.models import TurnStatus
 from backend.app.mcp.tools import MCPTools
@@ -18,17 +19,9 @@ class FakeCLIAdapter(CLIAdapter):
         prompt: str,
         tools: MCPTools,
     ) -> TurnOutcome:
-        from backend.app.orchestration.deliberation import is_v2
-        if is_v2(tools.repository.get_mission(mission_id)):
-            return self._discussion_turn(mission_id, agent_id, turn_id, provider_id, tools)
-        if any(event.event_type in {'work.claimed', 'adaptive.claimed'} for event in tools.repository.list_events_after(mission_id, 0)):
-            board = tools.shared_work(mission_id, agent_id, turn_id, provider_id)
-            task = next(task for task in board['tasks'] if task['active_mission_id'] == mission_id)
-            reason = '演示模式不执行代码或审核。请接入真实 Provider 后重试，共享任务与责任分工已保留。'
-            tools.shared_work(mission_id, agent_id, turn_id, provider_id, 'block',
-                              {'task_id': task['id'], 'reason': reason}, board['revision'], operation_id='demo-block:' + mission_id)
-            tools.publish_message(mission_id, agent_id, turn_id, reason, provider_id)
-            return TurnOutcome(status=TurnStatus.COMPLETED)
+        taken_over = extension_points.first('demo_turn', self, mission_id, agent_id, turn_id, provider_id, tools)
+        if taken_over is not None:
+            return taken_over
         content = self.response or "[演示:{agent_id}] {prompt}".format(
             agent_id=agent_id,
             prompt=prompt,
@@ -54,35 +47,6 @@ class FakeCLIAdapter(CLIAdapter):
                 "# 演示产物：{agent_id}\n\n{content}\n".format(agent_id=agent_id, content=content),
             )
 
-        return TurnOutcome(status=TurnStatus.COMPLETED)
-
-    def _discussion_turn(self, mission_id, agent_id, turn_id, provider_id, tools):
-        from backend.app.domain.deliberation import SECTION_IDS
-        view = tools.read_context(mission_id, agent_id=agent_id, turn_id=turn_id, provider_id=provider_id)
-        for source_id in view.get('required_read_ids', []):
-            offset = 0
-            while True:
-                page = tools.read_discussion_result(mission_id, agent_id, turn_id, provider_id, source_id, offset)
-                if page['next_offset'] is None:
-                    break
-                offset = page['next_offset']
-        phase = view['phase']
-        if phase == 'independent':
-            result = {'kind': 'opinion', 'position_summary': f'[演示:{agent_id}] 先明确约束，再验证方案。',
-                      'claims': [{'key': 'main', 'decision_key': 'next_step', 'statement': '需要以证据验证方案价值。',
-                                  'recommendation': '先验证一个真实场景', 'evidence_status': 'unverified'}]}
-        elif phase == 'exchange':
-            result = {'kind': 'contribution', 'no_addition': True}
-        elif phase == 'review':
-            result = {'kind': 'review', 'draft_id': view['draft_id'], 'no_findings': True}
-        else:
-            refs = [c['id'] for r in view['results'] if r['kind'] == 'opinion' for c in r['data']['claims']]
-            result = {'kind': 'draft', 'sections': [{'id': sid, 'content': '演示综合：建议先验证真实场景，当前意见一致仍未经过事实验证。',
-                                                   'source_ids': refs} for sid in SECTION_IDS],
-                      'issue_decisions': [{'issue_id': key, 'status': 'resolved' if issue['status'] == 'resolved' else 'unresolved',
-                                           'decision': '演示综合：按现有证据保留结论并验证。'}
-                                          for key, issue in view['issues'].items() if issue['category'] != 'needs_human']}
-        tools.submit_discussion_result(mission_id, agent_id, turn_id, provider_id, result)
         return TurnOutcome(status=TurnStatus.COMPLETED)
 
 

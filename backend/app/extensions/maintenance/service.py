@@ -14,8 +14,8 @@ from backend.app.domain.maintenance import (
     RegisteredRepository,
 )
 from backend.app.domain.models import utc_now
-from backend.app.maintenance.validation import ValidationEngine, ValidationPolicyError
-from backend.app.maintenance.workspace import WorkspaceError, WorkspaceManager, validate_repository_path
+from backend.app.extensions.maintenance.validation import ValidationEngine, ValidationPolicyError
+from backend.app.extensions.maintenance.workspace import WorkspaceError, WorkspaceManager, validate_repository_path
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
 

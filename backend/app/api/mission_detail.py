@@ -11,8 +11,7 @@ from backend.app.domain.models import Message, Mission
 from backend.app.orchestration.live_progress import get_live_progress_registry
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
-from backend.app.orchestration.roundtable import discussion_view
-from backend.app.api.discussion_projection import annotate_discussion_messages
+from backend.app import extension_points
 
 _CAPABILITY_FALLBACK = {
     "planning": "planning",
@@ -674,12 +673,12 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
     events = [_strip_sort_key(event) for event in serialized_events]
     message_events = [_message_event(entry.message) for entry in entries]
     audit_cache = {}
-    annotate_discussion_messages(message_events, [mission], db_events, repo, audit_cache)
-    annotate_discussion_messages(events, [mission], db_events, repo, audit_cache)
+    extension_points.each('annotate_messages', message_events, [mission], db_events, repo, audit_cache)
+    extension_points.each('annotate_messages', events, [mission], db_events, repo, audit_cache)
 
     result = {
         "mission": _mission_payload(mission),
-        "discussion": discussion_view(mission, db_events),
+        "discussion": extension_points.first('discussion_view', mission, db_events),
         "messages": message_events,
         "failure_events": _derive_failure_events(mission, db_events),
         "artifact_events": _derive_artifact_events(db_events),
@@ -692,11 +691,8 @@ def build_mission_detail(repo: Repository, settings: Settings, mission_id: str) 
         "usage_summary": _derive_usage_summary(db_events),
         "thoughts": _derive_thoughts(db_events),
     }
-    from backend.app.orchestration.deliberation import Deliberation, is_v2
-    if is_v2(mission):
-        result['discussion'] = Deliberation(repo).user_view(mission)
-        result['thoughts'] = []
     live_partial = get_live_progress_registry().snapshot_for_mission(mission_id)
-    if live_partial and not is_v2(mission):
+    if live_partial:
         result["live_partial"] = live_partial
+    extension_points.each('mission_detail', repo, mission, result)
     return result

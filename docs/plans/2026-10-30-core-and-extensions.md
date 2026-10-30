@@ -45,14 +45,34 @@ V2）和任务系统（共享工作、自适应调度、工作区/预览/发布�
 - 已有数据不删除、不迁移。关闭只停止新的创建和调度，已开始的讨论/任务回合按原逻辑结束；
   重新开启后，暂停的任务从持久状态继续。历史会话里已有的讨论消息仍作为普通消息显示。
 
-### 第二步：代码迁入扩展，核心不再 import（后续 PR）
+### 第二步：代码迁入扩展，核心不再 import
 
-把 `orchestration/{roundtable,deliberation,deliberation_runner}`、`adapters/deliberation_cli`、
-`api/discussion_projection` 等移到 `backend/app/extensions/discussion/`，`work/*`、`api/{shared_work,tasks}`
-移到 `extensions/tasks/`，`maintenance/*` 移到 `extensions/maintenance/`。核心只保留一组
-很小的挂接点（接管 mission、回合前后、工具守卫与额外工具、prompt 片段、路由与后台循环），
-并加一项依赖边界测试：核心模块不得 import `backend.app.extensions.*`。这一步不改变行为，
-单独评审。
+代码迁入 `backend/app/extensions/{discussion,tasks,maintenance}/`，行为、API 与数据不变：
+
+| 原位置 | 新位置 |
+| --- | --- |
+| `orchestration/{roundtable,deliberation,deliberation_runner}.py` | `extensions/discussion/` 同名模块 |
+| `adapters/deliberation_cli.py` | `extensions/discussion/deliberation_cli.py` |
+| `domain/deliberation.py` | `extensions/discussion/models.py` |
+| `api/discussion_projection.py` | `extensions/discussion/projection.py` |
+| `api/mission_requests.py` 的讨论配置与 `DiscussionControlRequest` | `extensions/discussion/requests.py` |
+| `api/missions.py` 的 `discussion-controls` 路由 | `extensions/discussion/api.py` |
+| runner 的圆桌回合、MCP 圆桌守卫与 V2 读写/结果工具 | `extensions/discussion/{roundtable_runner,tools,hooks}.py` |
+| `work/*` | `extensions/tasks/` 同名模块 |
+| `api/{shared_work,tasks}.py` | `extensions/tasks/api/` |
+| runner 的自适应回合、`shared_work` 工具与工作限制 | `extensions/tasks/{runner,tools,hooks}.py` |
+| `maintenance/*`、`api/maintenance.py` | `extensions/maintenance/`（`api.py`） |
+
+核心保留的挂接点集中在 `backend/app/extension_points.py`：接管 mission（含创建、失败、
+收尾、打断、占用会话）、回合前后（尝试检查、取消、演示/API/路由回合）、工具守卫与额外工具
+（含 MCP 列表/拒绝/处理器）、prompt 片段、讨论与工作在核心视图里的展示。路由、恢复与后台循环
+由组合根 `main.py` 通过 `backend.app.extensions` 接入；MCP 子进程由父进程经
+`YIREN_MCP_EXTENSIONS` 传入同一组扩展。`backend/tests/test_extension_boundary.py`
+扫描 `extensions/` 与 `main.py` 以外的核心模块，确认不 import `backend.app.extensions.*`。
+
+仍留在核心、不经 import 的数据层知识：`runtime_activity.py`、`storage/execution.py`、
+`settings.py` 的扩展开关，以及会话详情/删除与普通 mission 创建中对 `work_boards`
+表的只读 SQL。它们不改数据，后续可按需再收拢。
 
 ## 风险与恢复
 

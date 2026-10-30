@@ -119,8 +119,8 @@ def test_subprocess_env_carries_tasks_flag(core_settings):
 
 
 def test_dispatcher_skips_saved_work_when_tasks_disabled(core_settings, repository, monkeypatch):
-    from backend.app.api import shared_work
-    from backend.app.work import service
+    from backend.app.extensions.tasks.api import shared_work
+    from backend.app.extensions.tasks import service
 
     def fail(*_args, **_kwargs):
         raise AssertionError('disabled tasks must not be claimed')

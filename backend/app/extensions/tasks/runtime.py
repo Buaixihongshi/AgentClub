@@ -8,9 +8,9 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-from backend.app.adapters.deliberation_cli import isolation_supported, sandbox_profile
+from backend.app.extensions.discussion.deliberation_cli import isolation_supported, sandbox_profile
 from backend.app.adapters.subprocess_cli import kill_process_tree
-from backend.app.work.service import WorkError
+from backend.app.extensions.tasks.service import WorkError
 
 
 @contextmanager
@@ -19,7 +19,7 @@ def managed_process(process):
     read_fd, write_fd = os.pipe()
     try:
         watcher = subprocess.Popen([sys.executable,
-            str(Path(__file__).resolve().parents[1] / 'adapters/process_watchdog.py'), str(read_fd), str(process.pid)],
+            str(Path(__file__).resolve().parents[2] / 'adapters/process_watchdog.py'), str(read_fd), str(process.pid)],
             pass_fds=(read_fd,), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, start_new_session=True)
     except BaseException:

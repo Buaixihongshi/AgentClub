@@ -10,7 +10,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from backend.app.work.service import WorkError
+from backend.app.extensions.tasks.service import WorkError
 
 MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
 

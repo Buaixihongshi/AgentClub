@@ -9,8 +9,8 @@ from uuid import uuid4
 import pytest
 
 from backend.app.domain.models import Conversation, MissionStatus
-from backend.app.work.adaptive import AdaptiveWork
-from backend.app.work.service import WorkError
+from backend.app.extensions.tasks.adaptive import AdaptiveWork
+from backend.app.extensions.tasks.service import WorkError
 
 PREVIEW_SERVER = [sys.executable, '-c',
                   'import functools, http.server, os\n'
@@ -265,7 +265,7 @@ def test_api_actions_bind_and_preview_through_router(work, temp_settings, monkey
     from backend.app.main import create_app
     from backend.app.adapters.base import CLIAdapter, TurnOutcome
     from backend.app.domain.models import TurnStatus
-    from backend.app.work import environments
+    from backend.app.extensions.tasks import environments
 
     class Noop(CLIAdapter):
         def run_turn(self, mission_id, agent_id, turn_id, provider_id, prompt, tools):

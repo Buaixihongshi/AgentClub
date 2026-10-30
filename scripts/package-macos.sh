@@ -97,7 +97,7 @@ find "$RES/python" "$RES/app" -name '__pycache__' -type d -prune -exec rm -rf {}
 import importlib, pathlib, sys
 for module in sorted(pathlib.Path(sys.argv[1]).glob("environment_*.py")):
     importlib.import_module("scripts." + module.stem)
-importlib.import_module("backend.app.work.adaptive")' "$RES/app/scripts") \
+importlib.import_module("backend.app.extensions.tasks.adaptive")' "$RES/app/scripts") \
   || { echo "ERROR: bundled Workflow modules do not import." >&2; exit 1; }
 
 echo "==> Native shell"

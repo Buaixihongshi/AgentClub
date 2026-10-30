@@ -6,9 +6,9 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from backend.app.settings import EXTENSION_DISABLED, snapshot_settings
-from backend.app.work.models import WorkCommand
-from backend.app.work.service import WorkError
-from backend.app.work.tasks import CreateTask, Tasks
+from backend.app.extensions.tasks.models import WorkCommand
+from backend.app.extensions.tasks.service import WorkError
+from backend.app.extensions.tasks.tasks import CreateTask, Tasks
 
 
 def build_router(settings, repository, adapter=None):
@@ -31,7 +31,7 @@ def build_router(settings, repository, adapter=None):
 
     def schedule(result):
         if isinstance(result, dict) and not result['task']['paused'] and result['task']['status'] not in {'done', 'cancelled'}:
-            from backend.app.api.shared_work import drain
+            from backend.app.extensions.tasks.api.shared_work import drain
             threading.Thread(target=drain, args=(repository, snapshot_settings(settings),
                              result['execution_conversation_id'], adapter), daemon=True).start()
         return result
@@ -61,7 +61,7 @@ def build_router(settings, repository, adapter=None):
     @router.get('/{task_id}/snapshots/{snapshot_id}/file')
     def file(task_id: str, snapshot_id: str, path: str):
         def read():
-            from backend.app.work.snapshots import content
+            from backend.app.extensions.tasks.snapshots import content
             context = service().evidence(task_id, snapshot_id)
             return Response(content(repository, context, snapshot_id, path),
                             media_type=mimetypes.guess_type(path)[0] or 'application/octet-stream', headers={

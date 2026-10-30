@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from backend.app import extension_points
 from backend.app.mcp.tools import MCPToolError, MCPTools
 from backend.app.storage.repository import Repository
 
@@ -48,6 +49,8 @@ class _Context:
 
 
 def _load_context() -> _Context:
+    # The parent passes the extensions it installed, so tools match its own.
+    extension_points.load(os.environ.get("YIREN_MCP_EXTENSIONS", "").split(","))
     db_path = os.environ.get("YIREN_MCP_DB_PATH")
     artifact_root = os.environ.get("YIREN_MCP_ARTIFACT_ROOT")
     mission_id = os.environ.get("YIREN_MCP_MISSION_ID")
@@ -118,21 +121,6 @@ def _load_context() -> _Context:
 
 
 _TOOL_DESCRIPTORS = [
-    {
-        'name': 'shared_work',
-        'description': '持久自主工作。先 read 获取 revision、工作约定和证据。普通对话澄清需求后，用 propose_work(data:{title,owner_id,agreement:{source,goal,scope,non_goals?,delivery:document|development|online,criteria:[{id,text}],validation_commands?:[],risks?:[local]}}) 保存待用户确认的提议。它不会创建可执行任务或授权；仅用户确认后启动。只要方案用 document，开发才用 development，上线仍须独立版本审批。新协议 adaptive_v1：progress/continue_work(data:{task_id,text,next_action,evidence_ids?:[]}) 保存检查点；submit(data:{task_id,kind:code|design|document,summary,artifact_paths:[相对路径],observations:[{id:验收项ID,text:实际观察}],limitations?,reviewer_id?}) 提交产物，kind 必填：设计候选用 design，最终代码用 code，文档用 document，宿主采集真实验证；request_decision(data:{task_id,question,options:[{id,text}],kind:design|direction,artifact_paths:[],recommendation}) 请求必要决定；raise_risk(data:{task_id,risks:[security|data|migration|contract|governance]}) 增加风险；block(data:{task_id,reason,waiting_for}) 记录阻塞。需要协作仍用 invoke_agent，系统持久化子任务。独立审核 review(data:{task_id,candidate_id,criterion_ids,decision:approved|changes_requested,note})。不能自审或自行扩大授权。写入携带稳定 operation_id 与最新 expected_revision。旧协议才使用 propose_contract/create_task 和 commit_sha 审核。',
-        'inputSchema': {
-            'type': 'object',
-            'properties': {
-                'action': {'type': 'string', 'enum': ['read', 'read_evidence', 'propose_work', 'propose_contract', 'create_task', 'progress', 'submit', 'review', 'block', 'continue_work', 'request_decision', 'raise_risk', 'propose_revision', 'propose_transfer', 'refine_agreement', 'accept_transfer']},
-                'expected_revision': {'type': 'integer', 'minimum': 0},
-                'operation_id': {'type': 'string', 'minLength': 1, 'maxLength': 120},
-                'data': {'type': 'object'},
-            },
-            'required': ['action'],
-            'additionalProperties': False,
-        },
-    },
     {
         "name": "memory",
         "description": (
@@ -571,28 +559,7 @@ def _json_text(obj: Any) -> str:
     return _json.dumps(obj, ensure_ascii=False, default=str)
 
 
-def _handle_submit_discussion_result(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    result = ctx.tools.submit_discussion_result(ctx.mission_id, ctx.agent_id, ctx.turn_id,
-                                              ctx.provider_id, arguments.get('result'))
-    return {'content': [{'type': 'text', 'text': _json_text(result)}], 'isError': False}
-
-
-def _handle_read_discussion_result(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    result = ctx.tools.read_discussion_result(ctx.mission_id, ctx.agent_id, ctx.turn_id, ctx.provider_id,
-        arguments.get('source_id'), arguments.get('offset', 0), arguments.get('max_chars', 8000))
-    return {'content': [{'type': 'text', 'text': _json_text(result)}], 'isError': False}
-
-
-def _handle_shared_work(ctx: _Context, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    result = ctx.tools.shared_work(ctx.mission_id, ctx.agent_id, ctx.turn_id, ctx.provider_id,
-        arguments.get('action', 'read'), arguments.get('data'), arguments.get('expected_revision'), arguments.get('operation_id'))
-    return {'content': [{'type': 'text', 'text': _json_text(result)}], 'isError': False}
-
-
 _TOOL_HANDLERS: Dict[str, Callable[[_Context, Dict[str, Any]], Dict[str, Any]]] = {
-    'shared_work': _handle_shared_work,
-    "read_discussion_result": _handle_read_discussion_result,
-    "submit_discussion_result": _handle_submit_discussion_result,
     "publish_message": _handle_publish_message,
     "memory": _handle_memory,
     "save_checkpoint": _handle_save_checkpoint,
@@ -625,48 +592,26 @@ def _handle_initialize(_ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any
     }
 
 
+def tool_descriptors() -> list:
+    """Core tools plus those installed extensions contribute (listed first)."""
+    return [*extension_points.mcp_descriptors, *_TOOL_DESCRIPTORS]
+
+
+def tool_handler(name: str):
+    return _TOOL_HANDLERS.get(name) or extension_points.mcp_handlers.get(name)
+
+
 def _handle_tools_list(ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any]:
     from copy import deepcopy
-    descriptors = deepcopy(_TOOL_DESCRIPTORS)
+    descriptors = deepcopy(tool_descriptors())
     mission = ctx.tools.repository.get_mission(ctx.mission_id)
-    from backend.app.orchestration.deliberation import is_v2
-    if is_v2(mission):
-        descriptors = [d for d in descriptors if d['name'] in {'read_context', 'read_artifact'}]
-        for descriptor in descriptors:
-            properties = descriptor['inputSchema']['properties']
-            names = ('material_offset', 'history_offset', 'issue_offset') if descriptor['name'] == 'read_context' else ('offset', 'max_chars')
-            for key in names:
-                properties[key] = {'type': 'integer', 'minimum': 1 if key == 'max_chars' else 0}
-                if key == 'max_chars':
-                    properties[key]['maximum'] = 8000
-        descriptors.append({'name': 'read_discussion_result',
-            'description': '按 ID 分段读取本阶段可见的原始观点、历史消息、分歧或综合稿；truncated 条目必须完整读取。',
-            'inputSchema': {'type': 'object', 'properties': {
-                'source_id': {'type': 'string'}, 'offset': {'type': 'integer', 'minimum': 0},
-                'max_chars': {'type': 'integer', 'minimum': 1, 'maximum': 8000}},
-                'required': ['source_id'], 'additionalProperties': False}})
-        descriptors.append({
-            'name': 'submit_discussion_result',
-            'description': '提交当前阶段的结构化结果。schema 在本轮 prompt 中；成功后结束本轮。不能用普通聊天代替。',
-            'inputSchema': {'type': 'object', 'properties': {'result': {'type': 'object'}},
-                            'required': ['result'], 'additionalProperties': False},
-        })
-        return {'tools': descriptors}
-    if not getattr(ctx.tools, "tasks_enabled", True):
-        descriptors = [d for d in descriptors if d["name"] != "shared_work"]
     valid_agent_ids = getattr(ctx.tools, "valid_agent_ids", None)
     if valid_agent_ids:
         # The host passes this mission's team, including user-created roles.
         for descriptor in descriptors:
             if descriptor["name"] == "invoke_agent":
                 descriptor["inputSchema"]["properties"]["target_agent_id"]["enum"] = sorted(valid_agent_ids)
-    if mission and mission.room_mode == "roundtable" and mission.discussion:
-        for descriptor in descriptors:
-            properties = descriptor["inputSchema"]["properties"]
-            if descriptor["name"] == "invoke_agent":
-                properties["target_agent_id"]["enum"] = mission.discussion.participant_ids
-            if descriptor["name"] == "update_status":
-                properties["status"]["enum"] = ["running"]
+    descriptors = extension_points.pipe('mcp_tools_list', descriptors, ctx.tools, mission)
     return {"tools": descriptors}
 
 
@@ -675,10 +620,10 @@ def _handle_tools_call(ctx: _Context, params: Dict[str, Any]) -> Dict[str, Any]:
     arguments = params.get("arguments") or {}
     if not isinstance(name, str) or not isinstance(arguments, dict):
         raise _RpcError(JSONRPC_INVALID_PARAMS, "tools/call requires 'name' (str) and 'arguments' (object)")
-    from backend.app.orchestration.deliberation import is_v2
-    if is_v2(ctx.tools.repository.get_mission(ctx.mission_id)) and name not in {'read_context', 'read_artifact', 'read_discussion_result', 'submit_discussion_result'}:
-        return {'content': [{'type': 'text', 'text': 'Tool is unavailable in V2 discussion'}], 'isError': True}
-    handler = _TOOL_HANDLERS.get(name)
+    refusal = extension_points.first('mcp_call_refusal', ctx.tools, ctx.tools.repository.get_mission(ctx.mission_id), name)
+    if refusal is not None:
+        return {'content': [{'type': 'text', 'text': refusal}], 'isError': True}
+    handler = tool_handler(name)
     if handler is None:
         raise _RpcError(JSONRPC_METHOD_NOT_FOUND, "Unknown tool: {name}".format(name=name))
     try:

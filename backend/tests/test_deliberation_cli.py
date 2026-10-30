@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.adapters.deliberation_cli import claude_oauth_token, claude_provider_environment, prompt_arguments
+from backend.app.extensions.discussion.deliberation_cli import claude_oauth_token, claude_provider_environment, prompt_arguments
 from backend.app.adapters.deliberation_errors import failure_code, private_error_tail
 
 

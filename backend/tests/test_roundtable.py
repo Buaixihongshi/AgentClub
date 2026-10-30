@@ -264,7 +264,7 @@ def test_selected_participants_are_authoritative_for_both_transports(idle_client
     ('invoke_agent', {'target_agent_id': 'baobao', 'purpose': '迟到邀请'}),
 ])
 def test_restart_rejects_late_mcp_mutations(idle_client, repository, temp_settings, transport, tool_name, arguments):
-    from backend.app.orchestration.roundtable import Roundtable
+    from backend.app.extensions.discussion.roundtable import Roundtable
     mid = create(idle_client)
     policy = Roundtable(repository)
     _, _, step, turn_id, _ = policy.claim(mid)

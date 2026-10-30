@@ -76,7 +76,7 @@ CLI 修复阶段后端 705 项、前端 214 项通过，构建通过；后续 `/
 - **为什么没有把真实验证放进所有默认 CI？** 依赖账号、机器权限和额度，适合作为明确启用的集成证据；默认离线检查保留可复现性，跳过真实验证时如实记录。
 - **现在每次发版都会做完整真实闭环吗？** 当时记录只证明该次执行，持续的最小真实提交门禁仍有待落实，不能声称已经自动化覆盖所有发布。
 
-证据：[STAR 原记录](../incidents/2026-10-20-deliberation-v2-startup-star.md)、[原始技术排查](../incidents/2026-10-19-deliberation-v2-cli-startup-failures.md)、[当前隔离适配器](../../backend/app/adapters/deliberation_cli.py)。
+证据：[STAR 原记录](../incidents/2026-10-20-deliberation-v2-startup-star.md)、[原始技术排查](../incidents/2026-10-19-deliberation-v2-cli-startup-failures.md)、[当前隔离适配器](../../backend/app/extensions/discussion/deliberation_cli.py)。
 
 ## 案例二：文件早已存在，模型却在交付时耗尽预算
 
@@ -196,7 +196,7 @@ CLI 修复阶段后端 705 项、前端 214 项通过，构建通过；后续 `/
 - **为什么不直接做 exactly-once？** 数据库内可以事务化去重，文件和外部发布不能随 SQLite 回滚。项目对未知副作用先核对，不能承诺跨所有外部系统 exactly-once。
 - **普通聊天超时也被这个修复解决了吗？** 没有。这是讨论执行 lease 的已知竞态，不等于普通回合总预算、休眠时钟或持续工作入口已全部解决。
 
-证据：[升级复盘中的竞态段落](../incidents/2026-10-24-conversation-first-autonomy-upgrade.md)、[历史验收](../acceptance/2026-10-24-conversation-first-autonomy.md)、[事务实现](../../backend/app/orchestration/deliberation.py)、[确定性回归](../../backend/tests/test_deliberation.py)。
+证据：[升级复盘中的竞态段落](../incidents/2026-10-24-conversation-first-autonomy-upgrade.md)、[历史验收](../acceptance/2026-10-24-conversation-first-autonomy.md)、[事务实现](../../backend/app/extensions/discussion/deliberation.py)、[确定性回归](../../backend/tests/test_deliberation.py)。
 
 ## 三个案例共同形成的工程方法
 

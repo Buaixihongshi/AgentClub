@@ -12,7 +12,7 @@ from backend.app.domain.models import Conversation, MissionStatus
 from backend.app.main import create_app
 from backend.app.mcp.tools import MCPToolError, MCPTools
 from backend.app.storage.repository import Repository
-from backend.app.work.service import SharedWork, WorkError
+from backend.app.extensions.tasks.service import SharedWork, WorkError
 
 
 @pytest.fixture
@@ -236,7 +236,7 @@ def test_mcp_identity_is_bound_to_host_context(work, tmp_path):
 
 def test_dispatcher_advances_execution_review_and_dependencies(work, temp_settings, monkeypatch):
     from backend.app.adapters.base import CLIAdapter, TurnOutcome
-    from backend.app.api.shared_work import drain
+    from backend.app.extensions.tasks.api.shared_work import drain
     from backend.app.domain.models import TurnStatus
 
     first = prepare(work)
@@ -314,7 +314,7 @@ def test_user_can_pause_during_host_validation(work, monkeypatch):
 
 def test_demo_blocks_without_exposing_internal_prompt(work, temp_settings, monkeypatch):
     from backend.app.adapters.fake import FakeCLIAdapter
-    from backend.app.api.shared_work import drain
+    from backend.app.extensions.tasks.api.shared_work import drain
     prepare(work)
     conversation = work.repo.get_conversation('c_work')
     work.repo.update_conversation(conversation.model_copy(update={'title': '新对话'}))

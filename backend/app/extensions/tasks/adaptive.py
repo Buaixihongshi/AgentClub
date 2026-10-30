@@ -8,12 +8,12 @@ from pathlib import Path
 
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.models import Mission, MissionStatus, OrchestrationConfig, OrchestrationMode, utc_now
-from backend.app.work.adaptive_models import (
+from backend.app.extensions.tasks.adaptive_models import (
     AGENT_ACTIONS, HUMAN_ACTIONS, POLICY, Agreement, Checkpoint, DecisionRequest, NewWork, Submission,
 )
-from backend.app.work.environments import TaskEnvironments
-from backend.app.work.service import LegacySharedWork, WorkError, now, uid
-from backend.app.work.snapshots import snapshot, store
+from backend.app.extensions.tasks.environments import TaskEnvironments
+from backend.app.extensions.tasks.service import LegacySharedWork, WorkError, now, uid
+from backend.app.extensions.tasks.snapshots import snapshot, store
 
 PROTOCOL = 'adaptive_v1'
 SUCCESS = {MissionStatus.COMPLETED, MissionStatus.COMPLETED_WITH_WARNINGS}
@@ -373,7 +373,7 @@ class AdaptiveWork(LegacySharedWork):
             elif action == 'create_work':
                 task = self._create_work(board, data, actor)
             elif action == 'configure_workflow':
-                from backend.app.work.workflow import configure
+                from backend.app.extensions.tasks.workflow import configure
                 configure(self, board, task, data.get('orchestration', {}))
             elif action == 'revise_work':
                 self._require_root_quiet(board, task)
@@ -881,7 +881,7 @@ class AdaptiveWork(LegacySharedWork):
                 return
         agreement = self._agreement(board, task)
         if not task['parent_id'] and agreement['delivery'] == 'online':
-            from backend.app.work.releases import configuration
+            from backend.app.extensions.tasks.releases import configuration
             try:
                 config = configuration(self._workspace(board, task))
             except WorkError as exc:
@@ -925,7 +925,7 @@ class AdaptiveWork(LegacySharedWork):
             after = snapshot(workspace)
             if (mission and mission.status in SUCCESS and candidate_task.get('submission')
                     and candidate_task['attempts'][-1].get('submitted') and candidate_task['status'] != 'cancelled'):
-                from backend.app.work.validation import validate
+                from backend.app.extensions.tasks.validation import validate
                 checks = validate(self, conversation_id, candidate_task, agreement, mission_id, root=workspace)
         except (WorkError, OSError) as exc:
             after = None
