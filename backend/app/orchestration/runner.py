@@ -37,7 +37,7 @@ from backend.app.orchestration.events import (
 )
 from backend.app.memory.assembly import assemble, sections_into_prompt
 from backend.app.memory import handover as handover_store
-from backend.app.orchestration import interruption
+from backend.app.orchestration import interruption, revision
 from backend.app.orchestration.context import build_artifact_index, build_conversation_context
 from backend.app.orchestration.speaker import WorkflowStep, resume_purpose
 from backend.app.orchestration.strategies import OrchestrationPlan, plan_orchestration
@@ -138,6 +138,8 @@ class MissionRunner:
         max_a2a = plan.max_a2a_invocations
         orchestration_mode = plan.mode
         interruption.record_plan(self.repository, mission.id, workflow)
+        revision_note = "" if is_provider_verification_mission(mission) else revision.handover_note(
+            self.repository, mission, self.agent_registry)
 
         a2a_queue: deque[WorkflowStep] = deque()
         # Steps requested during the running turn. They are merged ahead of the
@@ -169,6 +171,8 @@ class MissionRunner:
 
         while True:
             claimed_index: Optional[int] = None
+            if interruption.pause_requested(mission.id, self.repository):
+                return interruption.close_interrupted(self.repository, mission, "user_pause", turn=None)
             pending_interrupt = self._check_pending_interrupt(mission)
             if pending_interrupt is not None and (a2a_queue or pending_replies):
                 cancelled_steps = [
@@ -251,6 +255,8 @@ class MissionRunner:
                     reply_to_turn_id=step.sender_turn_id,
                     agent_registry=self.agent_registry,
                 )
+                if revision_note:
+                    conversation_context = "\n\n".join(filter(None, (revision_note, conversation_context)))
                 memory_sections = assemble(self.repository, self.settings.memory_root,
                                            mission.conversation_id, effective_agent_id)
             prompt = _build_prompt(
@@ -307,6 +313,10 @@ class MissionRunner:
                 # in-turn fallback note); a crash before this point re-delivers
                 # instead of losing the handover.
                 handover_store.acknowledge(self.repository, effective_agent_id)
+            if interruption.pause_requested(mission.id, self.repository):
+                stopped = None if outcome.status == TurnStatus.COMPLETED else {
+                    "turn_id": turn_id, "agent_id": effective_agent_id}
+                return interruption.close_interrupted(self.repository, mission, "user_pause", turn=stopped)
 
             if outcome.status == TurnStatus.COMPLETED:
                 if step.is_closing:
@@ -705,6 +715,9 @@ class MissionRunner:
         from backend.app.adapters.fallback_policy import context_approved, may_retry
         provider_candidates = list(dict.fromkeys(provider_candidates))
         for index, provider_id in enumerate(provider_candidates):
+            if index and interruption.pause_requested(mission.id):
+                return TurnOutcome(status=TurnStatus.BLOCKED, summary=interruption.STOPPED_SUMMARY,
+                                   failure_code="stopped", retryable=False)
             if not claim_attempt():
                 return TurnOutcome(status=TurnStatus.BLOCKED, summary="Shared turn budget exhausted",
                                    failure_code="budget_exhausted", retryable=False)

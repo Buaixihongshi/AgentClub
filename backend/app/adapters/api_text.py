@@ -5,6 +5,7 @@ from backend.app import extension_points
 from backend.app.adapters.api_transport import APIError, stream_text
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
 from backend.app.domain.models import TurnStatus
+from backend.app.orchestration import interruption
 from backend.app.mcp.tools import MCPToolError
 from backend.app.orchestration.live_progress import get_live_progress_registry
 from backend.app.storage.api_connections import read_key
@@ -26,6 +27,8 @@ class APITextAdapter(CLIAdapter):
         def cancelled():
             current = tools.repository.get_mission(mission_id)
             if current is None or current.status not in {'pending', 'running'}:
+                return True
+            if interruption.pause_requested(mission_id):
                 return True
             return extension_points.any('turn_stopped', tools.repository, current)
 

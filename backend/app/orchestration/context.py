@@ -4,6 +4,7 @@ from typing import Dict, Optional
 from backend.app.domain.agent_registry import AgentRegistry, get_agent_registry
 from backend.app.domain.history import prioritize_messages
 from backend.app.domain.models import MessageRole, is_provider_verification_mission
+from backend.app.orchestration.revision import revised_messages
 from backend.app.storage.repository import Repository
 
 _WHITESPACE_RUN = re.compile(r"\s+")
@@ -30,6 +31,8 @@ def build_conversation_context(
     if not messages:
         return ""
     registry = agent_registry or get_agent_registry()
+    revised = revised_messages(history.events)
+    answered_old = set(revised.values())
     header = "最近对话：\n"
     remaining = max_chars - len(header)
     lines: dict[str, str] = {}
@@ -37,6 +40,10 @@ def build_conversation_context(
     # remains a separate, unabridged prompt field in _build_prompt.
     for msg in prioritize_messages(entries, reply_to_turn_id=reply_to_turn_id)[:limit]:
         speaker = _speaker_label(msg.role, msg.agent_id, registry)
+        if msg.id in revised:
+            speaker += "（此条已被用户修改，以后面的新版为准）"
+        elif msg.role == MessageRole.AGENT and msg.mission_id in answered_old:
+            speaker += "（回应的是修改前的说法）"
         text = _WHITESPACE_RUN.sub(" ", msg.content).strip()
         prefix, suffix = f"{speaker}：", f" [id={msg.id}]"
         budget = min(max_chars_per_message, remaining - len(prefix) - len(suffix) - 1)

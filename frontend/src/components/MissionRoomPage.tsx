@@ -68,6 +68,11 @@ export function MissionRoomPage(props: {
   onRequestStop: () => void;
   onContinueDiscussion: () => void;
   onWorkUpdate?: () => void;
+  /** Pause an ordinary running chat so the user can rewrite the last message. */
+  onPause?: () => void;
+  pausing?: boolean;
+  revising?: boolean;
+  onCancelRevise?: () => void;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const tasksEnabled = props.tasksEnabled ?? false;
@@ -115,6 +120,8 @@ export function MissionRoomPage(props: {
       mentionsEnabled={!(hasActiveMission && discussion)} skillsEnabled={props.discussionEnabled ?? false}
       onChange={props.onInputChange}
       confirmations={props.confirmations} onConfirmationsChange={props.onConfirmationsChange} onSubmit={props.onSubmit}
+      onPause={hasActiveMission && !discussion ? props.onPause : undefined} pausing={props.pausing}
+      revising={props.revising} onCancelRevise={props.onCancelRevise}
       />
   </div>;
   return (
