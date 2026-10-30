@@ -90,6 +90,7 @@ def _load_context() -> _Context:
     scheduled_agent_ids = {a.strip() for a in scheduled_raw.split(",") if a.strip()}
 
     memory_root = os.environ.get("YIREN_MCP_MEMORY_ROOT")
+    tasks_enabled = os.environ.get("YIREN_MCP_TASKS_ENABLED", "1") != "0"
     # Shared-work owner checks run here, outside the backend process; read the
     # same user roles the backend saved next to the database.
     from backend.app.domain.agent_registry import configure_custom_agents
@@ -105,6 +106,7 @@ def _load_context() -> _Context:
         receipt_id=receipt_id,
         lease_token=os.environ.get('YIREN_MCP_LEASE_TOKEN'),
         workspace_root=Path(os.environ.get('YIREN_MCP_WORKSPACE_ROOT', os.getcwd())),
+        tasks_enabled=tasks_enabled,
     )
     return _Context(
         mission_id=mission_id,
@@ -135,11 +137,12 @@ _TOOL_DESCRIPTORS = [
         "name": "memory",
         "description": (
             "你的跨会话长期记忆，只属于你本人；Markdown 权威存储，所有会话共享。"
-            "action=read 列出全部有效条目，传 entry_id 读单条全文。"
-            "action=data:{action:'write',title,body,tags?:[],source_refs?:[消息ID]} 新增；"
+            "所有参数与 action 平级传入，没有 data 包装。"
+            "{action:'read'} 列出全部有效条目，加 entry_id 读单条全文。"
+            "{action:'write',title,body,tags?,source_refs?} 新增；"
             "值得记的是用户偏好、长期约定、项目事实和纠正，不要存一次性闲聊。"
-            "action=data:{action:'revise',entry_id,title?,body?,tags?} 修订（revision 递增）；"
-            "事实变化时修订而不是另存一条。action=data:{action:'forget',entry_id} 忘记："
+            "{action:'revise',entry_id,title?,body?,tags?} 修订（revision 递增）；"
+            "事实变化时修订而不是另存一条。{action:'forget',entry_id} 忘记："
             "不再进入任何后续上下文。source_refs 填相关消息 ID，便于之后原文补读。"
         ),
         "inputSchema": {
@@ -649,6 +652,8 @@ def _handle_tools_list(ctx: _Context, _params: Dict[str, Any]) -> Dict[str, Any]
                             'required': ['result'], 'additionalProperties': False},
         })
         return {'tools': descriptors}
+    if not getattr(ctx.tools, "tasks_enabled", True):
+        descriptors = [d for d in descriptors if d["name"] != "shared_work"]
     valid_agent_ids = getattr(ctx.tools, "valid_agent_ids", None)
     if valid_agent_ids:
         # The host passes this mission's team, including user-created roles.

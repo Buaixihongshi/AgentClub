@@ -32,6 +32,9 @@ export function MissionRoomPage(props: {
   onSectionChange?: (section: "conversations" | "tasks") => void;
   onOpenTask?: (id: string) => void;
   taskContent?: ReactNode;
+  /** Optional extensions; the core chat works without either. */
+  tasksEnabled?: boolean;
+  discussionEnabled?: boolean;
   detail?: MissionDetail;
   turns: TurnView[];
   agentParticipants: AgentParticipant[];
@@ -68,6 +71,8 @@ export function MissionRoomPage(props: {
   onWorkUpdate?: () => void;
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const tasksEnabled = props.tasksEnabled ?? false;
+  const section = tasksEnabled ? props.section : "conversations";
   // Ordinary conversations hide the guide once they have turns; the welcome
   // conversation keeps it below its first real replies until setup finishes.
   const inOnboardingConversation = Boolean(
@@ -113,14 +118,15 @@ export function MissionRoomPage(props: {
     {discussionPanel && <div className="composer-discussion-status">{discussionPanel}</div>}
     <MissionComposer value={props.input} busy={props.busy} hasActiveMission={hasActiveMission}
       disabled={props.conversationScope === "archived"} submitLabel={submitLabel}
-      mentionsEnabled={!(hasActiveMission && discussion)} onChange={props.onInputChange}
+      mentionsEnabled={!(hasActiveMission && discussion)} skillsEnabled={props.discussionEnabled ?? false}
+      onChange={props.onInputChange}
       confirmations={props.confirmations} onConfirmationsChange={props.onConfirmationsChange} onSubmit={props.onSubmit}
       />
   </div>;
   return (
     <main className="mission-room task-room">
       <div className="mission-header-bar">
-        <MissionHeader runtimeSummary={props.runtimeSummary} streamState={props.streamState} showRuntime={props.section !== "tasks"} />
+        <MissionHeader runtimeSummary={props.runtimeSummary} streamState={props.streamState} showRuntime={section !== "tasks"} />
         <SettingsButton
           view={props.hubSettings ?? null}
           conversationId={props.selectedConversationId}
@@ -138,15 +144,15 @@ export function MissionRoomPage(props: {
         />
       </div>
       <EnvironmentBadge runtime={props.onboarding?.health?.runtime} loading={props.onboarding?.healthLoading} />
-      {props.error && props.section !== "tasks" ? (
+      {props.error && section !== "tasks" ? (
         <div role="alert" className="error-banner">{props.error}</div>
       ) : null}
       <div className="unity-shell">
-        <nav className="unity-navigation" aria-label="工作区导航">
+        {tasksEnabled ? <nav className="unity-navigation" aria-label="工作区导航">
           <button type="button" aria-current={props.section !== "tasks" ? "page" : undefined} onClick={() => props.onSectionChange?.("conversations")}><MessagesSquare size={22} /><span>会话</span></button>
           <button type="button" aria-current={props.section === "tasks" ? "page" : undefined} onClick={() => props.onSectionChange?.("tasks")}><Workflow size={22} /><span>任务</span></button>
-        </nav>
-        <div className="unity-workspace-pane" hidden={props.section === "tasks"}>
+        </nav> : null}
+        <div className="unity-workspace-pane" hidden={section === "tasks"}>
         <div className="workspace-layout">
         <ConversationList
           conversations={props.conversations}
@@ -161,7 +167,7 @@ export function MissionRoomPage(props: {
         />
         <div className="conversation-layout">
           <section className="conversation-main" aria-label="任务对话">
-            {props.selectedConversationId ? <SharedWorkWorkspace key={props.selectedConversationId}
+            {tasksEnabled && props.selectedConversationId ? <SharedWorkWorkspace key={props.selectedConversationId}
               conversationId={props.selectedConversationId} goal={props.detail?.mission.goal ?? ''}
               archived={props.conversationScope === 'archived'} onUpdate={props.onWorkUpdate}
               onOpenTask={props.onOpenTask}
@@ -170,7 +176,7 @@ export function MissionRoomPage(props: {
         </div>
       </div>
         </div>
-        <div className="unity-workspace-pane unity-tasks-pane" hidden={props.section !== "tasks"}>{props.taskContent}</div>
+        {tasksEnabled ? <div className="unity-workspace-pane unity-tasks-pane" hidden={props.section !== "tasks"}>{props.taskContent}</div> : null}
       </div>
     </main>
   );

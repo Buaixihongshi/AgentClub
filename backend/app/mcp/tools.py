@@ -142,8 +142,10 @@ class MCPTools:
         lease_token: Optional[str] = None,
         workspace_root: Optional[Path] = None,
         memory_root: Optional[Path] = None,
+        tasks_enabled: bool = True,
     ):
         self.repository = repository
+        self.tasks_enabled = tasks_enabled
         self.artifact_root = artifact_root
         self.memory_root = Path(memory_root) if memory_root else None
         self.a2a_enqueue = a2a_enqueue
@@ -237,7 +239,7 @@ class MCPTools:
             }
             if sections.checkpoint:
                 result["checkpoint"] = sections.checkpoint
-        if conversation_id:
+        if conversation_id and self.tasks_enabled:
             from backend.app.work.service import SharedWork
             result['shared_work'] = SharedWork(self.repository).read(conversation_id)
         if agent_id and turn_id:
@@ -356,6 +358,9 @@ class MCPTools:
         from backend.app.work.models import WorkCommand
         from backend.app.work.service import SharedWork, WorkError
         from pydantic import ValidationError
+        from backend.app.settings import EXTENSION_DISABLED
+        if not self.tasks_enabled:
+            raise MCPToolError(EXTENSION_DISABLED['tasks'])
         mission = self._require_mission(mission_id)
         if not mission.conversation_id or is_provider_verification_mission(mission):
             raise MCPToolError('共享开发任务需要普通会话上下文')

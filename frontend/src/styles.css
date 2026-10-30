@@ -3383,6 +3383,12 @@ summary:focus-visible {
   flex: 1;
   font-size: 0.9rem;
 }
+.settings-extension-desc {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.76rem;
+  color: var(--ink-muted);
+}
 .settings-runtime-row input[type="number"] {
   width: 80px;
   padding: 4px 8px;

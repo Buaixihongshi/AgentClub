@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
-from backend.app.settings import snapshot_settings
+from backend.app.settings import EXTENSION_DISABLED, snapshot_settings
 from backend.app.work.models import WorkCommand
 from backend.app.work.service import SharedWork, WorkError
 
@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 def drain(repository, settings, conversation_id, adapter=None):
     """Claims commit before invocation; multiple dispatch threads cannot duplicate a stage."""
     from backend.app.api.missions import _run_mission_in_background
+    if not settings.tasks_enabled:
+        # Saved work stays paused in place and resumes once tasks are re-enabled.
+        return
     work = SharedWork(repository, check_timeout=settings.cli_timeout)
     if work.read(conversation_id).get('protocol') == 'adaptive_v1':
         from backend.app.work.adaptive import AdaptiveWork
@@ -94,6 +97,8 @@ def build_router(settings, repository, adapter=None):
 
     @router.post('')
     def command(conversation_id: str, request: WorkCommand):
+        if not snapshot_settings(settings).tasks_enabled:
+            return JSONResponse(status_code=409, content={'detail': EXTENSION_DISABLED['tasks']})
         try:
             result = SharedWork(repository).command(conversation_id, request.action, request.data, request.expected_revision,
                                                   operation_id=request.operation_id)

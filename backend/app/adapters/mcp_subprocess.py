@@ -43,12 +43,13 @@ from backend.app.adapters.antigravity_config import (
 )
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
 from backend.app.adapters.cli_diagnostics import write_cli_diagnostic
+from backend.app.adapters.native_activity import NativeActivityRecorder, is_mcp_tool
 from backend.app.adapters.stream_events import StreamEventType, UsageRecord
 from backend.app.adapters.turn_deadline import (
     PROGRESS_CHECK_SECONDS, ToolResultDeadline, is_hub_work_result, is_tool_return,
 )
-from backend.app.orchestration.events import sanitize_tool_args, sanitize_tool_output
 from backend.app.adapters.stream_parsers import StreamLineParser
+from backend.app.adapters.turn_record import TurnRecord
 from backend.app.adapters.subprocess_cli import (
     _IS_WINDOWS,
     build_failure_summary,
@@ -212,6 +213,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                 valid_agent_ids=tools.valid_agent_ids,
                 max_a2a_invocations=tools.max_a2a_invocations,
                 scheduled_agent_ids=tools.scheduled_targets(),
+                tasks_enabled=getattr(tools, "tasks_enabled", True),
             )
             receipt_id = "mcp_{suffix}".format(suffix=uuid4().hex)
             mcp_env["YIREN_MCP_RECEIPT_ID"] = receipt_id
@@ -280,6 +282,13 @@ class MCPSubprocessAdapter(CLIAdapter):
             if self.on_config_written is not None:
                 self.on_config_written(config_path)
 
+            record = TurnRecord(
+                self.db_path, mission_id=mission_id, turn_id=turn_id, agent_id=agent_id,
+                provider_id=provider_id, route="chat",
+                conversation_id=mission.conversation_id if mission else None,
+            )
+            record.launch(command=self.command, argv=cmd, prompt=mcp_prompt, cwd=cli_cwd,
+                          launch_env=launch_env)
             try:
                 proc = subprocess.Popen(
                     cmd,
@@ -293,6 +302,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                     cwd=str(cli_cwd) if cli_cwd is not None else None,
                 )
             except OSError as exc:
+                record.finish(error=str(exc))
                 return TurnOutcome(
                     status=TurnStatus.BLOCKED,
                     summary=build_failure_summary(provider_id, os_error=str(exc)),
@@ -318,9 +328,12 @@ class MCPSubprocessAdapter(CLIAdapter):
             last_usage: list[Optional[UsageRecord]] = [None]
             captured_session_id: list[Optional[str]] = [None]
             stream_ended_with_error: list[bool] = [False]
-            session_recorded = [False]
-            activity_started: dict[str, float] = {}
             stream_parser = StreamLineParser(provider_id)
+            native = NativeActivityRecorder(
+                lambda kind, payload: repository.add_event(mission_id, kind, payload),
+                turn_id=turn_id, agent_id=agent_id, provider_id=provider_id,
+                on_session=record.session,
+            )
 
             def _drain_stdout() -> None:
                 if proc.stdout is None:
@@ -331,6 +344,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                             break
                         line = raw.rstrip("\n")
                         stdout_lines.append(line)
+                        record.stream("stdout", line)
                         ev = stream_parser.parse(line)
                         if ev is None:
                             continue
@@ -344,36 +358,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                             self.live_progress.append_text(mission_id, turn_id, ev.text)
                         if ev.type is StreamEventType.SESSION_STARTED and ev.session_id:
                             captured_session_id[0] = ev.session_id
-                            if not session_recorded[0]:
-                                session_recorded[0] = True
-                                repository.add_event(mission_id, "provider.session", {
-                                    "turn_id": turn_id, "agent_id": agent_id,
-                                    "provider_id": provider_id, "session_id": ev.session_id,
-                                    "model": ev.model,
-                                })
-                        if ev.activity_id and ev.tool_name and not _is_mcp_tool(ev.tool_name):
-                            payload = {
-                                "turn_id": turn_id, "agent_id": agent_id,
-                                "provider_id": provider_id, "activity_id": ev.activity_id,
-                                "tool_name": ev.tool_name, "phase": ev.tool_phase,
-                                "summary": ev.tool_summary,
-                            }
-                            args = sanitize_tool_args(ev.tool_args)
-                            if args:
-                                payload["args"] = args
-                            if ev.tool_output:
-                                payload["output"] = sanitize_tool_output(ev.tool_output)
-                            if ev.tool_error:
-                                payload["error"] = sanitize_tool_output(ev.tool_error)[:500]
-                            if ev.tool_ok is not None:
-                                payload["ok"] = ev.tool_ok
-                            started_at = activity_started.get(ev.activity_id)
-                            if ev.tool_phase == "started":
-                                activity_started[ev.activity_id] = time.monotonic()
-                            elif started_at is not None:
-                                payload["duration_ms"] = int((time.monotonic() - started_at) * 1000)
-                                activity_started.pop(ev.activity_id, None)
-                            repository.add_event(mission_id, "provider.activity", payload)
+                        native.handle(ev)
                         if ev.type is StreamEventType.ERROR:
                             stream_ended_with_error[0] = True
                         if ev.type is StreamEventType.FINISHED:
@@ -391,6 +376,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                         if not raw or not isinstance(raw, str):
                             break
                         stderr_lines.append(raw.rstrip("\n"))
+                        record.stream("stderr", raw.rstrip("\n"))
                 except Exception:
                     pass
 
@@ -533,6 +519,8 @@ class MCPSubprocessAdapter(CLIAdapter):
                 # or time out after usage was emitted. Preserve that accounting
                 # exactly once instead of only charging successful turns.
                 _emit_turn_usage(repository, mission_id, agent_id, provider_id, turn_id, last_usage[0])
+                record.finish(exit_code=proc.returncode, wait_reason=wait_reason.value,
+                              session_id=native.session_id)
                 write_cli_diagnostic(
                     self.db_path.parent / "cli-diagnostics",
                     mission_id=mission_id, turn_id=turn_id, provider_id=provider_id,
@@ -683,6 +671,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         valid_agent_ids: "Optional[set]" = None,
         max_a2a_invocations: int = 0,
         scheduled_agent_ids: "Optional[list]" = None,
+        tasks_enabled: bool = True,
     ) -> dict:
         env: dict = {
             "YIREN_MCP_DB_PATH": str(self.db_path),
@@ -693,6 +682,7 @@ class MCPSubprocessAdapter(CLIAdapter):
             "YIREN_MCP_AGENT_ID": agent_id,
             "YIREN_MCP_TURN_ID": turn_id,
             "YIREN_MCP_PROVIDER_ID": provider_id,
+            "YIREN_MCP_TASKS_ENABLED": "1" if tasks_enabled else "0",
         }
         if valid_agent_ids:
             env["YIREN_MCP_VALID_AGENTS"] = ",".join(sorted(valid_agent_ids))
@@ -943,9 +933,7 @@ def _wait_for_process_with_activity(
             continue
 
 
-def _is_mcp_tool(name: str) -> bool:
-    """True for the agent's own MCP tools: they already have a `tool.call` event."""
-    return name in {"call_mcp_tool", "mcp_tool_call"} or name.startswith(("mcp__", "mcp:"))
+_is_mcp_tool = is_mcp_tool
 
 
 def _max_event_id(repository: Repository, mission_id: str) -> int:

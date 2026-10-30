@@ -612,12 +612,17 @@ export default function App() {
     }
   }
 
+  const tasksEnabled = hubSettings?.extensions?.tasks?.value ?? false;
+  const discussionEnabled = hubSettings?.extensions?.discussion?.value ?? false;
+
   return (
     <MissionRoomPage
       section={section}
       onSectionChange={navigateWorkspace}
       onOpenTask={id => navigateWorkspace("tasks", id)}
-      taskContent={tasksVisited ? <TasksWorkspace selectedTaskId={selectedTaskId}
+      tasksEnabled={tasksEnabled}
+      discussionEnabled={discussionEnabled}
+      taskContent={tasksEnabled && tasksVisited ? <TasksWorkspace selectedTaskId={selectedTaskId}
         active={section === "tasks"} onSelectTask={id => navigateWorkspace("tasks", id)}
         onOpenConversation={id => void openTaskConversation(id)} /> : undefined}
       hasAutonomousWork={convDetail?.has_autonomous_work}

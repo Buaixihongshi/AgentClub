@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -323,6 +324,64 @@ def test_tools_list_includes_all_tools(temp_settings, seeded_mission):
         "invoke_agent",
         "log_thought",
     }
+
+
+def test_tools_list_hides_shared_work_when_tasks_extension_off(temp_settings, seeded_mission):
+    harness = _spawn(temp_settings, seeded_mission, extra_env={"YIREN_MCP_TASKS_ENABLED": "0"})
+    try:
+        harness.request(
+            "initialize",
+            {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}},
+            request_id=1,
+        )
+        harness.notify("notifications/initialized")
+        listing = harness.request("tools/list", {}, request_id=2)
+        call = harness.request("tools/call", {"name": "shared_work", "arguments": {"action": "read"}}, request_id=3)
+    finally:
+        harness.close()
+
+    assert "shared_work" not in {t["name"] for t in listing["result"]["tools"]}
+    assert call["result"]["isError"] is True
+    assert "任务扩展未开启" in call["result"]["content"][0]["text"]
+
+
+def test_memory_description_examples_match_flat_schema(temp_settings, seeded_mission):
+    # The description used to show data:{action:'write',...}, which the flat schema rejects.
+    harness = _spawn(temp_settings, seeded_mission)
+    try:
+        harness.request(
+            "initialize",
+            {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}},
+            request_id=1,
+        )
+        harness.notify("notifications/initialized")
+        tools = harness.request("tools/list", {}, request_id=2)["result"]["tools"]
+        written = harness.request(
+            "tools/call",
+            {"name": "memory", "arguments": {
+                "action": "write", "title": "约定", "body": "发布前跑检查。", "tags": ["流程"]}},
+            request_id=3,
+        )
+        listing = harness.request(
+            "tools/call", {"name": "memory", "arguments": {"action": "read"}}, request_id=4,
+        )
+    finally:
+        harness.close()
+
+    descriptor = next(t for t in tools if t["name"] == "memory")
+    schema = descriptor["inputSchema"]
+    properties = set(schema["properties"])
+    assert "data:" not in descriptor["description"]
+    examples = re.findall(r"\{([^{}]*)\}", descriptor["description"])
+    assert {"read", "write", "revise", "forget"} <= {
+        part.split(":", 1)[1].strip("'") for example in examples
+        for part in example.split(",") if part.startswith("action:")}
+    for example in examples:
+        fields = {part.split(":", 1)[0].strip().rstrip("?") for part in example.split(",")}
+        assert fields <= properties, example
+    assert written["result"].get("isError") is not True, written
+    entries = json.loads(listing["result"]["content"][0]["text"])["entries"]
+    assert [entry["title"] for entry in entries] == ["约定"]
 
 
 def test_read_context_returns_messages_and_mission(temp_settings, seeded_mission, repository):
