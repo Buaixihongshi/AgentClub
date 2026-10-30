@@ -18,3 +18,8 @@
   overflow-wrap: anywhere;
 }
 .turn-failure p { margin: 0; }
+.host-progress { margin: 10px 0 0; }
+.host-progress h4 { margin: 0 0 6px; font-size: 0.75rem; font-weight: 600; opacity: 0.75; }
+.host-progress dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; }
+.host-progress dt { opacity: 0.75; }
+.host-progress dd { margin: 0; min-width: 0; }

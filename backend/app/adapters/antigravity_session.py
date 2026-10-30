@@ -275,6 +275,7 @@ class AntigravitySessionPool:
     def run_turn(self, adapter, mission_id, agent_id, turn_id, provider_id, prompt, tools):
         from backend.app.adapters.turn_deadline import ToolResultDeadline, is_hub_work_result, is_tool_return
         started = time.monotonic()
+        timeout_code = 'hard_timeout'
         progress = ToolResultDeadline(adapter.timeout, check_interval=adapter.progress_check_interval)
         if not self.lock.acquire(timeout=max(0, adapter.timeout)):
             return TurnOutcome(TurnStatus.BLOCKED, '等待 Antigravity 工作进程超时；本轮未发送。')
@@ -353,6 +354,7 @@ class AntigravitySessionPool:
                 if adapter.idle_timeout:
                     until = min(until, max(0, last_activity + adapter.idle_timeout - time.monotonic()))
                 if until <= 0:
+                    timeout_code = 'hard_timeout' if progress.remaining() <= 0 else 'idle_timeout'
                     raise TimeoutError('Antigravity turn deadline exceeded')
                 # Poll periodically so MCP activity refreshes an idle deadline.
                 try:
@@ -427,7 +429,8 @@ class AntigravitySessionPool:
                 })
                 return TurnOutcome(TurnStatus.COMPLETED, 'via MCP; worker lost after publication')
             return TurnOutcome(TurnStatus.BLOCKED,
-                               'Antigravity 执行中断，已保留消息与活动记录；请核对工作区后继续，未自动重放操作。' + ' ' + str(exc))
+                               'Antigravity 执行中断，已保留消息与活动记录；请核对工作区后继续，未自动重放操作。' + ' ' + str(exc),
+                               failure_code=timeout_code if isinstance(exc, TimeoutError) else None)
         finally:
             adapter.live_progress.clear(mission_id, turn_id)
             self.lock.release()

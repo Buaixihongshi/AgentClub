@@ -261,6 +261,7 @@ def test_adapter_blocks_and_kills_process_on_a2a_idle_timeout(
 
     assert outcome.status == TurnStatus.BLOCKED
     assert "idle timeout after 90s" in (outcome.summary or "")
+    assert outcome.failure_code == "idle_timeout"
     kill.assert_called_once_with(proc)
 
 
@@ -954,6 +955,7 @@ def test_antigravity_exit0_selftimeout_blocks_with_timeout_summary(
 
     assert outcome.status == TurnStatus.BLOCKED
     assert "timeout" in (outcome.summary or "").lower()
+    assert outcome.failure_code == "provider_timeout"
     assert outcome.session_id is None  # no SESSION_STARTED event from agy self-timeout
 
 
@@ -1010,6 +1012,7 @@ def test_host_timeout_preserves_published_message_only_after_successful_tools(
         seeded_mission.id, "baobao", turn_id, "codex", "请发声", tools,
     )
     assert outcome.status == (TurnStatus.COMPLETED if recovered else TurnStatus.BLOCKED)
+    assert outcome.failure_code == (None if recovered else "hard_timeout")
     warnings = [e for e in repository.list_events_after(seeded_mission.id, 0)
                 if e.event_type == "turn.warning"]
     assert len(warnings) == int(recovered)
