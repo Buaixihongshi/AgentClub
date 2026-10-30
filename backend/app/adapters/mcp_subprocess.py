@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Callable, Iterable, List, Optional
 from uuid import uuid4
 
+from backend.app import extension_points
 from backend.app.adapters.antigravity_config import (
     guarded_global_mcp_config,
     read_agy_log_hint,
@@ -683,6 +684,7 @@ class MCPSubprocessAdapter(CLIAdapter):
             "YIREN_MCP_TURN_ID": turn_id,
             "YIREN_MCP_PROVIDER_ID": provider_id,
             "YIREN_MCP_TASKS_ENABLED": "1" if tasks_enabled else "0",
+            "YIREN_MCP_EXTENSIONS": ",".join(extension_points.modules()),
         }
         if valid_agent_ids:
             env["YIREN_MCP_VALID_AGENTS"] = ",".join(sorted(valid_agent_ids))

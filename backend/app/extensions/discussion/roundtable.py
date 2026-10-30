@@ -7,17 +7,12 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from uuid import uuid4
 
+from backend.app.domain.errors import DiscussionError  # noqa: F401  (re-exported)
 from backend.app.domain.models import MissionStatus, RoomMode, TurnStatus, utc_now
 from backend.app.orchestration.speaker import WorkflowStep
 
 
 ACTIVE = {MissionStatus.PENDING, MissionStatus.RUNNING}
-
-
-class DiscussionError(ValueError):
-    def __init__(self, message, status_code=409):
-        super().__init__(message)
-        self.status_code = status_code
 
 
 def initial_state(mission):
@@ -359,7 +354,7 @@ class Roundtable:
             return mission
 
     def fail(self, mission_id, reason='runner_failed'):
-        from backend.app.orchestration.deliberation import Deliberation, is_v2
+        from backend.app.extensions.discussion.deliberation import Deliberation, is_v2
         if is_v2(self.repo.get_mission(mission_id)):
             policy = Deliberation(self.repo)
             with policy.transaction(mission_id) as (mission, state):
@@ -380,7 +375,7 @@ class Roundtable:
 
     def recover(self):
         for mission in self.repo.list_missions():
-            from backend.app.orchestration.deliberation import Deliberation, is_v2
+            from backend.app.extensions.discussion.deliberation import Deliberation, is_v2
             if is_v2(mission):
                 Deliberation(self.repo).recover(mission)
                 continue

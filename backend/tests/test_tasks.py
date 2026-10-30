@@ -11,9 +11,9 @@ from pydantic import ValidationError
 from backend.app.domain.models import Conversation, ConversationStatus, MissionStatus
 from backend.app.main import create_app
 from backend.app.storage.repository import Repository
-from backend.app.work.models import WorkCommand
-from backend.app.work.service import WorkError
-from backend.app.work.tasks import Tasks
+from backend.app.extensions.tasks.models import WorkCommand
+from backend.app.extensions.tasks.service import WorkError
+from backend.app.extensions.tasks.tasks import Tasks
 
 
 @pytest.fixture
@@ -193,7 +193,7 @@ def test_task_api_and_old_conversation_endpoints_remain_compatible(temp_settings
 
 
 def test_legacy_boards_have_an_independent_read_and_control_entry_without_migration(tasks):
-    from backend.app.work.service import SharedWork
+    from backend.app.extensions.tasks.service import SharedWork
     tasks.repo.create_conversation(Conversation(id='c_legacy', title='旧版需求'))
     work = SharedWork(tasks.repo, tasks.work.root)
     board = work.command('c_legacy', 'propose_contract', {
@@ -243,7 +243,7 @@ def test_same_baseline_and_output_in_two_independent_tasks_remain_readable(tasks
     second = finish(tasks, command(tasks, second, 'resume'), None)
     assert first['task']['status'] == second['task']['status'] == 'done'
     assert first['task']['candidate']['id'] == second['task']['candidate']['id']
-    from backend.app.work.snapshots import content
+    from backend.app.extensions.tasks.snapshots import content
     candidate = first['task']['candidate']['id']
     assert content(tasks.repo, first['execution_conversation_id'], candidate, 'docs/integrated.md')
     assert content(tasks.repo, second['execution_conversation_id'], candidate, 'docs/integrated.md')
@@ -259,7 +259,7 @@ def test_same_baseline_and_output_in_two_independent_tasks_remain_readable(tasks
 
 
 def test_legacy_log_api_dispatches_protocol_after_checking_task_ownership(tasks, temp_settings):
-    from backend.app.work.service import SharedWork
+    from backend.app.extensions.tasks.service import SharedWork
     # Persist legacy evidence through its real board model. These are fixture
     # validation logs, not claims of real CLI execution or review approval.
     for suffix in ('a', 'b'):

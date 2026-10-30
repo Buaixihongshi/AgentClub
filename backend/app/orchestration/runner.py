@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
 from backend.app.adapters.turn_budget import budgeted_turn, claim_attempt
+from backend.app import extension_points
 from backend.app.domain.agent_registry import AgentRegistry, get_agent_registry
 from backend.app.domain.models import (
     AgentProfile,
@@ -105,22 +106,15 @@ class MissionRunner:
         if mission is None:
             raise ValueError("Unknown mission: {mission_id}".format(mission_id=mission_id))
 
-        if any(e.event_type in {'adaptive.queued', 'adaptive.control_received'} for e in self.repository.list_events_after(mission_id, 0)):
+        if extension_points.any('mission_held', self.repository, mission):
             return self.repository.get_mission(mission_id)
 
         if not is_provider_verification_mission(mission):
             handover_store.record_mission_start(self.repository, self.agents, mission)
 
-        if any(e.event_type == 'adaptive.claimed' for e in self.repository.list_events_after(mission_id, 0)):
-            return self._run_adaptive(mission)
-
-        from backend.app.orchestration.deliberation import is_v2
-        if is_v2(mission):
-            from backend.app.orchestration.deliberation_runner import run_deliberation
-            return run_deliberation(self.repository, self.settings, mission_id, self.adapter)
-
-        if mission.room_mode == 'roundtable':
-            return self._run_roundtable(mission_id)
+        taken_over = extension_points.first('mission_takeover', self, mission)
+        if taken_over is not None:
+            return taken_over
 
         mission = mission.model_copy(
             update={
@@ -417,105 +411,6 @@ class MissionRunner:
         )
         return mission
 
-    def _run_adaptive(self, mission):
-        """One necessary action per mission; durable work controls continuation."""
-        from backend.app.work.service import SharedWork
-        from backend.app.work.snapshots import workspace_state
-        import json
-        work = SharedWork(self.repository)
-        context = work.execution_context(mission.id)
-        if not context or context['task']['status'] == 'cancelled':
-            return mission
-        context['workspace_state'] = workspace_state(context['workspace_root'])
-        agent_id = mission.target_agent_id
-        agent = next(a for a in self.agents if a.id == agent_id)
-        mission = mission.model_copy(update={'status': MissionStatus.RUNNING, 'updated_at': utc_now()})
-        self.repository.update_mission(mission)
-        turn_id = 'turn_work_' + uuid4().hex[:12]
-        tools = MCPTools(self.repository, self.settings.artifact_root, valid_agent_ids={a.id for a in self.agents},
-                         workspace_root=context['workspace_root'], current_step_origin='adaptive')
-        prompt = (
-            f'你是{agent.display_name}。人格：{agent.persona}\n'
-            '你负责推进持久工作卡的一项必要动作。按实际缺口决定调查、设计、实现、验证或协作，简单工作可本轮完成。'
-            '先 shared_work(read) 读取最新 revision。读取持久约定、已记录的人类决定及子任务结果，不依赖聊天记忆。'
-            '通过 CLI 原生工具在授权目录工作；文档工作只能写 docs/，审核只能只读，不允许自行提交、合并或发布。'
-            '你在受限沙箱中运行，无法读取用户 Git 配置、仓库 .git 元数据、其他环境目录或本机服务；'
-            '分支、HEAD 与未提交改动以上下文 workspace_state 为准（宿主本轮开始时读取），'
-            '不要在沙箱内运行 env.sh status 或 git 核对环境，这类命令失败不构成阻塞。'
-            '本轮必须用 shared_work 写结构化结果并通过 publish_message 给出简洁进度。'
-            '首次接单可用 refine_agreement(data:{task_id,agreement:{criteria:[{id,text}],validation_commands:[[命令参数]]}}) '
-            '把原始目标整理为可测试约定；不得改变 source/goal/scope/delivery，实质变更须请用户决定。'
-            '可提交 submit；必须明确 kind 为 code、design 或 document：设计候选用 design，最终代码用 code，文档用 document。'
-            '设计候选作者可以审核他人实现的最终代码；不能把设计交付误报成代码交付。'
-            '尚有必要工作用 continue_work；需要人类选择用 request_decision；真正阻塞用 block。'
-            '新写操作使用稳定 operation_id 与最新 expected_revision，冲突后重读。'
-            '需要另一角色时只使用 invoke_agent，purpose 写清独立交付物；宿主保存子任务，父责任不解除。'
-            '发现 security/data/migration/contract/governance 风险调用 raise_risk，不能自行免除必须审核。'
-            '审核阶段对照原始约定、真实候选和证据，用 review 引用 candidate_id、criterion_ids、decision、note。'
-            'handoff 阶段只读交接资料，目标角色确认能接手后调用 accept_transfer(data:{task_id})。'
-            '不能用成功退出、聊天声明或模拟结果代替验证，不能为凑流程增加角色。\n'
-            '可协作角色：\n' + json.dumps([{'id': a.id, 'name': a.display_name, 'role': a.role} for a in self.agents], ensure_ascii=False)
-            + '\n持久工作上下文：\n' + json.dumps(context, ensure_ascii=False)
-        )
-        sections = assemble(self.repository, self.settings.memory_root,
-                            mission.conversation_id, agent_id)
-        memory_blocks_text = '\n'.join(sections_into_prompt(sections))
-        if memory_blocks_text:
-            prompt = prompt + '\n' + memory_blocks_text + '\n'
-        outcome = self._run_turn_with_fallbacks(mission, agent_id, turn_id,
-                                               _providers_by_agent([agent])[agent_id], prompt, tools)
-        handover_store.acknowledge(self.repository, agent_id)
-        status = MissionStatus.COMPLETED if outcome.status == TurnStatus.COMPLETED else MissionStatus.BLOCKED
-        mission = self.repository.get_mission(mission.id).model_copy(update={'status': status, 'updated_at': utc_now()})
-        self.repository.update_mission(mission)
-        self.repository.add_event(mission.id, 'status', {'status': status.value, 'summary': outcome.summary or status.value})
-        return mission
-
-    def _run_roundtable(self, mission_id):
-        from backend.app.orchestration.roundtable import Roundtable
-        policy = Roundtable(self.repository)
-        try:
-            while True:
-                claimed = policy.claim(mission_id)
-                if claimed is None:
-                    return self.repository.get_mission(mission_id)
-                mission, state, step, turn_id, notes = claimed
-                agents = {a.id: a for a in self.agents if a.id in mission.discussion.participant_ids}
-                context = build_conversation_context(
-                    self.repository, mission.conversation_id, mission_id=mission_id,
-                    reply_to_turn_id=step.sender_turn_id, agent_registry=self.agent_registry,
-                )
-                sections = assemble(self.repository, self.settings.memory_root,
-                                    mission.conversation_id, step.agent_id)
-                reply = None
-                if step.origin == 'a2a_resume':
-                    callee_turn = next((e.payload['turn_id'] for e in self.repository.list_events_after(mission_id, 0)
-                                        if e.event_type == 'discussion.turn_claimed' and e.payload.get('step_id') == step.parent_step_id), None)
-                    reply = '\n'.join(m.content for m in self.repository.list_messages(mission_id) if m.turn_id == callee_turn and m.role == 'agent')[:1500]
-                purpose = '圆桌讨论：仅交流观点，不执行代码修改或自动生成文件。\n' + step.purpose + '\n' + notes + '\n参与者：{}；阶段：{}；已用回合：{}/{}（含当前回合，总结占一回合）。'.format(
-                        ', '.join(mission.discussion.participant_ids), state['phase'], state['turns_used'], mission.discussion.max_turns)
-                if step.is_closing:
-                    purpose += '\n当前为总结，不再邀请其他角色。'
-                else:
-                    purpose += ('\n其他参与者已有基础发言安排；只有确需特定接力时才调 invoke_agent。'
-                                '需要对方回复后续答时用 mode=wait_reply；接纳后结束当前回合，由宿主安排受邀者和你的续答。'
-                                '邀请共享本场总回合预算；工具返回未接纳时继续当前发言，不承诺额外回合。')
-                prompt = _build_prompt(mission, purpose, agents[step.agent_id], conversation_context=context,
-                                       artifact_index=build_artifact_index(self.repository, mission_id),
-                                       memory_blocks=sections_into_prompt(sections),
-                                       a2a_step=step if step.origin != 'workflow' else None, a2a_reply_text=reply,
-                                       agents_by_id=agents, max_a2a_invocations=None)
-                tools = MCPTools(self.repository, self.settings.artifact_root,
-                                 valid_agent_ids=set(agents), current_step_origin=step.origin)
-                outcome = self._run_turn_with_fallbacks(mission, step.agent_id, turn_id,
-                                                       _providers_by_agent(list(agents.values()))[step.agent_id], prompt, tools,
-                                                       a2a_sender_turn_id=step.sender_turn_id)
-                handover_store.acknowledge(self.repository, step.agent_id)
-                policy.complete(mission_id, turn_id, outcome)
-        except Exception:
-            policy.fail(mission_id)
-            raise
-
     def _check_pending_interrupt(
         self,
         mission: Mission,
@@ -811,13 +706,9 @@ class MissionRunner:
                 return TurnOutcome(status=TurnStatus.BLOCKED, summary="Fallback API context export requires endpoint-bound approval",
                                    failure_code="configuration", retryable=False)
             prior_events = self.repository.list_events_after(mission.id, 0)
-            if any(e.event_type == 'adaptive.claimed' for e in prior_events):
-                from backend.app.work.adaptive import AdaptiveWork
-                from backend.app.work.service import WorkError
-                try:
-                    AdaptiveWork(self.repository, tools.workspace_root).authorize_provider(mission.id, provider_id)
-                except WorkError as exc:
-                    return TurnOutcome(status=TurnStatus.BLOCKED, summary=str(exc), retryable=False)
+            refused = extension_points.first('attempt_check', self, mission, tools, provider_id, prior_events)
+            if refused is not None:
+                return refused
             event_offset = len(prior_events)
             attempt = index + 1
             attempt_prompt = prompt
@@ -832,9 +723,7 @@ class MissionRunner:
                     '请基于同一任务上下文接续，不要因切换重置已确认的事实；'
                     '需要时用 read_context(message_ids=[...]) 补读原文。\n'.format(
                         previous_label, current_label))
-            if mission.room_mode == 'roundtable':
-                from backend.app.orchestration.roundtable import Roundtable
-                Roundtable(self.repository).authorize_attempt(mission.id, turn_id, provider_id, attempt)
+            extension_points.each('attempt_started', self.repository, mission, turn_id, provider_id, attempt)
             record_turn_started(
                 self.repository,
                 mission.id,
@@ -1090,11 +979,7 @@ def _build_prompt(
         "没有 write_artifact 工具时，可返回 JSON："
         '{"message":"本轮回复","artifacts":[{"path":"summary.md","content":"# Summary"}]}。'
     )
-    if tasks_enabled and mission.conversation_id and mission.room_mode == 'task':
-        parts.append(
-            "【持续交付】需要跨轮开发或写文档时，先在聊天里澄清目标、范围和验收条件，再用 propose_work 提议，"
-            "等用户在提议卡确认；提议不能自行启动，也不要说成已经开始。"
-        )
+    parts.extend(extension_points.collect('prompt_fragments', mission, tasks_enabled))
     if memory_blocks:
         parts.extend(memory_blocks)
     if conversation_context:

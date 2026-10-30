@@ -8,9 +8,9 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from backend.app.domain.agent_registry import get_agent_registry
-from backend.app.work.adaptive_models import Agreement
-from backend.app.work.models import Input
-from backend.app.work.service import WorkError, now
+from backend.app.extensions.tasks.adaptive_models import Agreement
+from backend.app.extensions.tasks.models import Input
+from backend.app.extensions.tasks.service import WorkError, now
 
 
 class WorkflowStep(Input):

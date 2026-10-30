@@ -1,7 +1,7 @@
 """Presentation metadata for discussion messages; source records stay intact."""
 import json
 
-from backend.app.orchestration.deliberation import is_v2
+from backend.app.extensions.discussion.deliberation import is_v2
 
 
 def _released_audit(repository, mission, state):

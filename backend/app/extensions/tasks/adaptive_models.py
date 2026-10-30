@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from backend.app.work.models import Input, Criterion, ContractInput
+from backend.app.extensions.tasks.models import Input, Criterion, ContractInput
 
 
 Risk = Literal['local', 'security', 'data', 'migration', 'contract', 'governance']

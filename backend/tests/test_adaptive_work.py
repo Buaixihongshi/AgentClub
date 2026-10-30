@@ -10,9 +10,9 @@ import pytest
 
 from backend.app.domain.models import Conversation, ConversationStatus, MissionStatus
 from backend.app.storage.repository import Repository
-from backend.app.work.adaptive import AdaptiveWork
-from backend.app.work.service import SharedWork, WorkError
-from backend.app.work.snapshots import content, snapshot
+from backend.app.extensions.tasks.adaptive import AdaptiveWork
+from backend.app.extensions.tasks.service import SharedWork, WorkError
+from backend.app.extensions.tasks.snapshots import content, snapshot
 
 
 @pytest.fixture
@@ -360,7 +360,7 @@ def test_restart_safely_resumes_unchanged_and_preserves_user_pause(adaptive):
 
 
 def test_real_verification_failure_is_preserved_then_repaired(adaptive):
-    from backend.app.adapters.deliberation_cli import isolation_supported
+    from backend.app.extensions.discussion.deliberation_cli import isolation_supported
     if not isolation_supported():
         pytest.skip('real constrained validation requires macOS sandbox-exec')
     task_id = create(adaptive, commands=[[sys.executable, '-c', 'print("observable failure"); raise SystemExit(7)']])
@@ -375,8 +375,8 @@ def test_real_verification_failure_is_preserved_then_repaired(adaptive):
 
 
 def test_scope_is_enforced_by_os_sandbox(adaptive, tmp_path):
-    from backend.app.adapters.deliberation_cli import isolation_supported
-    from backend.app.work.runtime import run_check
+    from backend.app.extensions.discussion.deliberation_cli import isolation_supported
+    from backend.app.extensions.tasks.runtime import run_check
     if not isolation_supported():
         pytest.skip('macOS sandbox is unavailable')
     outside = tmp_path / 'outside.txt'
@@ -422,7 +422,7 @@ def test_changed_workspace_recovers_as_readonly_reconciliation(adaptive):
 
 
 def test_configured_release_executes_only_approved_candidate_and_queries_actual_state(adaptive):
-    from backend.app.work.releases import process
+    from backend.app.extensions.tasks.releases import process
     task_id = create(adaptive, delivery='online')
     mission = run(adaptive)
     # The project release entry lives inside the task's own bound workspace.
@@ -449,7 +449,7 @@ def test_configured_release_executes_only_approved_candidate_and_queries_actual_
 
 
 def test_unknown_release_queries_once_without_replaying_deployment(adaptive):
-    from backend.app.work.releases import process
+    from backend.app.extensions.tasks.releases import process
     task_id = create(adaptive, delivery='online')
     mission = run(adaptive)
     put(adaptive, '.gitignore', '.agenthub/\n')
@@ -473,7 +473,7 @@ def test_unknown_release_queries_once_without_replaying_deployment(adaptive):
 def test_runner_mcp_delegation_and_integration_flow(adaptive, temp_settings, monkeypatch):
     from backend.app.adapters.base import CLIAdapter, TurnOutcome
     from backend.app.domain.models import TurnStatus
-    from backend.app.api.shared_work import drain
+    from backend.app.extensions.tasks.api.shared_work import drain
     config_dir = Path('config').resolve()
     monkeypatch.chdir(adaptive.root)
     task_id = create(adaptive)
@@ -503,7 +503,7 @@ def test_work_prompt_carries_host_read_workspace_state(adaptive, temp_settings, 
     # #54：沙箱内读不到 Git 元数据，宿主每轮把分支、HEAD 与未提交改动放进提示。
     from backend.app.adapters.base import CLIAdapter, TurnOutcome
     from backend.app.domain.models import TurnStatus
-    from backend.app.api.shared_work import drain
+    from backend.app.extensions.tasks.api.shared_work import drain
     monkeypatch.chdir(adaptive.root)
     task_id = create(adaptive)
     states = []
@@ -531,7 +531,7 @@ def test_work_prompt_carries_host_read_workspace_state(adaptive, temp_settings, 
 
 
 def test_workspace_state_reports_unreadable_directory(tmp_path):
-    from backend.app.work.snapshots import workspace_state
+    from backend.app.extensions.tasks.snapshots import workspace_state
     assert workspace_state(tmp_path) == {'source': 'host', 'error': '宿主无法读取该工作区的 Git 状态'}
 
 
@@ -655,7 +655,7 @@ def test_unambiguous_chat_answer_is_recorded_without_model_approval(adaptive, te
 
 
 def test_ambiguous_chat_or_multiple_pending_decisions_never_approve():
-    from backend.app.work.decisions import match_answer
+    from backend.app.extensions.tasks.decisions import match_answer
     decision = {'id': 'd', 'status': 'pending', 'kind': 'release', 'options': [{'id': 'approve', 'text': '批准此版本上线'}]}
     assert match_answer({'decisions': [decision]}, '可以吧') is None
     assert match_answer({'decisions': [decision, {**decision, 'id': 'd2'}]}, '批准上线') is None

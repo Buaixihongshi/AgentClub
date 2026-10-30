@@ -44,3 +44,10 @@ def repository(temp_settings: Settings):
     repo = Repository(temp_settings.database_path)
     repo.initialize()
     return repo
+
+
+# Composition roots install the optional extensions; tests that drive the core
+# directly (runner, MCP tools) need the same hooks main.py installs.
+from backend.app import extensions as _extensions  # noqa: E402
+
+_extensions.install()

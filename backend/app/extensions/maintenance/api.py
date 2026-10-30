@@ -8,8 +8,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.app.domain.maintenance import MaintenanceFeedback, RegisteredRepository
-from backend.app.maintenance.service import MaintenanceService
-from backend.app.maintenance.workspace import WorkspaceError
+from backend.app.extensions.maintenance.service import MaintenanceService
+from backend.app.extensions.maintenance.workspace import WorkspaceError
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
 

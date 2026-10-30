@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from backend.app.work.service import WorkError, now, uid
+from backend.app.extensions.tasks.service import WorkError, now, uid
 
 DEFAULT_PREVIEW_COMMAND = None
 PREVIEW_LOG_TAIL = 16000
@@ -23,7 +23,7 @@ PREVIEW_LOG_TAIL = 16000
 # still ties their lifetime to this host process (host crash kills the group).
 _WATCHDOG_FDS: dict[str, int] = {}
 
-_WATCHDOG = Path(__file__).resolve().parents[1] / 'adapters' / 'process_watchdog.py'
+_WATCHDOG = Path(__file__).resolve().parents[2] / 'adapters' / 'process_watchdog.py'
 
 
 def _git(cwd, args, timeout=120):

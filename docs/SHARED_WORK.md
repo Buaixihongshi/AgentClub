@@ -31,7 +31,7 @@
 新增 `shared_work` 工具。mission、角色、turn 和 Provider 由宿主注入，模型参数不能切换身份或工作范围。
 
 - `read`：读取当前任务板及 `revision`。
-- `propose_contract`：保存约定草案。字段见 `backend/app/work/models.py`。
+- `propose_contract`：保存约定草案。字段见 `backend/app/extensions/tasks/models.py`。
 - `create_task`：保存分工，关联约定、验收项、执行人与审核人。
 - `progress`：`data={task_id,text}`，保存检查点。
 - `submit`：`data={task_id}`，提交干净的候选版本；此时仅进入等待宿主验证，不表示测试通过。

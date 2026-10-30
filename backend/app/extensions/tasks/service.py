@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.models import Mission, MissionStatus, OrchestrationConfig, OrchestrationMode, utc_now
-from backend.app.work.models import ContractInput, TaskInput
+from backend.app.extensions.tasks.models import ContractInput, TaskInput
 
 
 class WorkError(ValueError):
@@ -56,7 +56,7 @@ class LegacySharedWork:
         with self.repo._transaction() as db:
             self._load(db, conversation_id)
             if isinstance(log_id, str) and log_id.startswith('ws_'):
-                from backend.app.work.snapshots import read_bytes
+                from backend.app.extensions.tasks.snapshots import read_bytes
                 return read_bytes(self.repo, conversation_id, log_id)
             row = db.execute('SELECT output FROM work_check_logs WHERE id=? AND conversation_id=?',
                              (log_id, conversation_id)).fetchone()
@@ -402,7 +402,7 @@ class SharedWork:
         self._legacy._checks = value
 
     def _service(self, conversation_id, action=None):
-        from backend.app.work.adaptive import AdaptiveWork
+        from backend.app.extensions.tasks.adaptive import AdaptiveWork
         with self.repo._transaction() as db:
             row = db.execute('SELECT data FROM work_boards WHERE conversation_id=?', (conversation_id,)).fetchone()
         board = json.loads(row['data']) if row else None
@@ -416,7 +416,7 @@ class SharedWork:
         return self._service(conversation_id).read_log(conversation_id, log_id)
 
     def command(self, conversation_id, action, data, expected_revision, **kwargs):
-        from backend.app.work.adaptive import ENVIRONMENT_ACTIONS
+        from backend.app.extensions.tasks.adaptive import ENVIRONMENT_ACTIONS
         if action in ENVIRONMENT_ACTIONS:
             return self._service(conversation_id, action).command(
                 conversation_id, action, data, expected_revision, **kwargs)
@@ -426,7 +426,7 @@ class SharedWork:
                 old = service.read(conversation_id)
                 if old['enabled'] or any(t['active_mission_id'] for t in old['tasks']):
                     raise WorkError('请先结束或暂停历史协议工作再创建新工作')
-                from backend.app.work.adaptive import AdaptiveWork
+                from backend.app.extensions.tasks.adaptive import AdaptiveWork
                 service = AdaptiveWork(self.repo, self.root, self.check_timeout)
                 board = service._empty(conversation_id)
                 board.update(revision=old['revision'], legacy_board=old)
@@ -454,6 +454,6 @@ class SharedWork:
         return service.execution_context(mission_id) if hasattr(service, 'execution_context') else None
 
     def recover(self):
-        from backend.app.work.adaptive import AdaptiveWork
+        from backend.app.extensions.tasks.adaptive import AdaptiveWork
         LegacySharedWork(self.repo, self.root, self.check_timeout).recover()
         AdaptiveWork(self.repo, self.root, self.check_timeout).recover()

@@ -4,19 +4,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from backend.app.orchestration.roundtable import Roundtable, DiscussionError
+from backend.app import extensions
+from backend.app.domain.errors import DiscussionError
 
 from backend.app.api.agents import build_router as build_agents_router
 from backend.app.api.conversations import build_router as build_conversations_router
 from backend.app.api.hub_settings import build_router as build_hub_settings_router
 from backend.app.api.health import build_router as build_health_router
-from backend.app.api.maintenance import build_router as build_maintenance_router
 from backend.app.api.missions import build_router as build_missions_router
 from backend.app.api.observability import build_router as build_observability_router
 from backend.app.api.onboarding import build_router as build_onboarding_router
 from backend.app.api.providers import build_router as build_providers_router
 from backend.app.adapters.base import CLIAdapter
-from backend.app.maintenance.service import MaintenanceService
 from backend.app.settings import Settings, get_settings
 from backend.app.storage.repository import Repository
 
@@ -28,6 +27,7 @@ def create_app(
     mission_adapter: Optional[CLIAdapter] = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
+    extensions.install()
     from backend.app.domain.agent_registry import configure_custom_agents
     from backend.app.storage import hub_settings
     configure_custom_agents(app_settings.config_dir, hub_settings.default_path(app_settings))
@@ -35,24 +35,23 @@ def create_app(
     repository.initialize()
     from backend.app.storage.execution import ExecutionLedger
     ExecutionLedger(repository).recover()
-    Roundtable(repository).recover()
-    from backend.app.work.service import SharedWork
-    SharedWork(repository).recover()
-    MaintenanceService(repository, app_settings).recover_interrupted_runs()
+    extensions.recover(repository, app_settings)
     app_settings.artifact_root.mkdir(parents=True, exist_ok=True)
 
     @asynccontextmanager
     async def lifespan(_app):
         import threading
-        from backend.app.api.shared_work import pump
         stopped = threading.Event()
-        dispatcher = threading.Thread(target=pump, args=(repository, app_settings, stopped, mission_adapter), daemon=True)
-        dispatcher.start()
+        loops = [threading.Thread(target=loop, args=(repository, app_settings, stopped, mission_adapter), daemon=True)
+                 for loop in extensions.background_loops()]
+        for loop in loops:
+            loop.start()
         try:
             yield
         finally:
             stopped.set()
-            dispatcher.join(timeout=.2)
+            for loop in loops:
+                loop.join(timeout=.2)
             if app_settings.antigravity_persistent:
                 from backend.app.adapters.antigravity_session import SESSION_POOL
                 SESSION_POOL.close(app_settings.database_path)
@@ -74,15 +73,13 @@ def create_app(
         return JSONResponse(status_code=exc.status_code, content={'detail': str(exc)})
 
     app.include_router(build_health_router(app_settings, repository))
-    app.include_router(build_maintenance_router(app_settings, repository))
+    app.include_router(extensions.maintenance_router(app_settings, repository))
     app.include_router(build_agents_router(app_settings))
     app.include_router(build_conversations_router(app_settings, repository, adapter_override=mission_adapter))
     app.include_router(build_hub_settings_router(app_settings))
     app.include_router(build_missions_router(app_settings, repository, adapter_override=mission_adapter))
-    from backend.app.api.shared_work import build_router as build_work_router
-    app.include_router(build_work_router(app_settings, repository, mission_adapter))
-    from backend.app.api.tasks import build_router as build_tasks_router
-    app.include_router(build_tasks_router(app_settings, repository, mission_adapter))
+    for router in extensions.mission_routers(app_settings, repository, mission_adapter):
+        app.include_router(router)
     from backend.app.api.memory import build_router as build_memory_router
     app.include_router(build_memory_router(app_settings, repository))
     app.include_router(
@@ -100,14 +97,7 @@ def create_app(
         app.mount("/", StaticFiles(directory=app_settings.frontend_dist, html=True), name="frontend")
     # A persisted human choice may have committed just before a crash and
     # before its worker started. Reservations make rescheduling idempotent.
-    from backend.app.orchestration.deliberation import is_v2
-    from backend.app.api.missions import _run_mission_in_background
-    from backend.app.domain.models import MissionStatus
-    import threading
-    for pending in repository.list_missions():
-        if is_v2(pending) and pending.status == MissionStatus.PENDING:
-            threading.Thread(target=_run_mission_in_background,
-                             args=(repository, app_settings, pending.id, mission_adapter), daemon=True).start()
+    extensions.resume(repository, app_settings, mission_adapter)
     return app
 
 

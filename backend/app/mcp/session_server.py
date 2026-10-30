@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 
+from backend.app import extension_points
 from backend.app.mcp import server
 from backend.app.mcp.tools import MCPTools, MCPToolError
 from backend.app.storage.execution import ExecutionLedger
@@ -21,7 +22,7 @@ def dispatch(repo, root, worker_id, frame):
     if method == 'initialize':
         return server._ok(request_id, server._handle_initialize(None, {}))
     if method == 'tools/list':
-        descriptors = deepcopy(server._TOOL_DESCRIPTORS)
+        descriptors = deepcopy(server.tool_descriptors())
         for item in descriptors:
             schema = item['inputSchema']
             schema['properties']['context_token'] = {'type': 'string', 'description': '本轮宿主签发的 context_token；不得沿用上一轮。'}
@@ -39,7 +40,7 @@ def dispatch(repo, root, worker_id, frame):
     if not isinstance(params, dict) or not isinstance(params.get('arguments'), dict):
         return server._err(request_id, server.JSONRPC_INVALID_PARAMS, 'Expected tool arguments')
     name, args = params.get('name'), dict(params['arguments'])
-    if not isinstance(name, str) or name not in server._TOOL_HANDLERS:
+    if not isinstance(name, str) or server.tool_handler(name) is None:
         return server._err(request_id, server.JSONRPC_METHOD_NOT_FOUND, 'Unknown tool')
     token = args.pop('context_token', None)
     operation_id = args.pop('operation_id', None)
@@ -61,7 +62,7 @@ def dispatch(repo, root, worker_id, frame):
                              workspace_root=Path(os.environ.get('YIREN_MCP_WORKSPACE_ROOT', os.getcwd())))
             ctx = server._Context(grant['mission_id'], grant['agent_id'], grant['turn_id'], grant['provider_id'], tools)
             handler_args = {**args, 'operation_id': operation_id} if name == 'shared_work' else args
-            return server._TOOL_HANDLERS[name](ctx, handler_args)
+            return server.tool_handler(name)(ctx, handler_args)
         result = ExecutionLedger(repo).call(worker_id, token, name, args, operation_id, invoke)
         return server._ok(request_id, result)
     except (MCPToolError, ValueError) as exc:
@@ -69,6 +70,7 @@ def dispatch(repo, root, worker_id, frame):
 
 
 def run():
+    extension_points.load(os.environ.get('YIREN_MCP_EXTENSIONS', '').split(','))
     repo = Repository(Path(os.environ['YIREN_MCP_DB_PATH']))
     root = Path(os.environ['YIREN_MCP_ARTIFACT_ROOT'])
     worker_id = os.environ['YIREN_MCP_WORKER_ID']

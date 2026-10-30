@@ -9,10 +9,10 @@ from copy import deepcopy
 from pydantic import Field
 
 from backend.app.domain.models import Conversation
-from backend.app.work.adaptive import AdaptiveWork, digest
-from backend.app.work.adaptive_models import NewWork
-from backend.app.work.service import WorkError, SharedWork, now, uid
-from backend.app.work.workflow import Workflow
+from backend.app.extensions.tasks.adaptive import AdaptiveWork, digest
+from backend.app.extensions.tasks.adaptive_models import NewWork
+from backend.app.extensions.tasks.service import WorkError, SharedWork, now, uid
+from backend.app.extensions.tasks.workflow import Workflow
 
 
 class CreateTask(NewWork):
@@ -165,7 +165,7 @@ class Tasks:
             # authorization commit atomically with the creation receipt.
             root['paused'] = True
             root['source_conversation_id'] = request.source_conversation_id
-            from backend.app.work.workflow import configure
+            from backend.app.extensions.tasks.workflow import configure
             configure(self.work, board, root, request.orchestration.model_dump())
             root['paused'] = request.paused
             self.work._save(db, board, 'task_created', 'human', {'task_id': root['id']})

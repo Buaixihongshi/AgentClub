@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.adapters.deliberation_cli import DeliberationCLIAdapter, isolation_supported, sandbox_profile
-from backend.app.orchestration.deliberation import Deliberation
+from backend.app.extensions.discussion.deliberation_cli import DeliberationCLIAdapter, isolation_supported, sandbox_profile
+from backend.app.extensions.discussion.deliberation import Deliberation
 from backend.app.mcp.tools import MCPTools
 from backend.tests.test_deliberation import create
 

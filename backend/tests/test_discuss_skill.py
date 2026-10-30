@@ -9,14 +9,13 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.app.adapters.fake import FakeCLIAdapter
-from backend.app.api.mission_requests import (
-    CreateMissionRequest, DiscussionControlRequest, create_requested_mission,
-)
+from backend.app.api.mission_requests import CreateMissionRequest, create_requested_mission
+from backend.app.extensions.discussion.requests import DiscussionControlRequest
 from backend.app.domain import project_skills
 from backend.app.domain.models import Mission, MissionStatus
 from backend.app.main import create_app
-from backend.app.orchestration.deliberation import Deliberation
-from backend.app.orchestration.roundtable import DiscussionError
+from backend.app.extensions.discussion.deliberation import Deliberation
+from backend.app.extensions.discussion.roundtable import DiscussionError
 from backend.app.orchestration.runner import MissionRunner
 
 

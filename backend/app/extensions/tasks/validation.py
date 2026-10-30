@@ -3,9 +3,9 @@ import hashlib
 import json
 import re
 
-from backend.app.work.runtime import run_check
-from backend.app.work.service import WorkError, now, uid
-from backend.app.work.snapshots import snapshot, read_bytes
+from backend.app.extensions.tasks.runtime import run_check
+from backend.app.extensions.tasks.service import WorkError, now, uid
+from backend.app.extensions.tasks.snapshots import snapshot, read_bytes
 
 
 def validate(service, conversation_id, task, agreement, mission_id, root=None):

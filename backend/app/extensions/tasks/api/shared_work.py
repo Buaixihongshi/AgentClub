@@ -7,8 +7,8 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from backend.app.settings import EXTENSION_DISABLED, snapshot_settings
-from backend.app.work.models import WorkCommand
-from backend.app.work.service import SharedWork, WorkError
+from backend.app.extensions.tasks.models import WorkCommand
+from backend.app.extensions.tasks.service import SharedWork, WorkError
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,8 @@ def drain(repository, settings, conversation_id, adapter=None):
         return
     work = SharedWork(repository, check_timeout=settings.cli_timeout)
     if work.read(conversation_id).get('protocol') == 'adaptive_v1':
-        from backend.app.work.adaptive import AdaptiveWork
-        from backend.app.work.releases import process
+        from backend.app.extensions.tasks.adaptive import AdaptiveWork
+        from backend.app.extensions.tasks.releases import process
         process(AdaptiveWork(repository, check_timeout=settings.cli_timeout), conversation_id)
     adaptive = SharedWork(repository).read(conversation_id).get('protocol') == 'adaptive_v1'
     for _ in range(200 if adaptive else 12):
@@ -84,7 +84,7 @@ def build_router(settings, repository, adapter=None):
 
     @router.get('/snapshots/{snapshot_id}/file')
     def snapshot_file(conversation_id: str, snapshot_id: str, path: str):
-        from backend.app.work.snapshots import content
+        from backend.app.extensions.tasks.snapshots import content
         try:
             raw = content(repository, conversation_id, snapshot_id, path)
             media = mimetypes.guess_type(path)[0] or 'application/octet-stream'

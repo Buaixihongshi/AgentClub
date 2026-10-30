@@ -24,9 +24,9 @@ from backend.app.domain.models import (
 from backend.app.settings import Settings, snapshot_settings
 from backend.app.storage.repository import Repository
 
-from backend.app.api.mission_requests import MissionRequest as CreateConversationMissionRequest, create_requested_mission
-from backend.app.orchestration.roundtable import Roundtable, DiscussionError, ACTIVE
-from backend.app.api.discussion_projection import annotate_discussion_messages
+from backend.app.api.mission_requests import MissionRequest as CreateConversationMissionRequest, create_requested_mission, occupies_conversation
+from backend.app import extension_points
+from backend.app.domain.errors import DiscussionError
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +83,8 @@ def _conversation_summary(repo: Repository, conversation: Conversation) -> dict:
     history = repo.read_message_history(conversation_id=conversation.id)
     messages = [entry.message for entry in history.project()]
     latest_mission_id = missions[-1].id if missions else None
-    from backend.app.orchestration.deliberation import is_v2
-    discussion_events = [event for mission in missions if is_v2(mission)
-                         for event in repo.list_events_after(mission.id, 0)]
-    projected = annotate_discussion_messages([_message_event(m) for m in messages], missions, discussion_events)
+    projected = [_message_event(m) for m in messages]
+    extension_points.each('conversation_preview', repo, missions, projected)
     visible = [message for message in projected if message['metadata'].get('discussion_visibility') != 'internal']
     preview = visible[-1]['content'][:80] if visible else None
     payload = conversation.model_dump(mode="json")
@@ -134,7 +132,7 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
         for mission in missions
         for event in repo.list_events_after(mission.id, 0)
     ]
-    annotate_discussion_messages(message_events, missions, history_events, repo)
+    extension_points.each('annotate_messages', message_events, missions, history_events, repo, None)
     work_status_label = None
     if work_row:
         board = json.loads(work_row['data'])
@@ -226,8 +224,7 @@ def build_router(settings: Settings, repository: Repository, adapter_override: O
         with repo._transaction(immediate=True):
             conversation = repo.get_conversation(conversation_id)
             if update_data.get('status') == ConversationStatus.ARCHIVED:
-                from backend.app.orchestration.deliberation import occupies_conversation
-                if any(occupies_conversation(m) and not any(e.event_type == 'adaptive.claimed' for e in repo.list_events_after(m.id, 0))
+                if any(occupies_conversation(m) and not extension_points.any('archive_allowed', repo, m)
                        for m in repo.list_missions_for_conversation(conversation_id)):
                     raise DiscussionError('Stop the active mission before archiving')
             updated = conversation.model_copy(update={**update_data, 'updated_at': utc_now()})
@@ -240,7 +237,6 @@ def build_router(settings: Settings, repository: Repository, adapter_override: O
             conversation = repo.get_conversation(conversation_id)
             if conversation is None or conversation.kind != 'chat':
                 raise HTTPException(status_code=404, detail="Conversation not found")
-            from backend.app.orchestration.deliberation import occupies_conversation
             if any(occupies_conversation(m) for m in repo.list_missions_for_conversation(conversation_id)):
                 raise DiscussionError('对话仍在进行，请先停止后再删除')
             for row in db.execute('SELECT conversation_id, data FROM work_boards').fetchall():

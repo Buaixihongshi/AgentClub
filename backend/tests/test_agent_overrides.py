@@ -162,7 +162,8 @@ def test_model_argument_overrides_shared_config_without_mutation():
 
 def test_both_cli_routes_receive_role_model(temp_settings, monkeypatch):
     from unittest.mock import Mock
-    from backend.app.adapters import provider_router, deliberation_cli
+    from backend.app.adapters import provider_router
+    from backend.app.extensions.discussion import deliberation_cli
     from backend.app.domain.models import CLIProvider
     router = provider_router.ProviderRouterAdapter(temp_settings.config_dir, agent_overrides={
         'wangye': AgentOverride(provider_models={'codex': 'gpt-6.1-sol'})})
@@ -174,5 +175,6 @@ def test_both_cli_routes_receive_role_model(temp_settings, monkeypatch):
     assert subprocess.call_args.args[1] == ['exec', '--model', 'gpt-6.1-sol']
     isolated = Mock()
     monkeypatch.setattr(deliberation_cli, 'DeliberationCLIAdapter', isolated)
-    router.run_deliberation_turn('mission', 'wangye', 'turn', 'codex', 'prompt', Mock())
+    from backend.app.extensions.discussion.hooks import run_deliberation_turn
+    run_deliberation_turn(router, 'mission', 'wangye', 'turn', 'codex', 'prompt', Mock())
     assert isolated.call_args.kwargs['model'] == 'gpt-6.1-sol'

@@ -1,13 +1,14 @@
 import hashlib
 import os
 import stat
-from functools import wraps
+from functools import partial, wraps
 from inspect import signature
 
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
+from backend.app import extension_points
 from backend.app.domain.history import select_context_messages
 from backend.app.domain.models import (
     Message,
@@ -32,52 +33,6 @@ def _clip_text(value: object, limit: int = 160) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def _context_digest(view: dict) -> str:
-    """A readable summary of the frozen context an agent just read.
-
-    The raw view is mostly ids; the useful part is the task, the other agents'
-    positions, the open issues and which materials are in play. This is what
-    the observability panel shows instead of "Returned frozen phase context".
-    """
-    snapshot = view.get("snapshot") if isinstance(view.get("snapshot"), dict) else {}
-    results = view.get("results") if isinstance(view.get("results"), list) else []
-    issues = view.get("issues") if isinstance(view.get("issues"), dict) else {}
-    materials = snapshot.get("materials") if isinstance(snapshot.get("materials"), dict) else {}
-    paths = [str(item.get("path")) for item in materials.values()
-             if isinstance(item, dict) and item.get("path")]
-    lines = ["phase={phase} · round={round} · results={r} · issues={i} · materials={m} · history={h}".format(
-        phase=view.get("phase") or "?",
-        round=view.get("round_index", 0),
-        r=len(results), i=len(issues), m=len(materials),
-        h=snapshot.get("history_count") or 0)]
-    task = snapshot.get("goal")
-    if task:
-        lines.append("任务：" + _clip_text(task, 140))
-    for result in results[:3]:
-        if not isinstance(result, dict):
-            continue
-        data = result.get("data") if isinstance(result.get("data"), dict) else {}
-        text = data.get("position_summary") or data.get("content") or ""
-        if not text:
-            claims = data.get("claims") if isinstance(data.get("claims"), list) else []
-            text = claims[0].get("statement") if claims and isinstance(claims[0], dict) else ""
-        if not text:
-            sections = data.get("sections") if isinstance(data.get("sections"), list) else []
-            text = sections[0].get("content") if sections and isinstance(sections[0], dict) else ""
-        if text:
-            lines.append("- {agent}/{kind}: {text}".format(
-                agent=result.get("agent_id") or "?", kind=result.get("kind") or "?",
-                text=_clip_text(text, 140)))
-    for issue in list(issues.values())[:2]:
-        if isinstance(issue, dict):
-            lines.append("- issue/{cat}: {problem}".format(
-                cat=issue.get("category") or "?", problem=_clip_text(issue.get("problem"), 120)))
-    if paths:
-        shown = "、".join(paths[:3]) + ("…" if len(paths) > 3 else "")
-        lines.append("材料：" + shown)
-    return "\n".join(lines)
-
-
 def _mission_context_digest(result: dict) -> str:
     """The non-deliberation `read_context` answer: task plus recent messages."""
     mission = result.get("mission") if isinstance(result.get("mission"), dict) else {}
@@ -98,29 +53,14 @@ class MCPToolError(ValueError):
 MAX_A2A_PURPOSE_CHARS = 4000
 
 
-def roundtable_guard(fn):
+def extension_guard(fn):
+    """Let installed extensions wrap this tool (e.g. roundtable turn scope)."""
     call_signature = signature(fn)
 
     @wraps(fn)
     def guarded(self, *args, **kwargs):
-        from backend.app.orchestration.roundtable import Roundtable, DiscussionError
-        values = call_signature.bind(self, *args, **kwargs).arguments
-        mission_id = values.get('mission_id')
-        mission = self.repository.get_mission(mission_id)
-        agent = values.get('agent_id') or values.get('sender_agent_id')
-        turn = values.get('turn_id') or values.get('sender_turn_id')
-        if mission is None or mission.room_mode != 'roundtable' or (fn.__name__ == 'update_status' and not agent):
-            return fn(self, *args, **kwargs)
-        if mission.discussion and mission.discussion.protocol == 'deliberation_v2':
-            raise MCPToolError('V2 discussion only allows frozen context/source reads and structured submission')
-        try:
-            with Roundtable(self.repository).tool_scope(mission_id, agent, turn, values.get('provider_id')):
-                if fn.__name__ == 'update_status' and values.get('status') != 'running':
-                    raise DiscussionError('The host owns roundtable lifecycle; publish your conclusion as a message')
-                return fn(self, *args, **kwargs)
-        except (DiscussionError, MCPToolError) as exc:
-            record_tool_error(self.repository, mission_id, turn or 'unknown', agent or 'unknown', fn.__name__, str(exc), values.get('provider_id'))
-            raise MCPToolError(str(exc)) from exc
+        arguments = call_signature.bind(self, *args, **kwargs).arguments
+        return extension_points.guarded(fn.__name__, self, arguments, lambda: fn(self, *args, **kwargs))
     return guarded
 
 
@@ -162,6 +102,13 @@ class MCPTools:
         self.lease_token = lease_token
         self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
 
+    def __getattr__(self, name):
+        # Tools contributed by installed extensions, e.g. tools.shared_work(...).
+        method = extension_points.tool_methods.get(name)
+        if method is None:
+            raise AttributeError(name)
+        return partial(method, self)
+
     def scheduled_targets(self) -> List[str]:
         """Agents with a remaining declared turn, for the subprocess MCP server."""
         if self._is_target_scheduled is None:
@@ -186,18 +133,11 @@ class MCPTools:
         issue_offset: int = 0,
         message_ids: Optional[List[str]] = None,
     ) -> Dict[str, object]:
-        from backend.app.orchestration.deliberation import Deliberation, is_v2
-        if is_v2(self.repository.get_mission(mission_id)):
-            try:
-                result = Deliberation(self.repository).read_context(mission_id, agent_id, turn_id, provider_id, self.lease_token,
-                    material_offset=material_offset, history_offset=history_offset, issue_offset=issue_offset)
-                record_tool_call(self.repository, mission_id, turn_id, agent_id, 'read_context', {}, provider_id)
-                record_tool_result(self.repository, mission_id, turn_id, agent_id, 'read_context',
-                                   summary='Returned frozen phase context', provider_id=provider_id,
-                                   output=_context_digest(result))
-                return result
-            except ValueError as exc:
-                raise MCPToolError(str(exc)) from exc
+        taken_over = extension_points.first('tool_override', self, 'read_context', {
+            'mission_id': mission_id, 'agent_id': agent_id, 'turn_id': turn_id, 'provider_id': provider_id,
+            'material_offset': material_offset, 'history_offset': history_offset, 'issue_offset': issue_offset})
+        if taken_over is not None:
+            return taken_over
         if agent_id and turn_id:
             record_tool_call(
                 self.repository,
@@ -239,9 +179,9 @@ class MCPTools:
             }
             if sections.checkpoint:
                 result["checkpoint"] = sections.checkpoint
-        if conversation_id and self.tasks_enabled:
-            from backend.app.work.service import SharedWork
-            result['shared_work'] = SharedWork(self.repository).read(conversation_id)
+        if conversation_id:
+            for extra in extension_points.collect('context_extras', self, mission, conversation_id):
+                result.update(extra)
         if agent_id and turn_id:
             record_tool_result(
                 self.repository,
@@ -261,7 +201,7 @@ class MCPTools:
         from backend.app.memory.store import MemoryStore, MemoryError
         return MemoryStore(self.repository, self.memory_root), MemoryError
 
-    @roundtable_guard
+    @extension_guard
     def memory(self, mission_id, agent_id, turn_id, provider_id, action="read", data=None):
         """Long-term, cross-conversation memory of the calling agent only."""
         from backend.app.orchestration.events import record_tool_call, record_tool_result
@@ -326,7 +266,7 @@ class MCPTools:
         except MemoryError_ as exc:
             raise MCPToolError(str(exc)) from exc
 
-    @roundtable_guard
+    @extension_guard
     def save_checkpoint(self, mission_id, agent_id, turn_id, provider_id, text, source_message_ids=None):
         """Save the agent's rolling short-term checkpoint for this conversation."""
         from backend.app.orchestration.events import record_tool_call, record_tool_result
@@ -352,45 +292,7 @@ class MCPTools:
                            summary='saved', provider_id=provider_id)
         return checkpoint
 
-    @roundtable_guard
-    def shared_work(self, mission_id, agent_id, turn_id, provider_id, action='read',
-                    data=None, expected_revision=None, operation_id=None):
-        from backend.app.work.models import WorkCommand
-        from backend.app.work.service import SharedWork, WorkError
-        from pydantic import ValidationError
-        from backend.app.settings import EXTENSION_DISABLED
-        if not self.tasks_enabled:
-            raise MCPToolError(EXTENSION_DISABLED['tasks'])
-        mission = self._require_mission(mission_id)
-        if not mission.conversation_id or is_provider_verification_mission(mission):
-            raise MCPToolError('共享开发任务需要普通会话上下文')
-        service = SharedWork(self.repository, self.workspace_root)
-        try:
-            if action == 'read':
-                board = service.read(mission.conversation_id)
-                if board.get('protocol') == 'adaptive_v1' and any(t['active_mission_id'] == mission_id for t in board['tasks']):
-                    from backend.app.work.adaptive import AdaptiveWork
-                    return AdaptiveWork(self.repository, self.workspace_root).agent_view(mission_id)
-                return board
-            if action == 'read_evidence':
-                value = data or {}
-                offset = value.get('offset', 0)
-                if not isinstance(offset, int) or offset < 0:
-                    raise MCPToolError('证据分页 offset 无效')
-                raw = service.read_log(mission.conversation_id, value.get('log_id')).decode(errors='replace')
-                return {'content': raw[offset:offset + 8000], 'next_offset': offset + 8000 if offset + 8000 < len(raw) else None}
-            command = WorkCommand.model_validate({'action': action, 'data': data or {}, 'expected_revision': expected_revision})
-            record_tool_call(self.repository, mission_id, turn_id, agent_id, 'shared_work',
-                             {'action': action, 'task_id': command.data.get('task_id')}, provider_id)
-            result = service.command(mission.conversation_id, action, command.data, expected_revision,
-                                     actor=agent_id, mission_id=mission_id, turn_id=turn_id, operation_id=operation_id)
-            record_tool_result(self.repository, mission_id, turn_id, agent_id, 'shared_work',
-                               summary=action, provider_id=provider_id)
-            return result
-        except (WorkError, ValidationError) as exc:
-            raise MCPToolError(str(exc)) from exc
-
-    @roundtable_guard
+    @extension_guard
     def publish_message(
         self,
         mission_id: str,
@@ -449,7 +351,7 @@ class MCPTools:
             )
         return message
 
-    @roundtable_guard
+    @extension_guard
     def write_artifact(
         self,
         mission_id: str,
@@ -462,11 +364,7 @@ class MCPTools:
         source_path: Optional[str] = None,
     ) -> Path:
         self._require_mission(mission_id)
-        from backend.app.work.service import SharedWork
-        work = SharedWork(self.repository, self.workspace_root).execution_context(mission_id)
-        if work and (work['task']['status'] == 'cancelled'
-                     or work['task']['attempts'][-1]['stage'] in {'review', 'reconcile', 'handoff'}):
-            raise MCPToolError('当前工作动作只读或已取消，不能写入产物')
+        extension_points.each('tool_check', self, 'write_artifact', {'mission_id': mission_id})
         record_tool_call(
             self.repository,
             mission_id,
@@ -577,34 +475,6 @@ class MCPTools:
 
     READ_ARTIFACT_MAX_CHARS = 20000
 
-    def read_discussion_result(self, mission_id, agent_id, turn_id, provider_id, source_id, offset=0, max_chars=8000):
-        from backend.app.orchestration.deliberation import Deliberation
-        try:
-            result = Deliberation(self.repository).read_entry(mission_id, agent_id, turn_id, provider_id,
-                self.lease_token, source_id, offset, max_chars)
-            record_tool_call(self.repository, mission_id, turn_id, agent_id, 'read_discussion_result',
-                             {'source_id': source_id, 'offset': offset}, provider_id)
-            page = result.get('text') if isinstance(result, dict) else None
-            record_tool_result(self.repository, mission_id, turn_id, agent_id, 'read_discussion_result',
-                               summary='Returned frozen source page', provider_id=provider_id,
-                               output=page if isinstance(page, str) else None)
-            return result
-        except ValueError as exc:
-            raise MCPToolError(str(exc)) from exc
-
-    def submit_discussion_result(self, mission_id, agent_id, turn_id, provider_id, result):
-        from backend.app.orchestration.deliberation import Deliberation
-        kind = result.get('kind') if isinstance(result, dict) else 'invalid'
-        if not isinstance(kind, str) or kind not in {'opinion', 'contribution', 'review', 'draft'}:
-            kind = 'invalid'
-        record_tool_call(self.repository, mission_id, turn_id, agent_id, 'submit_discussion_result', {'kind': kind}, provider_id)
-        try:
-            submitted = Deliberation(self.repository).submit(mission_id, agent_id, turn_id, provider_id, self.lease_token, result)
-            record_tool_result(self.repository, mission_id, turn_id, agent_id, 'submit_discussion_result', summary='Structured result accepted', provider_id=provider_id)
-            return submitted
-        except ValueError as exc:
-            raise MCPToolError(str(exc)) from exc
-
     def read_artifact(
         self,
         mission_id: str,
@@ -618,28 +488,11 @@ class MCPTools:
         offset: int = 0,
         max_chars: int = 8000,
     ) -> Dict[str, object]:
-        from backend.app.orchestration.deliberation import is_v2
-        if is_v2(self.repository.get_mission(mission_id)):
-            from backend.app.orchestration.deliberation import Deliberation
-            key = f'artifact:{source_mission_id or mission_id}:{relative_path}'
-            record_tool_call(
-                self.repository, mission_id, turn_id, agent_id, "read_artifact",
-                {"relative_path": relative_path, "offset": offset}, provider_id,
-            )
-            try:
-                page = Deliberation(self.repository).read_material(
-                    mission_id, agent_id, turn_id, provider_id, self.lease_token, key, offset, max_chars)
-            except ValueError as exc:
-                record_tool_error(self.repository, mission_id, turn_id, agent_id,
-                                  "read_artifact", str(exc), provider_id)
-                raise MCPToolError(str(exc)) from exc
-            content = page.get("content") if isinstance(page.get("content"), str) else ""
-            record_tool_result(
-                self.repository, mission_id, turn_id, agent_id, "read_artifact",
-                summary="Read frozen material {p}".format(p=relative_path),
-                provider_id=provider_id, output=content,
-            )
-            return page
+        taken_over = extension_points.first('tool_override', self, 'read_artifact', {
+            'mission_id': mission_id, 'agent_id': agent_id, 'turn_id': turn_id, 'relative_path': relative_path,
+            'provider_id': provider_id, 'source_mission_id': source_mission_id, 'offset': offset, 'max_chars': max_chars})
+        if taken_over is not None:
+            return taken_over
         self._require_mission(mission_id)
         record_tool_call(
             self.repository,
@@ -734,7 +587,7 @@ class MCPTools:
         )
         return result
 
-    @roundtable_guard
+    @extension_guard
     def log_thought(
         self,
         mission_id: str,
@@ -846,7 +699,7 @@ class MCPTools:
             )
         return {"ok": True, "event_id": event_id}
 
-    @roundtable_guard
+    @extension_guard
     def update_status(
         self,
         mission_id: str,
@@ -858,9 +711,8 @@ class MCPTools:
         provider_id: Optional[str] = None,
     ) -> None:
         mission = self._require_mission(mission_id)
-        from backend.app.work.service import SharedWork
-        if agent_id and status != 'running' and SharedWork(self.repository, self.workspace_root).execution_context(mission_id):
-            raise MCPToolError('自主工作的生命周期由宿主控制，请提交结构化结果')
+        extension_points.each('tool_check', self, 'update_status', {
+            'mission_id': mission_id, 'status': status, 'agent_id': agent_id})
         if agent_id and turn_id:
             record_tool_call(
                 self.repository,
@@ -885,7 +737,7 @@ class MCPTools:
                 output=summary or "",
             )
 
-    @roundtable_guard
+    @extension_guard
     def invoke_agent(
         self,
         mission_id: str,
@@ -904,23 +756,12 @@ class MCPTools:
             record_tool_error(self.repository, mission_id, sender_turn_id, sender_agent_id,
                               "invoke_agent", message, provider_id)
             raise MCPToolError(message)
-        from backend.app.work.service import SharedWork, WorkError
-        work_context = SharedWork(self.repository, self.workspace_root).execution_context(mission_id)
-        if work_context:
-            from backend.app.work.adaptive import AdaptiveWork, digest
-            try:
-                return AdaptiveWork(self.repository, self.workspace_root).delegate(
-                    mission.conversation_id, mission_id, sender_agent_id, sender_turn_id,
-                    target_agent_id, purpose, mode,
-                    digest({'mission': mission_id, 'turn': sender_turn_id, 'target': target_agent_id, 'purpose': purpose, 'mode': mode}))
-            except WorkError as exc:
-                raise MCPToolError(str(exc)) from exc
-        if mission.room_mode == 'roundtable':
-            from backend.app.orchestration.roundtable import Roundtable
-            record_tool_call(self.repository, mission_id, sender_turn_id, sender_agent_id, 'invoke_agent', {'target_agent_id': target_agent_id, 'purpose': purpose, 'mode': mode}, provider_id)
-            result = Roundtable(self.repository).invoke(mission_id, sender_agent_id, sender_turn_id, target_agent_id, purpose, mode)
-            record_tool_result(self.repository, mission_id, sender_turn_id, sender_agent_id, 'invoke_agent', summary=result['status'], provider_id=provider_id)
-            return result
+        taken_over = extension_points.first('tool_override', self, 'invoke_agent', {
+            'mission': mission, 'mission_id': mission_id, 'sender_agent_id': sender_agent_id,
+            'sender_turn_id': sender_turn_id, 'target_agent_id': target_agent_id, 'purpose': purpose,
+            'provider_id': provider_id, 'mode': mode})
+        if taken_over is not None:
+            return taken_over
         self._require_mission(mission_id)
         record_tool_call(
             self.repository,
