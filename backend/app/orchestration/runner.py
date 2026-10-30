@@ -37,6 +37,7 @@ from backend.app.orchestration.events import (
 )
 from backend.app.memory.assembly import assemble, sections_into_prompt
 from backend.app.memory import handover as handover_store
+from backend.app.orchestration import interruption
 from backend.app.orchestration.context import build_artifact_index, build_conversation_context
 from backend.app.orchestration.speaker import WorkflowStep, resume_purpose
 from backend.app.orchestration.strategies import OrchestrationPlan, plan_orchestration
@@ -116,6 +117,7 @@ class MissionRunner:
         taken_over = extension_points.first('mission_takeover', self, mission)
         if taken_over is not None:
             return taken_over
+        interruption.record_owner(self.repository, mission.id)
 
         mission = mission.model_copy(
             update={
@@ -135,6 +137,7 @@ class MissionRunner:
         max_turns = plan.max_turns
         max_a2a = plan.max_a2a_invocations
         orchestration_mode = plan.mode
+        interruption.record_plan(self.repository, mission.id, workflow)
 
         a2a_queue: deque[WorkflowStep] = deque()
         # Steps requested during the running turn. They are merged ahead of the
@@ -165,6 +168,7 @@ class MissionRunner:
             )
 
         while True:
+            claimed_index: Optional[int] = None
             pending_interrupt = self._check_pending_interrupt(mission)
             if pending_interrupt is not None and (a2a_queue or pending_replies):
                 cancelled_steps = [
@@ -206,6 +210,7 @@ class MissionRunner:
             ):
                 step = workflow[workflow_cursor]
                 workflow_cursor += 1
+                claimed_index = workflow_cursor - 1
             elif workflow_cursor < len(workflow):
                 return self._stop_mission(
                     mission,
@@ -228,6 +233,8 @@ class MissionRunner:
 
             turn_index += 1
             turn_id = "turn_{index}_{suffix}".format(index=turn_index, suffix=uuid4().hex[:8])
+            if claimed_index is not None:
+                interruption.record_step(self.repository, mission.id, claimed_index, turn_id)
             turn_purpose = _build_turn_purpose(_a2a_turn_purpose(step), pending_interrupt)
             a2a_step = step if step.origin in ("a2a", "a2a_resume") else None
 

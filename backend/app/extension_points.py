@@ -25,6 +25,7 @@ HOOKS = (
     'mission_created',       # (repository, settings, payload, mission, conversation, targets, registry) -> Mission | None
     'occupies_conversation',  # (mission) -> bool, on top of the core active statuses
     'archive_allowed',       # (repository, mission) -> bool: an occupying mission that may be archived
+    'mission_owned',         # (repository, mission) -> bool: run and restart recovery belong to the extension
     # Turns: per-attempt checks, cancellation, demo/API/router turn handling.
     'attempt_check',         # (runner, mission, tools, provider_id, prior_events) -> TurnOutcome | None
     'attempt_started',       # (repository, mission, turn_id, provider_id, attempt) -> None

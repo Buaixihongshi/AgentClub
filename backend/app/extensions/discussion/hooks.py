@@ -20,6 +20,11 @@ def mission_takeover(runner, mission):
     return None
 
 
+def mission_owned(repo, mission):
+    # Roundtable and V2 recover (and resume) their own missions on startup.
+    return is_v2(mission) or mission.room_mode == 'roundtable'
+
+
 def mission_failed(repo, mission):
     if mission.room_mode == 'roundtable':
         Roundtable(repo).fail(mission.id)

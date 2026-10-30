@@ -10,6 +10,7 @@ from backend.app import extension_points
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.errors import DiscussionError
 from backend.app.domain.models import Conversation, Message, MessageRole, Mission, MissionStatus, utc_now
+from backend.app.orchestration import interruption
 
 
 class DiscussionRequest(BaseModel):
@@ -107,6 +108,7 @@ def occupies_conversation(mission):
 def ensure_available(repo, conversation):
     if conversation.status == 'archived':
         raise DiscussionError('Conversation is archived; restore it before creating a mission')
+    interruption.recover(repo, repo.list_missions_for_conversation(conversation.id))
     if any(occupies_conversation(m) for m in repo.list_missions_for_conversation(conversation.id)):
         raise DiscussionError('Conversation already has an active mission')
 

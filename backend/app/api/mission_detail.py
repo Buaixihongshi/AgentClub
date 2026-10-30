@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.models import Message, Mission
+from backend.app.orchestration.interruption import INTERRUPTED_EVENT, REASON_LABELS
 from backend.app.orchestration.live_progress import get_live_progress_registry
 from backend.app.orchestration.turn_progress import HOST_PROGRESS_FIELDS, PROGRESS_NOTE_EVENT
 from backend.app.settings import Settings
@@ -398,8 +399,11 @@ def _derive_failure_events(mission: Mission, db_events) -> list[dict[str, object
         return []
     outcomes = {}
     progress_notes = {}
+    interrupted = None
     last_message_at = mission.created_at
     for event in db_events:
+        if event.event_type == INTERRUPTED_EVENT:
+            interrupted = event.payload
         if event.event_type == PROGRESS_NOTE_EVENT and event.payload.get("source") == "host":
             progress_notes[(event.payload.get("turn_id"), event.payload.get("attempt"))] = event.payload
         if event.event_type == "message" and event.payload.get("created_at"):
@@ -425,7 +429,11 @@ def _derive_failure_events(mission: Mission, db_events) -> list[dict[str, object
         timed_out = note is not None or "timeout" in error.lower() or "timed out" in error.lower() or "超时" in error
         published = any(e.event_type == "message" and e.payload.get("turn_id") == turn_id
                         and e.payload.get("role") == "agent" for e in db_events)
-        text = f"{label}本轮{'超时' if timed_out else '未完成'}，"
+        if interrupted and interrupted.get("turn_id") == turn_id:
+            reason = REASON_LABELS.get(interrupted.get("reason"), interrupted.get("reason"))
+            text = f"{label}本轮因{reason}中断，"
+        else:
+            text = f"{label}本轮{'超时' if timed_out else '未完成'}，"
         text += "已发布的回复已保留。" if published else "未发布回复。"
         created = event.created_at
         if isinstance(created, str):
@@ -449,12 +457,21 @@ def _derive_failure_events(mission: Mission, db_events) -> list[dict[str, object
         })
     if not failures and mission.status.value in {"blocked", "failed"}:
         # Runner/startup failures may have no terminal turn event at all.
+        content = "本次任务未完成，请检查任务状态后继续。"
+        if interrupted:
+            reason = REASON_LABELS.get(interrupted.get("reason"), interrupted.get("reason"))
+            content = f"本次任务因{reason}中断。"
         failures.append({
             "id": f"failure:{mission.id}", "mission_id": mission.id,
             "event_type": "mission.failure", "role": "system",
-            "content": "本次任务未完成，请检查任务状态后继续。",
+            "content": content,
             "created_at": mission.updated_at.isoformat(),
         })
+    if interrupted and failures:
+        # Name who never got a turn, so the user knows whom to address next.
+        names = [_agent_metadata(a).get("persona_label", a) for a in interrupted.get("remaining_agent_ids") or []]
+        tail = f"原计划尚未发言：{'、'.join(names)}。" if names else ""
+        failures[-1]["content"] += tail + "可以直接发消息继续。"
     return failures
 
 

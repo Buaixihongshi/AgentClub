@@ -4,7 +4,7 @@
 def install():
     from backend.app import extension_points as ep
     from backend.app.extensions.tasks import hooks, tools
-    for name in ('mission_held', 'mission_takeover', 'mission_finished', 'mission_created',
+    for name in ('mission_held', 'mission_takeover', 'mission_owned', 'mission_finished', 'mission_created',
                  'archive_allowed', 'attempt_check', 'demo_turn', 'route_turn', 'prompt_fragments'):
         ep.register(name, getattr(hooks, name))
     ep.register('tool_check', tools.tool_check)

@@ -36,6 +36,8 @@ def create_app(
     from backend.app.storage.execution import ExecutionLedger
     ExecutionLedger(repository).recover()
     extensions.recover(repository, app_settings)
+    from backend.app.orchestration import interruption
+    interruption.recover(repository)
     app_settings.artifact_root.mkdir(parents=True, exist_ok=True)
 
     @asynccontextmanager
