@@ -260,7 +260,7 @@ flowchart LR
 | `backend/app/orchestration/runner.py` / MissionRunner | 执行有界动作并报告结果；一次 mission 完成不直接关闭根任务 |
 | `backend/app/adapters/provider_router.py` | 在已授权配置内选择可用 Provider，不承担需求完成判定 |
 | `backend/app/mcp/tools.py` / MCP | 宿主绑定工作、角色、attempt 与权限；结构化读取、检查点、提交与协作 |
-| 实验性的 `backend/app/work/` | 可复用持久化、校验与展示代码；固定 reviewer、人工启动和重启规则需按本 Spec 重新评估 |
+| 实验性的 `backend/app/extensions/tasks/` | 可复用持久化、校验与展示代码；固定 reviewer、人工启动和重启规则需按本 Spec 重新评估 |
 | 会话与共享任务前端 | 展示工作事实和人类决定入口，不把实现字段直接变成用户流程 |
 
 新增持久调度应接在现有执行栈上，不能另造一个不受 MissionRunner 预算和 MCP 身份约束的 A2A 通道。Agent 间调用继续经过 `invoke_agent` 及其宿主入队机制；持久工作调度负责保存与恢复这些交接，不解析聊天中的 `@` 来分派。

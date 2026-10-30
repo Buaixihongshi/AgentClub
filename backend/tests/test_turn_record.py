@@ -207,7 +207,7 @@ def test_records_api_serves_chat_turns_and_waits_for_discussions_to_end(reposito
     from fastapi.testclient import TestClient
 
     from backend.app.main import create_app
-    from backend.app.orchestration.deliberation import Deliberation
+    from backend.app.extensions.discussion.deliberation import Deliberation
     from backend.app.orchestration.events import record_turn_started
     from backend.tests.test_deliberation import create
 

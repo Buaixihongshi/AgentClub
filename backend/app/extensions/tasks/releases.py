@@ -10,8 +10,8 @@ import subprocess
 import time
 
 from backend.app.adapters.subprocess_cli import kill_process_tree
-from backend.app.work.service import WorkError, now, uid
-from backend.app.work.runtime import managed_process
+from backend.app.extensions.tasks.service import WorkError, now, uid
+from backend.app.extensions.tasks.runtime import managed_process
 
 CONFIG_PATH = '.agenthub/work.local.json'
 

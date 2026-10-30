@@ -8,6 +8,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from backend.app import extensions  # noqa: E402  (same optional extensions as main.py)
+
+extensions.install()
 from backend.app.evaluation.real_pilot import run_pilot
 
 if __name__ == "__main__":

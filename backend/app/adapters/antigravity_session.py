@@ -19,6 +19,7 @@ import threading
 import time
 from uuid import uuid4
 
+from backend.app import extension_points
 from backend.app.adapters.antigravity_config import guarded_global_mcp_config
 from backend.app.adapters.base import TurnOutcome
 from backend.app.adapters.cli_diagnostics import write_cli_diagnostic
@@ -77,6 +78,7 @@ class _Worker:
                 'YIREN_MCP_ARTIFACT_ROOT': str(adapter.artifact_root),
                 'YIREN_MCP_WORKSPACE_ROOT': str(Path.cwd().resolve()),
                 'YIREN_MCP_WORKER_ID': self.id,
+                'YIREN_MCP_EXTENSIONS': ','.join(extension_points.modules()),
                 'PYTHONPATH': os.pathsep.join(filter(None, [str(Path(__file__).resolve().parents[3]), os.environ.get('PYTHONPATH')])),
             }
             spec = {'command': adapter.mcp_python, 'args': ['-m', 'backend.app.mcp.session_server'], 'env': env}

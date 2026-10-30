@@ -4,10 +4,10 @@ import time
 from backend.app.adapters.turn_budget import budgeted_turn, claim_attempt
 from concurrent.futures import ThreadPoolExecutor
 
-from backend.app.domain.deliberation import RESULT_TYPES
+from backend.app.extensions.discussion.models import RESULT_TYPES
 from backend.app.domain.models import AgentProfile, TurnStatus
 from backend.app.mcp.tools import MCPTools
-from backend.app.orchestration.deliberation import BUILD_ID, Deliberation, RULES_VERSION, digest
+from backend.app.extensions.discussion.deliberation import BUILD_ID, Deliberation, RULES_VERSION, digest
 from backend.app.orchestration.discussion_rules import COMMON_DISCUSSION_RULES
 from backend.app.orchestration.events import record_turn_started, record_turn_completed, record_turn_failed
 
@@ -98,7 +98,7 @@ def run_deliberation(repository, settings, mission_id, adapter):
                 outcome = None
                 event_offset = len(repository.list_events_after(mission_id, 0))
                 try:
-                    method = getattr(adapter, "run_deliberation_turn", adapter.run_turn)
+                    method = _deliberation_method(adapter)
                     outcome = method(mission_id, agent_id, turn_id, provider_id, prompt, tools)
                     error = outcome.summary or "Provider returned no valid structured submission"
                 except Exception as exc:
@@ -125,3 +125,13 @@ def run_deliberation(repository, settings, mission_id, adapter):
             for future in futures:
                 future.result()
         policy.complete_batch(mission_id)
+
+
+def _deliberation_method(adapter):
+    """The provider router gets V2 isolation; other adapters run their own turn."""
+    from functools import partial
+    from backend.app.adapters.provider_router import ProviderRouterAdapter
+    from backend.app.extensions.discussion.hooks import run_deliberation_turn
+    if isinstance(adapter, ProviderRouterAdapter):
+        return partial(run_deliberation_turn, adapter)
+    return getattr(adapter, "run_deliberation_turn", adapter.run_turn)

@@ -102,7 +102,7 @@ def test_every_scripts_module_the_backend_imports_is_bundled():
 
 
 def test_desktop_workflow_without_repository_points_to_the_menu(tmp_path, monkeypatch):
-    from backend.app.work.environments import TaskEnvironments
+    from backend.app.extensions.tasks.environments import TaskEnvironments
 
     folder = tmp_path / "workspace"
     folder.mkdir()

@@ -325,7 +325,7 @@ class DeliberationCLIAdapter:
                 ):
                     return TurnOutcome(status=TurnStatus.BLOCKED, summary='V2 cannot resume an existing CLI conversation')
                 if self.work_context:
-                    from backend.app.work.runtime import profile as work_profile
+                    from backend.app.extensions.tasks.runtime import profile as work_profile
                     work = self.work_context
                     readonly = work['task']['attempts'][-1]['stage'] in {'review', 'reconcile', 'handoff'}
                     db_path = tools.repository.database_path.resolve()
@@ -387,13 +387,13 @@ class DeliberationCLIAdapter:
                     cleanup.callback(kill_process_tree, proc)
                     read_fd, write_fd = os.pipe()
                     try:
-                        subprocess.Popen([sys.executable, str(Path(__file__).with_name('process_watchdog.py')),
+                        subprocess.Popen([sys.executable, str(Path(__file__).resolve().parents[2] / 'adapters' / 'process_watchdog.py'),
                                           str(read_fd), str(proc.pid)], pass_fds=(read_fd,), stdin=subprocess.DEVNULL,
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
                     finally:
                         os.close(read_fd)
                     cleanup.callback(os.close, write_fd)
-                    from backend.app.work.adaptive import AdaptiveWork
+                    from backend.app.extensions.tasks.adaptive import AdaptiveWork
                     AdaptiveWork(tools.repository, self.work_context['workspace_root']).record_process(mission_id, proc.pid)
                 progress = ToolResultDeadline(self.timeout, check_interval=self.progress_check_interval)
                 terminated = None
@@ -403,11 +403,11 @@ class DeliberationCLIAdapter:
                         break
                     except subprocess.TimeoutExpired:
                         if self.work_context:
-                            from backend.app.work.service import SharedWork
+                            from backend.app.extensions.tasks.service import SharedWork
                             current_work = SharedWork(tools.repository).execution_context(mission_id)
                             cancelled = not current_work or current_work['task']['status'] == 'cancelled'
                         else:
-                            from backend.app.orchestration.deliberation import Deliberation
+                            from backend.app.extensions.discussion.deliberation import Deliberation
                             policy = Deliberation(tools.repository)
                             state = policy.state(tools.repository.get_mission(mission_id))
                             cancelled = state['pending_control'] == 'stop' or state['phase'] == 'ended'
@@ -449,7 +449,7 @@ class DeliberationCLIAdapter:
                         stream_errors.extend(str(item) for item in errors if item)
                 _emit_turn_usage(tools.repository, mission_id, agent_id, provider_id, turn_id, usage)
                 if self.work_context:
-                    from backend.app.work.service import SharedWork
+                    from backend.app.extensions.tasks.service import SharedWork
                     current_work = SharedWork(tools.repository).execution_context(mission_id)
                     accepted = bool(current_work and current_work['task']['attempts'][-1].get('structured'))
                     published = any(m.turn_id == turn_id and m.agent_id == agent_id
@@ -457,7 +457,7 @@ class DeliberationCLIAdapter:
                     if not published:
                         accepted = False
                 else:
-                    from backend.app.orchestration.deliberation import Deliberation
+                    from backend.app.extensions.discussion.deliberation import Deliberation
                     accepted = Deliberation(tools.repository).state(tools.repository.get_mission(mission_id))['leases'][turn_id]['status'] == 'submitted'
                 diagnostic = terminated or '\n'.join([stderr.decode(errors='replace'), *stream_errors])
                 if not accepted and basename == 'agy':

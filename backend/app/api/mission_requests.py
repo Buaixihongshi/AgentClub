@@ -6,9 +6,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, StrictInt, model_validator
 
+from backend.app import extension_points
 from backend.app.domain.agent_registry import get_agent_registry
-from backend.app.domain.models import Conversation, DiscussionConfig, Message, MessageRole, Mission, MissionStatus, utc_now
-from backend.app.orchestration.roundtable import ACTIVE, DiscussionError
+from backend.app.domain.errors import DiscussionError
+from backend.app.domain.models import Conversation, Message, MessageRole, Mission, MissionStatus, utc_now
 
 
 class DiscussionRequest(BaseModel):
@@ -98,21 +99,12 @@ class CreateMissionRequest(MissionRequest):
     conversation_id: Optional[str] = None
 
 
-class DiscussionControlRequest(BaseModel):
-    action: Literal['finish', 'stop', 'select_synthesizer', 'retry', 'record_decision', 'restart_with_input', 'defer_input', 'save_knowledge_candidate']
-    request_id: str = Field(min_length=1, max_length=128)
-    summary_agent_id: Optional[str] = None
-    expected_revision: Optional[StrictInt] = None
-    agent_id: Optional[str] = None
-    turn_id: Optional[str] = None
-    decision_id: Optional[str] = None
-    option_id: Optional[str] = None
-    input_ids: Optional[list[str]] = None
-    goal: Optional[str] = None
+def occupies_conversation(mission):
+    return mission.status in {MissionStatus.PENDING, MissionStatus.RUNNING, MissionStatus.AWAITING_INPUT} or (
+        extension_points.any('occupies_conversation', mission))
 
 
 def ensure_available(repo, conversation):
-    from backend.app.orchestration.deliberation import occupies_conversation
     if conversation.status == 'archived':
         raise DiscussionError('Conversation is archived; restore it before creating a mission')
     if any(occupies_conversation(m) for m in repo.list_missions_for_conversation(conversation.id)):
@@ -162,63 +154,9 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
             raise DiscussionError('Invalid target_agent_id(s): ' + ', '.join(t for t in targets if t not in valid_ids), 400)
         config = None
         if payload.discussion:
-            participants = payload.discussion.participant_ids
-            if participants is None and payload.skill == 'discuss':
-                # Discuss runs with 2–3 voices; extra user roles join only
-                # when the request names them explicitly.
-                participants = registry.ids()[:3]
-                if not 2 <= len(participants) <= 3:
-                    raise DiscussionError('Discuss skill requires 2–3 project agents or explicit participant_ids', 422)
-            if any(p not in valid_ids for p in participants):
-                raise DiscussionError('Unknown discussion participant', 422)
-            limit = payload.discussion.max_turns or len(participants) * 2 + 1
-            if payload.discussion.protocol == 'roundtable_v1' and limit > settings.roundtable_max_turns:
-                raise DiscussionError('Discussion exceeds server roundtable_max_turns', 422)
-            config = DiscussionConfig(participant_ids=participants, max_turns=limit)
-            if payload.discussion.protocol == 'deliberation_v2':
-                from backend.app.orchestration.runner import _apply_agent_overrides
-                profiles = _apply_agent_overrides(registry.all(), settings.agent_overrides)
-                routes = {a.id: [a.default_provider_id, *a.fallback_provider_ids] for a in profiles if a.id in participants}
-                if settings.use_fake_cli:
-                    routes = {agent: ['fake'] for agent in participants}
-                limit = 2 * len(participants) + len(participants) * payload.discussion.max_exchange_rounds + 1
-                if limit > settings.deliberation_max_turns:
-                    raise DiscussionError('Discussion exceeds deliberation_max_turns', 422)
-                if not settings.use_fake_cli:
-                    from backend.app.adapters.deliberation_cli import isolation_supported
-                    from backend.app.config.providers import get_cli_provider, ProviderNotFoundError
-                    from pathlib import Path
-                    for agent, candidates in routes.items():
-                        eligible = []
-                        for pid in dict.fromkeys(candidates):
-                            if pid in settings.api_connections:
-                                if settings.api_connections[pid].get('enabled'):
-                                    eligible.append(pid)
-                                continue
-                            try:
-                                provider = get_cli_provider(settings.config_dir, pid, overrides=settings.provider_overrides)
-                            except ProviderNotFoundError:
-                                continue
-                            if provider.enabled and (pid == 'fake' or (provider.mcp_enabled and Path(provider.command).name in {'codex', 'claude', 'agy'})):
-                                eligible.append(pid)
-                        if not eligible:
-                            raise DiscussionError(f'isolation_not_supported: no enabled isolated provider for {agent}', 422)
-                        if candidates[0] not in eligible:
-                            raise DiscussionError(f'configuration: primary provider unavailable for {agent}', 422)
-                        # Never promote an API fallback to primary by filtering
-                        # the configured route: that would bypass export consent.
-                        routes[agent] = list(dict.fromkeys(candidates))
-                    if any(pid != 'fake' and pid not in settings.api_connections for route in routes.values() for pid in route) and not isolation_supported():
-                        raise DiscussionError('isolation_not_supported: V2 requires macOS sandbox-exec', 422)
-                config = DiscussionConfig(participant_ids=participants, max_turns=limit, protocol='deliberation_v2',
-                    max_exchange_rounds=payload.discussion.max_exchange_rounds, provider_routes=routes,
-                    profiles=[a.model_dump(mode='json') for a in profiles if a.id in participants])
-                if payload.skill == 'discuss':
-                    from backend.app.domain.project_skills import load_discuss_skill
-                    try:
-                        config.skill_instructions, config.skill_hash = load_discuss_skill()
-                    except (OSError, ValueError) as exc:
-                        raise DiscussionError('Project skill discuss is unavailable; check skills/discuss/SKILL.md', 503) from exc
+            config = extension_points.first('mission_prepare', repo, settings, payload, registry, valid_ids)
+            if config is None:
+                raise DiscussionError(EXTENSION_DISABLED['discussion'], 409)
         if conversation_id:
             conversation = repo.get_conversation(conversation_id)
             if conversation is None:
@@ -236,38 +174,8 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
                           skill=payload.skill,
                           target_agent_id=targets[0] if targets else None, target_agent_ids=targets)
         repo.create_mission(mission)
-        from backend.app.work.service import SharedWork, WorkError
-        from backend.app.work.decisions import match_answer
-        work = SharedWork(repo)
-        existing_work = work.read(conversation.id) if payload.room_mode == 'task' and settings.tasks_enabled else None
-        answer = match_answer(existing_work, payload.goal) if existing_work and existing_work.get('protocol') == 'adaptive_v1' else None
-        if answer:
-            try:
-                work.command(conversation.id, 'decide', answer, existing_work['revision'], operation_id='answer:' + mission.id)
-            except WorkError as exc:
-                raise DiscussionError(str(exc), exc.status_code) from exc
-            mission = mission.model_copy(update={'status': MissionStatus.COMPLETED})
-            repo.update_mission(mission)
-            repo.add_event(mission.id, 'adaptive.control_received', {'decision_id': answer['decision_id'], 'option_id': answer['option_id']})
-        elif payload.work_mode:
-            from backend.app.work.service import SharedWork, WorkError
-            from backend.app.work.adaptive import AdaptiveWork
-            work = SharedWork(repo)
-            view = work.read(conversation.id)
-            owner = targets[0] if targets else registry.ids()[0]
-            # Source and authority are taken from the human API request, not
-            # parameters supplied by a model tool call.
-            try:
-                view = work.command(conversation.id, 'create_work', {
-                    'title': payload.title or payload.goal[:200], 'owner_id': owner,
-                    'agreement': {'source': payload.goal, 'goal': payload.goal, 'scope': payload.goal,
-                        'delivery': payload.work_mode, 'criteria': [{'id': 'AC-1', 'text': '完成原始请求并用实际产物和操作结果验证'}]}},
-                    view['revision'], operation_id='intake:' + mission.id)
-                mission = mission.model_copy(update={'target_agent_id': owner, 'target_agent_ids': [owner]})
-                repo.update_mission(mission)
-                AdaptiveWork(repo).adopt_mission(conversation.id, view['tasks'][-1]['id'], mission)
-            except WorkError as exc:
-                raise DiscussionError(str(exc), exc.status_code) from exc
+        mission = extension_points.first('mission_created', repo, settings, payload, mission, conversation,
+                                         targets, registry) or mission
         repo.add_message(Message(id=f'msg_{uuid4().hex}', mission_id=mission.id, conversation_id=conversation.id,
                                  role=MessageRole.USER, content=payload.goal))
         conversation = conversation.model_copy(update={'updated_at': utc_now()})

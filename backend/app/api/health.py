@@ -3,9 +3,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from backend.app.config.providers import load_cli_providers
 from backend.app.settings import Settings
 from backend.app.storage.repository import Repository
-from backend.app.orchestration.deliberation import BUILD_ID, RULES_VERSION, digest
-from backend.app.orchestration.discussion_rules import COMMON_DISCUSSION_RULES
-from backend.app.domain.project_skills import PROJECT_SKILLS
+from backend.app import extension_points
+from backend.app.build_info import BUILD_ID
 from backend.app.runtime_identity import capture_runtime, runtime_view
 
 
@@ -36,18 +35,17 @@ def build_router(settings: Settings, repository: Repository) -> APIRouter:
         runtime = runtime_view(started)
         runtime["activity"] = activity(repository)
         runtime["draining"] = request.app.state.draining or request.app.state.drain_pending
-        return {
+        body = {
             "status": "ok",
             "version": "0.2.0",
             "database": "ready",
             "config": "ready",
             "fake_provider": "ready",
-            "discussion_protocols": ["roundtable_v1", "deliberation_v2"],
-            "project_skills": list(PROJECT_SKILLS),
-            "discussion_rules_version": RULES_VERSION,
-            "discussion_rules_hash": digest(COMMON_DISCUSSION_RULES),
-            "build_id": BUILD_ID,
-            "runtime": runtime,
         }
+        for fields in extension_points.collect('health_fields'):
+            body.update(fields)
+        body["build_id"] = BUILD_ID
+        body["runtime"] = runtime
+        return body
 
     return router

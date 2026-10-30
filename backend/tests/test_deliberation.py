@@ -9,13 +9,14 @@ from fastapi.testclient import TestClient
 
 from backend.app.adapters.base import TurnOutcome
 from backend.app.adapters.fake import FakeCLIAdapter
-from backend.app.api.mission_requests import CreateMissionRequest, DiscussionControlRequest, create_requested_mission
-from backend.app.domain.deliberation import SECTION_IDS
+from backend.app.api.mission_requests import CreateMissionRequest, create_requested_mission
+from backend.app.extensions.discussion.requests import DiscussionControlRequest
+from backend.app.extensions.discussion.models import SECTION_IDS
 from backend.app.domain.models import MissionStatus, TurnStatus
 from backend.app.main import create_app
 from backend.app.mcp.tools import MCPToolError, MCPTools
-from backend.app.orchestration.deliberation import Deliberation, occupies_conversation
-from backend.app.orchestration.roundtable import DiscussionError, Roundtable
+from backend.app.extensions.discussion.deliberation import Deliberation, occupies_conversation
+from backend.app.extensions.discussion.roundtable import DiscussionError, Roundtable
 from backend.app.orchestration.runner import MissionRunner
 
 
@@ -582,7 +583,7 @@ def test_mcp_catalog_and_stdio_share_v2_permissions(repository, temp_settings):
 
 
 def test_long_opinions_require_complete_paged_reads_before_no_addition(repository, temp_settings):
-    from backend.app.orchestration.deliberation_runner import build_prompt
+    from backend.app.extensions.discussion.deliberation_runner import build_prompt
     from backend.app.domain.models import AgentProfile
     mission = create(repository, temp_settings)
     policy = Deliberation(repository)

@@ -322,7 +322,7 @@ def _v2_mission() -> Mission:
 
 def test_v2_read_context_records_a_readable_digest(repository, temp_settings, monkeypatch):
     from backend.app.mcp.tools import MCPTools
-    from backend.app.orchestration.deliberation import Deliberation
+    from backend.app.extensions.discussion.deliberation import Deliberation
 
     repository.create_mission(_v2_mission())
     view = {
@@ -350,7 +350,7 @@ def test_v2_read_context_records_a_readable_digest(repository, temp_settings, mo
 
 def test_v2_read_artifact_records_the_material_body(repository, temp_settings, monkeypatch):
     from backend.app.mcp.tools import MCPTools
-    from backend.app.orchestration.deliberation import Deliberation
+    from backend.app.extensions.discussion.deliberation import Deliberation
 
     repository.create_mission(_v2_mission())
     monkeypatch.setattr(Deliberation, "read_material",

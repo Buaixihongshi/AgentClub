@@ -239,7 +239,7 @@ def test_mixed_cli_api_explicit_fallback_guard(repository, temp_settings, approv
 def test_router_real_api_discussion_submission(repository, temp_settings, protocol):
     from backend.app.api.mission_requests import CreateMissionRequest, create_requested_mission
     from backend.app.api.missions import _build_mission_adapter
-    from backend.app.orchestration.deliberation import Deliberation
+    from backend.app.extensions.discussion.deliberation import Deliberation
     from backend.tests.test_deliberation import opinion
     expected = opinion('API 真实协议的结构化提交')
     with server(lambda h,c: sse(h, frames(protocol,json.dumps(expected, ensure_ascii=False)))) as (connection,calls):
@@ -254,7 +254,8 @@ def test_router_real_api_discussion_submission(repository, temp_settings, protoc
         lease=policy.authorize(mission.id,reserved['turn_id'],'api-test')
         tools=MCPTools(repository,temp_settings.artifact_root,lease_token=lease['token'])
         adapter=_build_mission_adapter(temp_settings)
-        result=adapter.run_deliberation_turn(mission.id,lease['agent_id'],lease['turn_id'],'api-test','角色定义【本轮协议】禁止工具',tools)
+        from backend.app.extensions.discussion.hooks import run_deliberation_turn
+        result=run_deliberation_turn(adapter,mission.id,lease['agent_id'],lease['turn_id'],'api-test','角色定义【本轮协议】禁止工具',tools)
         assert result.status==TurnStatus.COMPLETED, result
         settled=policy.state(repository.get_mission(mission.id))['leases'][lease['turn_id']]
         assert settled['status']=='submitted'

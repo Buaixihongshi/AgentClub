@@ -19,7 +19,7 @@
 | 冯宝宝 / Claude | `EPERM: operation not permitted, open '/tmp/claude-501'` | 适配器只允许本回合临时目录写入，真实 CLI 使用了另一个共享临时目录。未设置与沙箱一致的 CLI 临时目录。 |
 | 王也 / Antigravity | `-p took "--new-project" as its prompt` | 配置中的参数末尾为 `-p`，适配器又在其后追加 `--new-project ...`，导致 `-p` 的下一个参数成为选项而非真正提示词。 |
 
-相关实现：`backend/app/adapters/deliberation_cli.py` 的 `sandbox_profile()` 与 `run_turn()`。
+相关实现：`backend/app/extensions/discussion/deliberation_cli.py` 的 `sandbox_profile()` 与 `run_turn()`。
 
 ## 复现与证据边界
 

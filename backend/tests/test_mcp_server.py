@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 import pytest
 
+from backend.app import extension_points
 from backend.app.domain.models import Conversation, Mission
 from backend.app.storage.repository import Repository
 
@@ -39,6 +40,8 @@ class MCPServerHarness:
             "YIREN_MCP_MISSION_ID": mission_id,
             "YIREN_MCP_AGENT_ID": agent_id,
             "YIREN_MCP_PROVIDER_ID": provider_id,
+            # The parent adapters pass the extensions they installed.
+            "YIREN_MCP_EXTENSIONS": ",".join(extension_points.modules()),
         }
         if turn_id is not None:
             server_env["YIREN_MCP_TURN_ID"] = turn_id

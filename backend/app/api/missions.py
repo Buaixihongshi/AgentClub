@@ -24,8 +24,8 @@ from backend.app.orchestration.runner import MissionRunner
 from backend.app.settings import Settings, snapshot_settings
 from backend.app.storage.repository import Repository
 
-from backend.app.api.mission_requests import CreateMissionRequest, DiscussionControlRequest, create_requested_mission
-from backend.app.orchestration.roundtable import Roundtable
+from backend.app.api.mission_requests import CreateMissionRequest, create_requested_mission
+from backend.app import extension_points
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +82,7 @@ def _run_mission_in_background(
         mission = repo.get_mission(mission_id)
         if mission is None:
             return
-        if mission.room_mode == 'roundtable':
-            Roundtable(repo).fail(mission_id)
+        if extension_points.any('mission_failed', repo, mission):
             return
         failed = mission.model_copy(
             update={
@@ -102,11 +101,7 @@ def _run_mission_in_background(
             },
         )
     finally:
-        from backend.app.work.service import SharedWork
-        work = SharedWork(repo)
-        context = work.execution_context(mission_id)
-        if context:
-            work.finish(repo.get_mission(mission_id).conversation_id, mission_id)
+        extension_points.each('mission_finished', repo, mission_id)
 
 
 def build_router(
@@ -148,29 +143,8 @@ def build_router(
     ):
         if repo.get_mission(mission_id) is None:
             raise HTTPException(status_code=404, detail="Mission not found")
-        from backend.app.orchestration.deliberation import Deliberation, is_v2
-        if is_v2(repo.get_mission(mission_id)):
-            Deliberation(repo).interrupt(mission_id, payload.content, payload.target_agent_id, payload.request_id)
-        elif repo.get_mission(mission_id).room_mode == 'roundtable':
-            Roundtable(repo).interrupt(mission_id, payload.content, payload.target_agent_id, payload.request_id)
-        else:
+        if not extension_points.any('mission_interrupt', repo, repo.get_mission(mission_id), payload):
             repo.add_interruption(mission_id, payload.content, payload.target_agent_id)
-        return build_mission_detail(repo, settings, mission_id)
-
-    @router.post("/{mission_id}/discussion-controls", status_code=202)
-    def discussion_control(mission_id: str, payload: DiscussionControlRequest, repo: Repository = Depends(get_repo)):
-        from backend.app.orchestration.deliberation import Deliberation, is_v2
-        if is_v2(repo.get_mission(mission_id)):
-            mission_settings = snapshot_settings(settings)
-            target, schedule = Deliberation(repo).control(mission_id, payload, mission_settings)
-            detail = build_mission_detail(repo, settings, target)
-            if schedule:
-                threading.Thread(target=_run_mission_in_background,
-                                 args=(repo, mission_settings, target, adapter_override), daemon=True).start()
-            return detail
-        if payload.action not in {'finish', 'stop'}:
-            raise HTTPException(status_code=422, detail='Control requires a V2 discussion')
-        Roundtable(repo).control(mission_id, payload.action, payload.request_id, payload.summary_agent_id)
         return build_mission_detail(repo, settings, mission_id)
 
     @router.get("/{mission_id}/artifacts")

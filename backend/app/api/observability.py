@@ -6,6 +6,7 @@ either one mission (`?mission_id=`) or the most recent missions.
 """
 from fastapi import APIRouter, HTTPException, Query
 
+from backend.app import extension_points
 from backend.app.observability.overview import WINDOWS, collect_overview
 from backend.app.observability.service import agent_names, build_payload, turn_detail
 from backend.app.storage.repository import Repository
@@ -55,16 +56,14 @@ def build_router(repository: Repository) -> APIRouter:
     def get_turn_records(turn_id: str):
         """The complete private execution records (prompt, raw stream, environment)."""
         from backend.app.adapters.turn_record import read_records
-        from backend.app.orchestration.deliberation import Deliberation, is_v2
 
         mission_id = repository.mission_id_for_turn(turn_id)
         mission = repository.get_mission(mission_id) if mission_id else None
         if mission is None:
             raise HTTPException(status_code=404, detail=f"turn not found: {turn_id}")
-        # A V2 discussion releases results in batches; its raw streams contain
-        # unreleased submissions, so they open only once the discussion ends.
-        if is_v2(mission) and Deliberation(repository).state(mission)["phase"] != "ended":
-            raise HTTPException(status_code=409, detail="讨论结束后才能查看执行记录")
+        refusal = extension_points.first('turn_records_refusal', repository, mission)
+        if refusal is not None:
+            raise HTTPException(status_code=409, detail=refusal)
         return {"turn_id": turn_id, "mission_id": mission.id,
                 "records": read_records(repository.database_path, mission.id, turn_id)}
 

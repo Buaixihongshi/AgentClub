@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.adapters.deliberation_cli import DeliberationCLIAdapter, isolation_supported
+from backend.app.extensions.discussion.deliberation_cli import DeliberationCLIAdapter, isolation_supported
 from backend.app.adapters.turn_record import read_records
 from backend.app.domain.models import TurnStatus
 from backend.app.mcp.tools import MCPTools
-from backend.app.orchestration.deliberation import Deliberation
+from backend.app.extensions.discussion.deliberation import Deliberation
 from backend.tests.test_deliberation import create
 from backend.tests.test_deliberation_isolation import FAKE_CODEX
 
@@ -77,7 +77,7 @@ def test_discussion_turn_record_is_complete_but_activity_stays_private(repositor
 def test_work_turn_streams_native_activity_live_and_records_it(repository, temp_settings, tmp_path, monkeypatch):
     from backend.tests.test_adaptive_work import create as create_work, run as run_work
     from backend.app.domain.models import Conversation
-    from backend.app.work.adaptive import AdaptiveWork
+    from backend.app.extensions.tasks.adaptive import AdaptiveWork
     import subprocess
 
     root = tmp_path / 'project'
