@@ -12,6 +12,20 @@ type ContentState =
   | { status: "error"; message: string }
   | { status: "ready"; data: ArtifactContent };
 
+export function useArtifactContent() {
+  const [content, setContent] = useState<Record<string, ContentState>>({});
+  const load = (missionId: string, path: string) => {
+    const key = `${missionId}:${path}`;
+    setContent(prev => ({ ...prev, [key]: { status: "loading" } }));
+    fetchArtifactContent(missionId, path).then(data => {
+      setContent(prev => ({ ...prev, [key]: { status: "ready", data } }));
+    }).catch((error: unknown) => {
+      setContent(prev => ({ ...prev, [key]: { status: "error", message: error instanceof Error ? error.message : "加载产物内容失败" } }));
+    });
+  };
+  return { content, load };
+}
+
 const MARKDOWN_KINDS = new Set(["md", "markdown", "mdx", "txt", "text"]);
 
 export function ArtifactPanel({
@@ -24,46 +38,19 @@ export function ArtifactPanel({
   variant?: "panel" | "chat";
 }) {
   const [activePath, setActivePath] = useState<string | null>(null);
-  const [contentByPath, setContentByPath] = useState<Record<string, ContentState>>({});
-
+  const { content, load } = useArtifactContent();
   const closeViewer = () => setActivePath(null);
-
-  useEffect(() => {
-    if (!activePath) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeViewer();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [activePath]);
-
+  useEffect(() => { setActivePath(null); }, [missionId]);
   const openViewer = (path: string) => {
-    if (!path || !missionId) {
-      return;
-    }
+    if (!path || !missionId) return;
     setActivePath(path);
-    if (contentByPath[path]) {
-      return;
-    }
-    setContentByPath((prev) => ({ ...prev, [path]: { status: "loading" } }));
-    fetchArtifactContent(missionId, path)
-      .then((data) =>
-        setContentByPath((prev) => ({ ...prev, [path]: { status: "ready", data } })),
-      )
-      .catch((error: unknown) =>
-        setContentByPath((prev) => ({
-          ...prev,
-          [path]: { status: "error", message: error instanceof Error ? error.message : "加载产物内容失败" },
-        })),
-      );
+    load(missionId, path);
   };
 
   const activeArtifact = activePath
     ? artifacts.find((artifact) => (artifact.path ?? artifact.file_path ?? "") === activePath)
     : undefined;
-  const activeState = activePath ? contentByPath[activePath] : undefined;
+  const activeState = activePath ? content[`${missionId}:${activePath}`] : undefined;
 
   return (
     <section className={variant === "chat" ? "saved-artifact-card" : "side-panel"} aria-label={variant === "chat" ? "已保存文件" : "产物"}>
@@ -82,7 +69,7 @@ export function ArtifactPanel({
             const selected = activePath === path;
             const showPath = Boolean(path) && path !== artifact.title;
             return (
-              <li key={artifact.id} className={selected ? "artifact-item artifact-item--open" : "artifact-item"}>
+              <li data-artifact-identity={artifact.id} key={artifact.id} className={selected ? "artifact-item artifact-item--open" : "artifact-item"}>
                 <button
                   type="button"
                   className="artifact-item-toggle"
@@ -133,7 +120,7 @@ export function ArtifactPanel({
   );
 }
 
-function ArtifactViewerModal({
+export function ArtifactViewerModal({
   artifact,
   path,
   state,
@@ -144,6 +131,11 @@ function ArtifactViewerModal({
   state?: ContentState;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopImmediatePropagation(); onClose(); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
   const titleId = "artifact-viewer-title";
   return (
     <div className="artifact-modal-backdrop" onClick={onClose}>
