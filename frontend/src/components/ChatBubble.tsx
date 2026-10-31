@@ -67,7 +67,7 @@ function MessageMarkdown({ content, streaming = false }: { content: string; stre
   );
 }
 
-export function ChatBubble({ turn }: { turn: TurnView }) {
+export function ChatBubble({ turn, onEdit }: { turn: TurnView; onEdit?: () => void }) {
   if (turn.role === "user") {
     return (
       <div className="chat-row chat-row-user">
@@ -77,6 +77,7 @@ export function ChatBubble({ turn }: { turn: TurnView }) {
             老板{turn.metadata.revised ? <span className="bubble-revised">已修改</span> : null}
           </div>
           <MessageMarkdown content={turn.content} />
+          {onEdit && <button type="button" className="bubble-edit" onClick={onEdit} aria-label="编辑上一条消息">编辑</button>}
         </article>
       </div>
     );
