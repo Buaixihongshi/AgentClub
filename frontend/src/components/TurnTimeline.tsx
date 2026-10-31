@@ -62,6 +62,13 @@ export function TurnTimeline({
     }
   }, [conversationId, turns.length, contentRevision]);
 
+  useLayoutEffect(()=>{
+    const el=containerRef.current;
+    const locate=()=>{stickToBottomRef.current=false;};
+    el?.addEventListener('artifact-locate',locate);
+    return ()=>el?.removeEventListener('artifact-locate',locate);
+  });
+
   function handleScroll() {
     const el = containerRef.current;
     if (!el) return;
