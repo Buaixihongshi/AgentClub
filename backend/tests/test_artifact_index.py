@@ -26,7 +26,31 @@ def test_index_scope_identity_pagination_search(repository, temp_settings):
     first=client.get('/api/artifacts?limit=1').json()
     second=client.get('/api/artifacts',params={'limit':1,'cursor':first['next_cursor']}).json()
     assert first['items'][0]['id'] != second['items'][0]['id']
-    assert client.get('/api/artifacts',params={'cursor':second['next_cursor']}).json()['items']==[]
+    assert second['next_cursor'] is None
     assert client.get('/api/artifacts?cursor=nope').status_code==422
 
     assert client.get('/api/artifacts?cursor=99999999999999999999999999').status_code == 422
+
+
+def test_empty_scan_page_retains_cursor_and_queries_candidates_once(repository, temp_settings, monkeypatch):
+    repository.create_conversation(Conversation(id='visible', title='visible'))
+    repository.create_mission(Mission(id='visible-m', title='test', goal='test', conversation_id='visible'))
+    repository.create_mission(Mission(id='hidden-m', title='test', goal='test'))
+    repository.add_event('visible-m', 'artifact', {'path': 'needle.md'})
+    for i in range(2001):
+        repository.add_event('hidden-m', 'artifact', {'path': f'hidden-{i}.md'})
+    from backend.app.storage.repository import Repository
+    original = Repository.list_artifact_events
+    calls = []
+    def counted(self, *args):
+        calls.append(args)
+        return original(self, *args)
+    monkeypatch.setattr(Repository, 'list_artifact_events', counted)
+    client = TestClient(create_app(settings=temp_settings))
+    first = client.get('/api/artifacts', params={'q': 'needle'}).json()
+    assert first['items'] == [] and first['next_cursor']
+    assert len(calls) == 1
+    second = client.get('/api/artifacts', params={'q': 'needle', 'cursor': first['next_cursor']}).json()
+    assert [item['path'] for item in second['items']] == ['needle.md']
+    assert second['next_cursor'] is None
+    assert len(calls) == 2

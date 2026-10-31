@@ -19,37 +19,32 @@ def build_router(repository: Repository) -> APIRouter:
                     if m.conversation_id in conversations and not is_provider_verification_mission(m)}
         items = []
         before = cursor
-        scanned = 0
-        exhausted = False
-        # Cap work after 2,000 latest events. next_cursor can accompany an empty page.
-        while len(items) < limit and scanned < 2000:
-            batch = repository.list_artifact_events(min(200, 2000-scanned), before)
-            if not batch:
-                exhausted = True
+        # One latest-identity query per request; keep bounded decoding work.
+        batch = repository.list_artifact_events(2001, before)
+        exhausted = len(batch) <= 2000
+        for event in batch[:2000]:
+            before = int(event.id)
+            if event.mission_id not in missions:
+                continue
+            raw_path = event.payload.get('path')
+            if not isinstance(raw_path, str) or not raw_path or '\\' in raw_path:
+                continue
+            path = PurePosixPath(raw_path)
+            if path.is_absolute() or PureWindowsPath(raw_path).drive or '..' in path.parts:
+                continue
+            derived = _derive_artifact_events([event])
+            if not derived:
+                continue
+            saved = derived[0]
+            artifact = saved['artifact']
+            if q.strip().casefold() not in f"{artifact['title']}\n{artifact['path']}".casefold():
+                continue
+            conversation = conversations[missions[event.mission_id].conversation_id]
+            items.append({**artifact, 'event_id': saved['id'],
+                          'conversation_id': conversation.id, 'conversation_title': conversation.title})
+            if len(items) == limit:
+                exhausted = event is batch[-1]
                 break
-            for event in batch:
-                before = int(event.id)
-                scanned += 1
-                if event.mission_id not in missions:
-                    continue
-                raw_path = event.payload.get('path')
-                if not isinstance(raw_path, str) or not raw_path or '\\' in raw_path:
-                    continue
-                path = PurePosixPath(raw_path)
-                if path.is_absolute() or PureWindowsPath(raw_path).drive or '..' in path.parts:
-                    continue
-                derived = _derive_artifact_events([event])
-                if not derived:
-                    continue
-                saved = derived[0]
-                artifact = saved['artifact']
-                if q.strip().casefold() not in f"{artifact['title']}\n{artifact['path']}".casefold():
-                    continue
-                conversation = conversations[missions[event.mission_id].conversation_id]
-                items.append({**artifact, 'event_id': saved['id'],
-                              'conversation_id': conversation.id, 'conversation_title': conversation.title})
-                if len(items) == limit:
-                    break
         return {'items': items, 'next_cursor': None if exhausted else str(before)}
 
     return router

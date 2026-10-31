@@ -101,26 +101,29 @@ export function ArtifactSidebar({
     setError("");
     setAllItems([]);
     setCursor(null);
-    fetchArtifactIndex(query)
-      .then((page) => {
-        if (version !== requestVersion.current) return;
-        setAllItems(
-          page.items.map((item) => ({
-            ...item,
-            identity: item.id,
-            eventId: item.event_id,
-          })),
-        );
-        setCursor(page.next_cursor);
-      })
-      .catch((e: unknown) => {
-        if (version === requestVersion.current)
-          setError(e instanceof Error ? e.message : "加载失败");
-      })
-      .finally(() => {
-        if (version === requestVersion.current) setLoading(false);
-      });
+    const timer = window.setTimeout(() => {
+      fetchArtifactIndex(query)
+        .then((page) => {
+          if (version !== requestVersion.current) return;
+          setAllItems(
+            page.items.map((item) => ({
+              ...item,
+              identity: item.id,
+              eventId: item.event_id,
+            })),
+          );
+          setCursor(page.next_cursor);
+        })
+        .catch((e: unknown) => {
+          if (version === requestVersion.current)
+            setError(e instanceof Error ? e.message : "加载失败");
+        })
+        .finally(() => {
+          if (version === requestVersion.current) setLoading(false);
+        });
+    }, 250);
     return () => {
+      window.clearTimeout(timer);
       requestVersion.current++;
     };
   }, [scope, query, open]);
@@ -264,7 +267,7 @@ export function ArtifactSidebar({
               aria-pressed={kind === "all"}
               onClick={() => setKind("all")}
             >
-              全部 {source.length}
+              {scope === "all" ? "已加载" : "全部"} {source.length}
             </button>
             {artifactKindGroups(source).map((group) => (
               <button
@@ -343,7 +346,13 @@ export function ArtifactSidebar({
               </li>
             ))}
           </ul>
-          {!visible.length && !loading && <p>没有匹配的产物</p>}
+          {!visible.length && !loading && !error && (
+            <p>
+              {scope === "all" && cursor
+                ? "已扫描较近记录，继续查找"
+                : "没有匹配的产物"}
+            </p>
+          )}
           {scope === "conversation" && query.trim() && !visible.length && (
             <button
               type="button"
