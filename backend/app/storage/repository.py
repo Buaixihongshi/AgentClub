@@ -264,8 +264,9 @@ class Repository:
             ).fetchall()
             messages = [Message.model_validate_json(row["data"]) for row in rows if row["mission_id"] in allowed]
             # Full mission events are also used by HTTP/SSE; dialogue reads across
-            # missions do not need tool traces or other control events.
-            event_filter = "" if mission_id else " AND e.event_type IN ('message', 'interrupt')"
+            # missions do not need tool traces or other control events. A revision
+            # marks which user wording was superseded, so it belongs to the dialogue.
+            event_filter = "" if mission_id else " AND e.event_type IN ('message', 'interrupt', 'message.revised')"
             rows = db.execute(
                 f"SELECT e.* FROM events e JOIN missions m ON m.id = e.mission_id WHERE {scope}{event_filter} ORDER BY e.id",
                 parameters,

@@ -3,11 +3,13 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
 from backend.app.domain.models import TurnStatus
+from backend.app.orchestration import interruption
 from backend.app.mcp.tools import MCPToolError, MCPTools
 
 _IS_WINDOWS = sys.platform == "win32"
@@ -121,6 +123,17 @@ class SubprocessCLIAdapter(CLIAdapter):
             summary = build_failure_summary(provider_id, os_error=str(exc))
             return TurnOutcome(status=TurnStatus.BLOCKED, summary=summary)
 
+        finished, paused = threading.Event(), threading.Event()
+
+        def watch_for_pause() -> None:
+            # A user pause stops the process group; communicate() then returns.
+            while not finished.wait(1.0):
+                if interruption.pause_requested(mission_id):
+                    paused.set()
+                    kill_process_tree(proc)
+                    return
+
+        threading.Thread(target=watch_for_pause, daemon=True).start()
         try:
             from backend.app.adapters.turn_budget import remaining_timeout
             stdout, stderr = proc.communicate(timeout=remaining_timeout(self.timeout))
@@ -134,6 +147,11 @@ class SubprocessCLIAdapter(CLIAdapter):
                 stdout_snippet=stdout.strip() if stdout else "",
             )
             return TurnOutcome(status=TurnStatus.BLOCKED, summary=summary, retryable=False)
+        finally:
+            finished.set()
+        if paused.is_set():
+            return TurnOutcome(status=TurnStatus.BLOCKED, summary=interruption.STOPPED_SUMMARY,
+                               failure_code="stopped", retryable=False)
 
         stdout = stdout.strip()
         stderr = stderr.strip()

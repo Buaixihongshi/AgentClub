@@ -4911,6 +4911,14 @@ summary:focus-visible {
   }
 }
 
+/* Pause a running chat, then rewrite the last message. */
+.composer-notice { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; border-bottom:1px solid var(--ink-line); font-size:.8rem; color:var(--ink-soft); }
+.composer-notice > span { min-width:0; overflow-wrap:anywhere; }
+.composer-notice-revising { background:var(--sage-soft); }
+.composer-notice-action { flex:none; padding:4px 12px; border:1px solid var(--ink-line); border-radius:5px; background:transparent; font-size:.8rem; cursor:pointer; }
+.composer-notice-action:disabled { opacity:.6; cursor:default; }
+.bubble-revised { margin-left:8px; padding:1px 6px; border:1px solid currentColor; border-radius:4px; font-size:.68rem; letter-spacing:0; opacity:.8; }
+
 /* Clip portraits to the existing avatar frames, including the round participant chip. */
 .agent-strip-avatar,
 .chat-avatar,

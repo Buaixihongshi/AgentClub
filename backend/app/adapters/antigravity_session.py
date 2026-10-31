@@ -28,7 +28,12 @@ from backend.app.adapters.stream_events import StreamEventType, UsageRecord
 from backend.app.adapters.stream_parsers import StreamLineParser
 from backend.app.adapters.subprocess_cli import kill_process_tree
 from backend.app.domain.models import TurnStatus
+from backend.app.orchestration import interruption
 from backend.app.storage.execution import ExecutionLedger
+
+
+class TurnStopped(Exception):
+    """The user paused the mission while this turn was running."""
 
 
 def stream_args(args):
@@ -338,6 +343,8 @@ class AntigravitySessionPool:
             last_activity = time.monotonic()
             activity_cursor = cursor
             while True:
+                if interruption.pause_requested(mission_id):
+                    raise TurnStopped(interruption.STOPPED_SUMMARY)
                 # MCP calls count as activity even if the provider's stream is quiet.
                 for record in repo.list_events_after(mission_id, activity_cursor):
                     activity_cursor = max(activity_cursor, int(record.id))
@@ -401,6 +408,12 @@ class AntigravitySessionPool:
                 step = event.get('step_update')
                 if event.get('event') == 'step_update' and isinstance(step, dict) and step.get('text_delta'):
                     last_activity = time.monotonic()
+        except TurnStopped as exc:
+            # The user paused: stop the worker group now; a later turn starts a fresh one.
+            if worker:
+                worker.close('user_stopped')
+            self.worker = None
+            return TurnOutcome(TurnStatus.BLOCKED, str(exc), failure_code='stopped', retryable=False)
         except Exception as exc:
             write_cli_diagnostic(
                 adapter.db_path.parent / 'cli-diagnostics',

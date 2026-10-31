@@ -23,6 +23,11 @@ def mission_takeover(runner, mission):
     return None
 
 
+def mission_owned(repository, mission):
+    # The work pump queues, runs and recovers adaptive actions from the board.
+    return _claimed(repository, mission.id, {'adaptive.claimed', 'adaptive.queued', 'adaptive.control_received'})
+
+
 def mission_finished(repo, mission_id):
     work = SharedWork(repo)
     context = work.execution_context(mission_id)

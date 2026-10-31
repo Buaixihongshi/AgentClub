@@ -20,6 +20,7 @@ from backend.app.api.mission_detail import (
     artifact_file_path,
 )
 from backend.app.domain.models import MissionStatus, utc_now
+from backend.app.orchestration import interruption
 from backend.app.orchestration.runner import MissionRunner
 from backend.app.settings import Settings, snapshot_settings
 from backend.app.storage.repository import Repository
@@ -145,6 +146,17 @@ def build_router(
             raise HTTPException(status_code=404, detail="Mission not found")
         if not extension_points.any('mission_interrupt', repo, repo.get_mission(mission_id), payload):
             repo.add_interruption(mission_id, payload.content, payload.target_agent_id)
+        return build_mission_detail(repo, settings, mission_id)
+
+    @router.post("/{mission_id}/pause", status_code=202)
+    def pause_mission(mission_id: str, repo: Repository = Depends(get_repo)):
+        mission = repo.get_mission(mission_id)
+        if mission is None:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        if extension_points.any('mission_owned', repo, mission):
+            raise HTTPException(status_code=409, detail="讨论和任务请使用各自的控制")
+        if mission.status in {MissionStatus.PENDING, MissionStatus.RUNNING}:
+            interruption.request_pause(repo, mission)
         return build_mission_detail(repo, settings, mission_id)
 
     @router.get("/{mission_id}/artifacts")

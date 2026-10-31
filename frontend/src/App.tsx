@@ -10,6 +10,7 @@ import {
   createConversationMission,
   deleteConversation,
   fetchConversation,
+  fetchMission,
   getHealth,
   getHubSettings,
   getOnboarding,
@@ -17,6 +18,7 @@ import {
   listAgents,
   listConversations,
   newRequestId,
+  pauseMission,
   sendDiscussionControl,
   updateConversation,
   updateHubSettings,
@@ -59,6 +61,9 @@ export default function App() {
   const [latestMissionDetail, setLatestMissionDetail] = useState<MissionDetail | undefined>();
   const [input, setInput] = useState("");
   const [confirmations, setConfirmations] = useState<ConfirmedMention[]>([]);
+  /** The last user message being rewritten after a pause, if any. */
+  const [revisingMessageId, setRevisingMessageId] = useState<string | null>(null);
+  const [pausing, setPausing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [discussionBusy, setDiscussionBusy] = useState(false);
@@ -275,6 +280,7 @@ export default function App() {
 
   async function handleSelectConversation(convId: string) {
     const request = ++conversationRequest.current;
+    setRevisingMessageId(null);
     setSelectedConvId(convId);
     setConvDetail(undefined);
     setLatestMissionDetail(undefined);
@@ -351,6 +357,7 @@ export default function App() {
 
   async function handleNewConversation() {
     const request = ++conversationRequest.current;
+    setRevisingMessageId(null);
     try {
       const conv = await createConversation();
       if (request !== conversationRequest.current) return;
@@ -444,6 +451,11 @@ export default function App() {
       setError("当前任务尚未结束。请先完成或停止当前任务，再调用 /discuss。");
       return;
     }
+    const revising = revisingMessageId && !activeMission ? revisingMessageId : null;
+    if (revising && skillCommand) {
+      setError("修改上一条发言时不能调用 /discuss；请取消修改后再发起讨论。");
+      return;
+    }
     const payload: MissionCreatePayload =
       skillCommand
         ? {
@@ -451,7 +463,11 @@ export default function App() {
             skill: skillCommand.skill,
             request_id: newRequestId("skill"),
           }
-        : { goal: rawInput, target_agent_ids: missionTargetAgentIds };
+        : {
+            goal: rawInput,
+            target_agent_ids: missionTargetAgentIds,
+            ...(revising ? { revises_message_id: revising } : {}),
+          };
 
     setBusy(true);
     setError(null);
@@ -487,12 +503,47 @@ export default function App() {
       }
       setInput("");
       setConfirmations([]);
+      setRevisingMessageId(null);
     } catch (err) {
       // Requests that lost the race keep the user's text and refresh the truth.
       setError(formatDiscussionError(err instanceof Error ? err.message : "请求失败"));
       await refreshConversationState();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handlePause() {
+    const mission = latestMissionDetail;
+    if (!mission) return;
+    setPausing(true);
+    setError(null);
+    try {
+      let detail = await pauseMission(mission.mission.id);
+      // The running turn stops within about a second; wait for the run to close.
+      for (let attempt = 0; attempt < 60 && !isTerminalMissionStatus(detail.mission.status); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        detail = await fetchMission(mission.mission.id);
+      }
+      setLatestMissionDetail(detail);
+      if (!isTerminalMissionStatus(detail.mission.status)) {
+        setError("已请求暂停，当前回合还在结束中，请稍后再修改。");
+        return;
+      }
+      const original = [...(detail.messages ?? [])].reverse().find((message) => message.role === "user");
+      if (original) {
+        setRevisingMessageId(String(original.id));
+        // Keep a draft the user already typed; otherwise start from the old wording.
+        if (!input.trim()) {
+          setInput(original.content);
+          setConfirmations([]);
+        }
+      }
+      await refreshConversationState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "暂停失败");
+    } finally {
+      setPausing(false);
     }
   }
 
@@ -656,6 +707,14 @@ export default function App() {
         void sendDiscussionControlRequest("stop");
       }}
       onContinueDiscussion={handleContinueDiscussion}
+      onPause={() => { void handlePause(); }}
+      pausing={pausing}
+      revising={Boolean(revisingMessageId) && !hasRunningMission}
+      onCancelRevise={() => {
+        setRevisingMessageId(null);
+        setInput("");
+        setConfirmations([]);
+      }}
       onboarding={{
         health,
         healthLoading,

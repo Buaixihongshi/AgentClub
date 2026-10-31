@@ -10,6 +10,7 @@ from backend.app import extension_points
 from backend.app.domain.agent_registry import get_agent_registry
 from backend.app.domain.errors import DiscussionError
 from backend.app.domain.models import Conversation, Message, MessageRole, Mission, MissionStatus, utc_now
+from backend.app.orchestration import interruption, revision
 
 
 class DiscussionRequest(BaseModel):
@@ -42,6 +43,8 @@ class MissionRequest(BaseModel):
     discussion: Optional[DiscussionRequest] = None
     request_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     work_mode: Optional[Literal['document', 'development', 'online']] = None
+    # Rewrites the conversation's last user message after a pause.
+    revises_message_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode='before')
     @classmethod
@@ -107,6 +110,7 @@ def occupies_conversation(mission):
 def ensure_available(repo, conversation):
     if conversation.status == 'archived':
         raise DiscussionError('Conversation is archived; restore it before creating a mission')
+    interruption.recover(repo, repo.list_missions_for_conversation(conversation.id))
     if any(occupies_conversation(m) for m in repo.list_missions_for_conversation(conversation.id)):
         raise DiscussionError('Conversation already has an active mission')
 
@@ -114,8 +118,9 @@ def ensure_available(repo, conversation):
 def _normalize_legacy_fingerprint(fingerprint):
     """Only V1 records predate these two discussion default fields."""
     fingerprint = dict(fingerprint)
-    if fingerprint.get('work_mode') is None:
-        fingerprint.pop('work_mode', None)
+    for optional in ('work_mode', 'revises_message_id'):
+        if fingerprint.get(optional) is None:
+            fingerprint.pop(optional, None)
     discussion = fingerprint.get('discussion')
     if (fingerprint.get('room_mode') != 'roundtable' or fingerprint.get('skill') is not None
             or not isinstance(discussion, dict) or discussion.get('protocol', 'roundtable_v1') != 'roundtable_v1'):
@@ -132,6 +137,8 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
     excluded = {'conversation_id', 'skill'} if payload.skill is None else {'conversation_id'}
     if payload.work_mode is None:
         excluded.add('work_mode')
+    if payload.revises_message_id is None:
+        excluded.add('revises_message_id')
     fingerprint = payload.model_dump(exclude=excluded)
     with repo._transaction(immediate=True) as db:
         if payload.request_id:
@@ -163,12 +170,19 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
                 raise DiscussionError('Conversation not found', 404)
             ensure_available(repo, conversation)
         else:
+            if payload.revises_message_id:
+                raise DiscussionError('只能在已有会话里修改发言', 400)
             conversation = Conversation(id=f'c_{uuid4().hex[:12]}', title=payload.title or payload.goal[:40])
             repo.create_conversation(conversation)
         if payload.room_mode == 'task' and not payload.work_mode:
             if any(t.get('active_mission_id') or t.get('release', {}).get('status') == 'running'
                    for row in db.execute('SELECT data FROM work_boards') for t in json.loads(row['data'])['tasks']):
                 raise DiscussionError('工作区正在执行共享工作，请等待当前动作结束或在工作卡中暂停后续动作')
+        original = None
+        if payload.revises_message_id:
+            if payload.room_mode != 'task' or payload.discussion or payload.work_mode or payload.skill:
+                raise DiscussionError('讨论和任务不支持修改发言', 400)
+            original = revision.original_message(repo, conversation.id, payload.revises_message_id)
         mission = Mission(id=f'm_{uuid4().hex}', title=payload.title or payload.goal, goal=payload.goal,
                           conversation_id=conversation.id, room_mode=payload.room_mode, discussion=config,
                           skill=payload.skill,
@@ -178,6 +192,8 @@ def create_requested_mission(repo, settings, payload, conversation_id=None):
                                          targets, registry) or mission
         repo.add_message(Message(id=f'msg_{uuid4().hex}', mission_id=mission.id, conversation_id=conversation.id,
                                  role=MessageRole.USER, content=payload.goal))
+        if original is not None:
+            revision.record(repo, mission, original)
         conversation = conversation.model_copy(update={'updated_at': utc_now()})
         repo.update_conversation(conversation)
         if payload.request_id:

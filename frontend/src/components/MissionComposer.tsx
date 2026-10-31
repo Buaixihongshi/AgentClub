@@ -70,6 +70,12 @@ export function MissionComposer(props: {
   interruptTargets?: ComposerInterruptTarget[];
   interruptTargetId?: string | null;
   onInterruptTargetChange?: (agentId: string | null) => void;
+  /** Offered while an ordinary chat runs: stop now to rewrite the last message. */
+  onPause?: () => void;
+  pausing?: boolean;
+  /** Set while the input rewrites the last user message. */
+  revising?: boolean;
+  onCancelRevise?: () => void;
 }) {
   const [menu, setMenu] = useState<SuggestionMenu | null>(null);
   const [highlighted, setHighlighted] = useState(0);
@@ -185,8 +191,9 @@ export function MissionComposer(props: {
     props.onSubmit();
   }
 
-  const submitLabel =
-    props.submitLabel ?? (props.hasActiveMission ? "发送插话" : "发送");
+  const submitLabel = props.revising
+    ? "重新发送"
+    : props.submitLabel ?? (props.hasActiveMission ? "发送插话" : "发送");
 
   return (
     <form className="mission-composer" onSubmit={submit}>
@@ -208,6 +215,23 @@ export function MissionComposer(props: {
               </option>
             ))}
           </select>
+        </div>
+      ) : null}
+      {props.onPause ? (
+        <div className="composer-notice">
+          <span>{props.pausing ? "正在暂停，当前回合结束后可以修改上一条发言…" : "想改刚才说的话？暂停后可以修改再发。"}</span>
+          <button type="button" className="composer-notice-action" onClick={props.onPause}
+            disabled={props.pausing || props.busy}>
+            {props.pausing ? "暂停中…" : "暂停"}
+          </button>
+        </div>
+      ) : props.revising ? (
+        <div className="composer-notice composer-notice-revising">
+          <span>正在修改上一条发言：发送后原话标为「已修改」，按新内容重新开始。</span>
+          <button type="button" className="composer-notice-action" onClick={props.onCancelRevise}
+            disabled={props.busy}>
+            取消修改
+          </button>
         </div>
       ) : null}
       <label htmlFor="mission-input">消息输入</label>
