@@ -38,6 +38,7 @@ from typing import Callable, Iterable, List, Optional
 from uuid import uuid4
 
 from backend.app import extension_points
+from backend.app import host_rules
 from backend.app.adapters.antigravity_config import (
     guarded_global_mcp_config,
     read_agy_log_hint,
@@ -824,13 +825,7 @@ class MCPSubprocessAdapter(CLIAdapter):
         return TurnOutcome(status=TurnStatus.COMPLETED, summary="stdout")
 
 
-_MCP_PROMPT_GUIDANCE = (
-    "\n【发声】用 yiren_hub.publish_message(content=中文回复) 发出本轮回复；只写在普通输出里不算，"
-    "没有成功调用它本轮就算未完成。它应是本轮最后一个业务工具调用。"
-    "交付已有本地文件时用 write_artifact(relative_path=交付文件名, source_path=本地文件路径)，不要重新输出整份文件。"
-    "需要伙伴接手时先 invoke_agent 再 publish_message；调用失败要如实说，不能说对方会接手。"
-    "想给用户留下判断思路时，可以用 log_thought 记一句摘要。"
-)
+_MCP_PROMPT_GUIDANCE = "\n" + host_rules.SPEAK.text + host_rules.HANDOFF_BEFORE_SPEAK.text
 
 
 def _augment_prompt_for_mcp(prompt: str) -> str:

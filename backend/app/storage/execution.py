@@ -10,6 +10,7 @@ import secrets
 import time
 from typing import Callable
 
+from backend.app import host_rules
 from backend.app.domain.models import MissionStatus, utc_now
 from backend.app.mcp.tools import MCPToolError
 
@@ -142,8 +143,7 @@ class ExecutionLedger:
             return ''
         metadata = json.loads(row['data'] or '{}')
         last_action = metadata.get('last_summary', '未记录到可核对的工具进度')
-        return ('\n【中断恢复】本会话该角色有过中断记录，最近保存的动作摘要：' + last_action +
-                '。先核对现有文件、Git 差异和已保存消息，再继续用户当前请求；不得假定此前操作未发生，也不得整轮重放。\n')
+        return '\n' + host_rules.NO_REPLAY.text.format(last_action=last_action) + '\n'
 
     def release(self, worker_id, token, *, outcome):
         with self.repo._transaction(immediate=True) as db:

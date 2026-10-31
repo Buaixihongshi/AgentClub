@@ -1,5 +1,6 @@
 """Host loop for roundtable turns (moved out of the core runner)."""
 from backend.app.mcp.tools import MCPTools
+from backend.app.extensions.discussion.rules import ROUNDTABLE_BUDGET, ROUNDTABLE_INVITE, ROUNDTABLE_SCOPE
 from backend.app.memory import handover as handover_store
 from backend.app.memory.assembly import assemble, sections_into_prompt
 from backend.app.orchestration.context import build_artifact_index, build_conversation_context
@@ -27,14 +28,12 @@ def run_roundtable(runner, mission_id):
                 callee_turn = next((e.payload['turn_id'] for e in runner.repository.list_events_after(mission_id, 0)
                                     if e.event_type == 'discussion.turn_claimed' and e.payload.get('step_id') == step.parent_step_id), None)
                 reply = '\n'.join(m.content for m in runner.repository.list_messages(mission_id) if m.turn_id == callee_turn and m.role == 'agent')[:1500]
-            purpose = '圆桌讨论：仅交流观点，不执行代码修改或自动生成文件。\n' + step.purpose + '\n' + notes + '\n参与者：{}；阶段：{}；已用回合：{}/{}（含当前回合，总结占一回合）。'.format(
+            purpose = ROUNDTABLE_SCOPE.text + '\n' + step.purpose + '\n' + notes + '\n参与者：{}；阶段：{}；已用回合：{}/{}（含当前回合，总结占一回合）。'.format(
                     ', '.join(mission.discussion.participant_ids), state['phase'], state['turns_used'], mission.discussion.max_turns)
             if step.is_closing:
                 purpose += '\n当前为总结，不再邀请其他角色。'
             else:
-                purpose += ('\n其他参与者已有基础发言安排；只有确需特定接力时才调 invoke_agent。'
-                            '需要对方回复后续答时用 mode=wait_reply；接纳后结束当前回合，由宿主安排受邀者和你的续答。'
-                            '邀请共享本场总回合预算；工具返回未接纳时继续当前发言，不承诺额外回合。')
+                purpose += '\n' + ROUNDTABLE_INVITE.text + ROUNDTABLE_BUDGET.text
             prompt = _build_prompt(mission, purpose, agents[step.agent_id], conversation_context=context,
                                    artifact_index=build_artifact_index(runner.repository, mission_id),
                                    memory_blocks=sections_into_prompt(sections),

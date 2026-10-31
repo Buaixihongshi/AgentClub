@@ -20,6 +20,7 @@ import time
 from uuid import uuid4
 
 from backend.app import extension_points
+from backend.app import host_rules
 from backend.app.adapters.antigravity_config import guarded_global_mcp_config
 from backend.app.adapters.base import TurnOutcome
 from backend.app.adapters.cli_diagnostics import write_cli_diagnostic
@@ -326,11 +327,7 @@ class AntigravitySessionPool:
                                          tasks_enabled=getattr(tools, 'tasks_enabled', True))
             instruction = (
                 '\n【本轮执行凭证】context_token=' + token + '\n'
-                '每次调用 yiren_hub 工具都必须携带本轮 context_token；旧凭证已失效。'
-                '凭证仅用于工具参数，不要写入发言、工作摘要或产物。'
-                '有副作用的工具还须传 operation_id，同一操作重试沿用编号。'
-                '最终 publish_message 的 operation_id 固定为 final，只发布一次。'
-                '宿主控制任务终态，不要调用 update_status 结束任务。'
+                + host_rules.CONTEXT_TOKEN.text + host_rules.OPERATION_ID.text + host_rules.HOST_OWNS_STATUS.text
             )
             # Scope data comes from the host, never from previous model memory.
             instruction += '\n当前任务：' + mission_id + '；当前回合：' + turn_id + '。\n'

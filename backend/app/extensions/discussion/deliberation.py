@@ -21,7 +21,7 @@ from backend.app.extensions.discussion.roundtable import DiscussionError
 
 
 PROTOCOL = "deliberation_v2"
-RULES_VERSION = "deliberation-v2.2"
+RULES_VERSION = "deliberation-v2.3"
 
 
 def is_v2(mission):
