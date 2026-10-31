@@ -58,6 +58,7 @@ from backend.app.adapters.subprocess_cli import (
 )
 from backend.app.adapters.subprocess_cli import _parse_result_envelope
 from backend.app.domain.models import TurnStatus, is_provider_verification_mission
+from backend.app.orchestration import interruption
 from backend.app.mcp.tools import MCPToolError, MCPTools
 from backend.app.orchestration.live_progress import (
     LiveProgressRegistry,
@@ -87,6 +88,7 @@ class ProcessWaitReason(str, Enum):
     EXITED = "exited"
     HARD_TIMEOUT = "hard_timeout"
     IDLE_TIMEOUT = "idle_timeout"
+    STOPPED = "stopped"
 
 
 class TurnActivityLease:
@@ -396,6 +398,7 @@ class MCPSubprocessAdapter(CLIAdapter):
                         refresh_activity=_refresh_mcp_activity,
                         progress_deadline=progress,
                         on_extension=_record_extension,
+                        stopped=lambda: interruption.pause_requested(mission_id),
                     )
                 except subprocess.TimeoutExpired:
                     wait_reason = ProcessWaitReason.HARD_TIMEOUT
@@ -414,6 +417,14 @@ class MCPSubprocessAdapter(CLIAdapter):
                     # was likely not persisted — do not surface that sid upstream.
                     if stream_ended_with_error[0]:
                         captured_session_id[0] = None
+                    if wait_reason is ProcessWaitReason.STOPPED:
+                        return TurnOutcome(
+                            status=TurnStatus.BLOCKED,
+                            summary=interruption.STOPPED_SUMMARY,
+                            session_id=captured_session_id[0],
+                            failure_code="stopped",
+                            retryable=False,
+                        )
                     if wait_reason is ProcessWaitReason.IDLE_TIMEOUT:
                         noise = stderr.strip() or stdout.strip()
                         detail = "A2A idle deadline exceeded without meaningful activity"
@@ -903,10 +914,13 @@ def _wait_for_process_with_activity(
     refresh_activity: Callable[[], None],
     progress_deadline: Optional[ToolResultDeadline] = None,
     on_extension: Optional[Callable[[dict], None]] = None,
+    stopped: Callable[[], bool] = lambda: False,
 ) -> ProcessWaitReason:
-    """Wait until exit, hard deadline, or an optional inactivity deadline."""
+    """Wait until exit, a user stop, hard deadline, or an optional inactivity deadline."""
     hard_deadline = time.time() + max(0, hard_timeout)
     while True:
+        if stopped():
+            return ProcessWaitReason.STOPPED
         if idle_timeout > 0 or progress_deadline is not None:
             refresh_activity()
         if progress_deadline is not None:

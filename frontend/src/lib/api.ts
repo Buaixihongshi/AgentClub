@@ -50,6 +50,8 @@ export interface MissionCreatePayload {
   discussion?: { participant_ids: string[]; max_turns?: number; protocol?: "roundtable_v1" | "deliberation_v2"; max_exchange_rounds?: number };
   request_id?: string;
   work_mode?: 'document' | 'development' | 'online';
+  /** Rewrites the conversation's last user message after a pause. */
+  revises_message_id?: string;
 }
 
 /** Stable client-side idempotency key; the backend replays same-id requests. */
@@ -74,6 +76,7 @@ function missionCreateBody(payload: MissionCreatePayload): string {
     body.target_agent_ids = payload.target_agent_ids;
   }
   if (payload.request_id) body.request_id = payload.request_id;
+  if (payload.revises_message_id) body.revises_message_id = payload.revises_message_id;
   return JSON.stringify(body);
 }
 
@@ -101,6 +104,12 @@ export async function interruptMission(
     ),
   });
   return parseJson<MissionDetail>(response, "发送插话失败");
+}
+
+/** Stop the running chat now: the current turn ends and nobody else is scheduled. */
+export async function pauseMission(missionId: string): Promise<MissionDetail> {
+  const response = await fetch(`${API_ROOT}/api/missions/${missionId}/pause`, { method: "POST" });
+  return parseJson<MissionDetail>(response, "暂停失败");
 }
 
 export async function sendDiscussionControl(

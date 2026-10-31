@@ -23,6 +23,11 @@ function makeTurn(overrides: Partial<TurnView>): TurnView {
 }
 
 describe("ChatBubble", () => {
+  it("marks a user message the user rewrote after pausing", () => {
+    render(<ChatBubble turn={makeTurn({ role: "user", content: "先做规划", metadata: { revised: true } })} />);
+    expect(screen.getByText("已修改")).toBeInTheDocument();
+  });
+
   it("keeps final sources and rejected review reasons available without expanding a workflow board", async () => {
     render(<ChatBubble turn={makeTurn({ metadata: { discussion_visibility: 'final', discussion_audit: {
       sources: [{ id: 'claim-1', label: '张楚岚 · 观点', summary: '要先验证权限边界' }],

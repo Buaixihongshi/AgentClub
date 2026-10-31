@@ -170,6 +170,8 @@ export interface ThreadEventMetadata {
   trace_blocks?: Array<{ type: string; title: string; content: string }>;
   artifact_id?: string;
   host_progress?: HostProgress;
+  /** The user paused and rewrote this message; the later version supersedes it. */
+  revised?: boolean;
 }
 
 /** Host-recorded snapshot of a timed-out turn; never an agent message. */

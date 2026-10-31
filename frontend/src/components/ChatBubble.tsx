@@ -72,7 +72,9 @@ export function ChatBubble({ turn }: { turn: TurnView }) {
       <div className="chat-row chat-row-user">
         <span className="chat-avatar chat-avatar-user" aria-hidden="true">我</span>
         <article className="chat-bubble chat-bubble-user">
-          <div className="bubble-sender">老板</div>
+          <div className="bubble-sender">
+            老板{turn.metadata.revised ? <span className="bubble-revised">已修改</span> : null}
+          </div>
           <MessageMarkdown content={turn.content} />
         </article>
       </div>

@@ -597,6 +597,55 @@ describe("Unity app", () => {
     });
   });
 
+  it("pauses a running chat, then resends the rewritten last message as a revision", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const at = "2026-05-05T00:00:00Z";
+    const userMessage = { id: "msg_u1", mission_id: "m1", event_type: "message", role: "user" as const, content: "先做规划", created_at: at };
+    const blocked: MissionDetail = {
+      mission: { id: "m1", goal: "先做规划", status: "blocked" as MissionStatus, created_at: at, updated_at: "2026-05-05T00:02:00Z" },
+      events: [], artifacts: [], messages: [userMessage],
+    };
+    let paused = false;
+    let created = 0;
+    vi.stubGlobal("fetch", stubFetch((url, init) => {
+      calls.push({ url, init });
+      if (url.match(/\/api\/conversations\/[^/]+\/missions/) && init?.method === "POST") {
+        created += 1;
+        return new Response(JSON.stringify(makeConvDetail({
+          latest_mission_detail: created === 1
+            ? { mission: { id: "m1", goal: "先做规划", status: "running" as MissionStatus, created_at: at, updated_at: at }, events: [], artifacts: [] }
+            : { mission: { id: "m2", goal: "改成先做调研", status: "completed" as MissionStatus, created_at: at, updated_at: at }, events: [], artifacts: [] },
+        })), { status: 200 });
+      }
+      if (url === "/api/missions/m1/pause" && init?.method === "POST") {
+        paused = true;
+        return new Response(JSON.stringify({ ...blocked, mission: { ...blocked.mission, status: "running" } }), { status: 202 });
+      }
+      if (url === "/api/missions/m1") {
+        return new Response(JSON.stringify(paused ? blocked : { ...blocked, mission: { ...blocked.mission, status: "running" } }), { status: 200 });
+      }
+      if (paused && url.match(/\/api\/conversations\/[^/]+$/) && (!init || init.method === "GET")) {
+        return new Response(JSON.stringify(makeConvDetail({ latest_mission_detail: blocked })), { status: 200 });
+      }
+      return null;
+    }));
+
+    render(<App />);
+    await userEvent.type(screen.getByLabelText("消息输入"), "先做规划");
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
+    await userEvent.click(await screen.findByRole("button", { name: "暂停" }));
+
+    await screen.findByRole("button", { name: "取消修改" });
+    expect(screen.getByLabelText("消息输入")).toHaveValue("先做规划");
+    await userEvent.clear(screen.getByLabelText("消息输入"));
+    await userEvent.type(screen.getByLabelText("消息输入"), "改成先做调研");
+    await userEvent.click(screen.getByRole("button", { name: "重新发送" }));
+
+    const posts = calls.filter(c => c.url.match(/\/api\/conversations\/[^/]+\/missions/) && c.init?.method === "POST");
+    expect(JSON.parse(String(posts[1]?.init?.body))).toEqual({ goal: "改成先做调研", revises_message_id: "msg_u1" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "取消修改" })).not.toBeInTheDocument());
+  });
+
   it("clicking new conversation creates and selects an empty conversation", async () => {
     render(<App />);
     await userEvent.click(screen.getByRole("button", { name: "新对话" }));

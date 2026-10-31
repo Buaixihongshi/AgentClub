@@ -24,6 +24,7 @@ from backend.app.domain.models import (
 from backend.app.settings import Settings, snapshot_settings
 from backend.app.storage.repository import Repository
 
+from backend.app.orchestration.revision import revised_messages
 from backend.app.api.mission_requests import MissionRequest as CreateConversationMissionRequest, create_requested_mission, occupies_conversation
 from backend.app import extension_points
 from backend.app.domain.errors import DiscussionError
@@ -110,6 +111,10 @@ def _conversation_detail(repo: Repository, settings: Settings, conversation: Con
     history = repo.read_message_history(conversation_id=conversation.id)
     messages = [entry.message for entry in history.project()]
     message_events = [_message_event(m) for m in messages]
+    revised = revised_messages(history.events)
+    for event in message_events:
+        if event["id"] in revised:
+            event["metadata"]["revised"] = True
     latest_detail = None
     active_verification = next(
         (
