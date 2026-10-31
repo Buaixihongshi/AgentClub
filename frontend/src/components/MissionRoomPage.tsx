@@ -1,4 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { ArtifactSidebar } from "./ArtifactSidebar";
+import { collectConversationArtifacts } from "../lib/artifactSidebar";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { MessagesSquare, Workflow } from "lucide-react";
 import type { StreamState } from "../hooks/useMissionStream";
 import type { ProviderStatusState } from "../hooks/useProviderStatus";
@@ -74,6 +76,10 @@ export function MissionRoomPage(props: {
   revising?: boolean;
   onCancelRevise?: () => void;
 }) {
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const [artifactPinned,setArtifactPinned] = useState(false);
+  const onPinnedChange = useCallback((pinned: boolean)=>setArtifactPinned(pinned),[]);
+  const artifacts = collectConversationArtifacts(props.displayMessages);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const tasksEnabled = props.tasksEnabled ?? false;
   const section = tasksEnabled ? props.section : "conversations";
@@ -166,7 +172,7 @@ export function MissionRoomPage(props: {
           onStatusChange={props.onConversationStatusChange}
           onDelete={props.onDeleteConversation}
         />
-        <div className="conversation-layout">
+        <div ref={layoutRef} className={`conversation-layout${artifactPinned ? " has-artifact-sidebar" : ""}`}>
           <section className="conversation-main" aria-label="任务对话">
             {tasksEnabled && props.selectedConversationId ? <SharedWorkWorkspace key={props.selectedConversationId}
               conversationId={props.selectedConversationId} goal={props.detail?.mission.goal ?? ''}
@@ -174,6 +180,15 @@ export function MissionRoomPage(props: {
               onOpenTask={props.onOpenTask}
               chat={timeline} composer={composer} /> : <>{timeline}{composer}</>}
           </section>
+          <ArtifactSidebar items={artifacts} onPinnedChange={onPinnedChange} onLocate={item=>{
+            const card=Array.from(layoutRef.current?.querySelectorAll<HTMLElement>('[data-artifact-identity]') ?? []).find(el=>el.dataset.artifactIdentity===item.identity);
+            if(!card)return '文件卡片在折叠的讨论记录里，或记录未加载';
+            card.dispatchEvent(new CustomEvent('artifact-locate',{bubbles:true}));
+            card.scrollIntoView({block:'center',behavior:'smooth'});
+            card.classList.add('artifact-card--located');
+            window.setTimeout(()=>card.classList.remove('artifact-card--located'),1500);
+            return undefined;
+          }} />
         </div>
       </div>
         </div>
