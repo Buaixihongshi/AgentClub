@@ -121,10 +121,6 @@
   color: var(--ink);
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-.artifact-header-icon {
-  font-size: 14px;
 }
 .artifact-sidebar button,
 .artifact-sidebar input {

@@ -187,10 +187,7 @@ export function ArtifactSidebar({
           className={`artifact-sidebar ${pinned ? "is-pinned" : "is-drawer"}`}
         >
           <header>
-            <strong>
-              <span aria-hidden="true" className="artifact-header-icon">📦</span>
-              交付产物
-            </strong>
+            <strong>交付产物</strong>
             <button
               type="button"
               disabled={!wide}
