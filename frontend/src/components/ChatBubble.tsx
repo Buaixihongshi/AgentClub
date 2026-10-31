@@ -1,3 +1,4 @@
+import { PersonaPortrait } from "./PersonaPortrait";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -97,7 +98,7 @@ export function ChatBubble({ turn }: { turn: TurnView }) {
   return (
     <div className="chat-row chat-row-agent">
       <span className="chat-avatar" style={{ background: color.accent }} title={personaName ?? undefined} aria-hidden="true">
-        {avatarInitial(personaName ?? "") || "?"}
+        <PersonaPortrait agentId={turn.agentId}>{avatarInitial(personaName ?? "") || "?"}</PersonaPortrait>
       </span>
       <article
         className="chat-bubble chat-bubble-agent"

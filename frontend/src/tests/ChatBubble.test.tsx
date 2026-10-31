@@ -185,7 +185,7 @@ describe("ChatBubble", () => {
 
   it("shows an avatar for agents and the user", () => {
     const { container, unmount } = render(<ChatBubble turn={makeTurn({})} />);
-    expect(container.querySelector(".chat-row-agent .chat-avatar")).toHaveTextContent("楚");
+    expect(container.querySelector(".chat-row-agent .chat-avatar img")).toHaveAttribute("src", expect.stringContaining("chulan.png"));
     unmount();
     const user = render(<ChatBubble turn={makeTurn({ role: "user", content: "你好" })} />);
     expect(user.container.querySelector(".chat-row-user .chat-avatar")).toHaveTextContent("我");

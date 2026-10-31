@@ -1,3 +1,4 @@
+import { PersonaPortrait } from "./PersonaPortrait";
 import { getPersonaColor } from "../lib/personaColors";
 import {
   discussionParticipantOptions,
@@ -76,7 +77,7 @@ export function DiscussionSetup(props: {
                       onChange={() => props.onToggleParticipant(option.agentId)}
                     />
                     <span className="discussion-participant-avatar" aria-hidden="true">
-                      {color.avatar}
+                      <PersonaPortrait agentId={option.agentId}>{color.avatar}</PersonaPortrait>
                     </span>
                     <span className="discussion-participant-copy">
                       <strong style={{ color: checked ? color.name : undefined }}>
