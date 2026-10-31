@@ -168,6 +168,7 @@ export function ArtifactSidebar({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
+        <span aria-hidden="true" className="artifact-trigger-glow" />
         产物 <span>{items.length}</span>
       </button>
       {open && !pinned && (
@@ -186,7 +187,10 @@ export function ArtifactSidebar({
           className={`artifact-sidebar ${pinned ? "is-pinned" : "is-drawer"}`}
         >
           <header>
-            <strong>交付产物</strong>
+            <strong>
+              <span aria-hidden="true" className="artifact-header-icon">📦</span>
+              交付产物
+            </strong>
             <button
               type="button"
               disabled={!wide}
@@ -304,12 +308,19 @@ export function ArtifactSidebar({
                     load(item.mission_id, item.path ?? "");
                   }}
                 >
-                  <strong>{item.title}</strong>
-                  <span>
-                    {item.kind ?? "file"} ·{" "}
-                    {item.agent_id ? formatAgentName(item.agent_id) : "文件"}
-                  </span>
-                  {item.path !== item.title && <small>{item.path}</small>}
+                  <div className="artifact-card-title-row">
+                    <strong>{item.title}</strong>
+                  </div>
+                  <div className="artifact-card-meta-row">
+                    <span className="artifact-kind-badge">{item.kind ?? "file"}</span>
+                    <span className="artifact-meta-dot">·</span>
+                    <span className="artifact-agent-tag">
+                      {item.agent_id ? formatAgentName(item.agent_id) : "文件"}
+                    </span>
+                  </div>
+                  {item.path !== item.title && (
+                    <small className="artifact-card-path">{item.path}</small>
+                  )}
                   <time dateTime={item.created_at}>
                     {new Date(item.created_at).toLocaleString()}
                   </time>
@@ -323,12 +334,14 @@ export function ArtifactSidebar({
                       if (!pinned) close();
                     }}
                   >
-                    {item.conversation_title || "未命名会话"}
+                    <span aria-hidden="true" className="artifact-conv-arrow">↳</span>
+                    <span>{item.conversation_title || "未命名会话"}</span>
                   </button>
                 )}
-                <div>
+                <div className="artifact-card-actions">
                   <button
                     type="button"
+                    className="artifact-btn-locate"
                     onClick={() => {
                       onLocate(item);
                       if (!pinned) close();
@@ -339,6 +352,7 @@ export function ArtifactSidebar({
                   <a
                     href={artifactDownloadUrl(item.mission_id, item.path ?? "")}
                     download={item.title}
+                    className="artifact-btn-download"
                   >
                     下载
                   </a>
