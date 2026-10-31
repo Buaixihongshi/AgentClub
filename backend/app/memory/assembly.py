@@ -9,6 +9,7 @@ sections at all (their reads stay isolated to the mission).
 from dataclasses import dataclass, field
 from typing import Optional
 
+from backend.app import host_rules
 from backend.app.domain.agent_registry import AgentRegistry
 from backend.app.memory import checkpoints as checkpoint_store
 from backend.app.memory import handover as handover_store
@@ -59,12 +60,11 @@ def assemble(repository: Repository, memory_root, conversation_id: Optional[str]
     handovers = handover_store.pending(repository, agent_id)
     if handovers:
         sections.handovers = handovers
-        lines = ['【模型交接】（本角色自上次执行以来发生模型/Provider 切换；按以下记录接续，不要因换模型重置已确认的事实）：']
+        lines = [host_rules.MODEL_HANDOVER.text]
         for item in handovers:
             lines.append('- {} → {}（原因：{}，{}）'.format(
                 item['previous'] or '未知', item['current'], _reason_label(item['reason']),
                 item['created_at']))
-        lines.append('接续依据：先读【长期记忆】与【短期检查点】，必要时用 read_context 补读原文。')
         sections.handover_text = '\n'.join(lines)
     return sections
 

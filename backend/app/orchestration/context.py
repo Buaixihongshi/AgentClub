@@ -1,6 +1,7 @@
 import re
 from typing import Dict, Optional
 
+from backend.app import host_rules
 from backend.app.domain.agent_registry import AgentRegistry, get_agent_registry
 from backend.app.domain.history import prioritize_messages
 from backend.app.domain.models import MessageRole, is_provider_verification_mission
@@ -100,7 +101,7 @@ def build_artifact_index(
         latest.values(), key=lambda e: e["created_at"], reverse=True
     )[:limit]
     lines = [
-        "【产物清单】（要引用别人写的内容时，先用 read_artifact 读取；跨任务时传 source_mission_id，不要凭印象引述）：",
+        host_rules.ARTIFACT_QUOTE.text,
     ]
     for entry in entries:
         lines.append(

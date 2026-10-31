@@ -7,6 +7,7 @@ from uuid import uuid4
 from backend.app.adapters.base import CLIAdapter, TurnOutcome
 from backend.app.adapters.turn_budget import budgeted_turn, claim_attempt
 from backend.app import extension_points
+from backend.app import host_rules
 from backend.app.domain.agent_registry import AgentRegistry, get_agent_registry
 from backend.app.domain.models import (
     AgentProfile,
@@ -999,14 +1000,10 @@ def _build_prompt(
         COMMON_DISCUSSION_RULES,
     ]
     if solo:
-        parts.append("本轮由你独立完成，不需要征求其他角色意见，也不要假装有别的角色在场。")
+        parts.append(host_rules.SOLO.text)
     if agent.trigger_points:
         parts.append("【做本职工作时】\n" + "\n".join("- " + tp for tp in agent.trigger_points))
-    parts.append(
-        "【交付边界】讨论、解释、评审直接在聊天里回答；只有用户要文件，或已获授权的执行任务确实需要时才写文件。"
-        "没有 write_artifact 工具时，可返回 JSON："
-        '{"message":"本轮回复","artifacts":[{"path":"summary.md","content":"# Summary"}]}。'
-    )
+    parts.append(host_rules.DELIVERY_BOUNDARY.text)
     parts.extend(extension_points.collect('prompt_fragments', mission, tasks_enabled))
     if memory_blocks:
         parts.extend(memory_blocks)
@@ -1038,10 +1035,7 @@ def _build_prompt(
     if max_a2a_invocations is not None and max_a2a_invocations > 0:
         teammates = [a for a in (agents_by_id or {}).values() if a.id != agent.id]
         parts.append(
-            "需要伙伴接手时调 invoke_agent(target, purpose)；必须等对方回复才能继续时加 mode=\"wait_reply\"，"
-            "你这轮随即结束，下一轮会带上对方回复。只在正文里喊名字不会触发接力。本任务最多接力 {n} 次。".format(
-                n=max_a2a_invocations,
-            )
+            host_rules.A2A_USAGE.text + host_rules.A2A_BUDGET.text.format(n=max_a2a_invocations)
             + ("\n可接力的成员（target）：" + "；".join(
                 f"{a.display_name}={a.id}（{a.role}）" for a in teammates
             ) if teammates else "")
