@@ -4938,4 +4938,5 @@ summary:focus-visible {
 }
 
 .composer-notice-action:hover:not(:disabled), .bubble-edit:hover { background:var(--sage-soft); }
-.bubble-edit { display:block; margin:8px 0 0 auto; padding:4px 8px; border:1px solid var(--ink-line); border-radius:4px; background:transparent; color:var(--ink); font:inherit; font-size:.8rem; cursor:pointer; }
+.bubble-edit { display:flex; align-items:center; justify-content:center; width:28px; height:28px; margin:8px 0 0 auto; padding:0; border:0; border-radius:4px; background:transparent; color:var(--ink-muted); cursor:pointer; }
+.bubble-edit:hover, .bubble-edit:focus-visible { color:var(--ink); }
